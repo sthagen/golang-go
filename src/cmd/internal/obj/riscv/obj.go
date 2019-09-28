@@ -31,6 +31,21 @@ var RISCV64DWARFRegisters = map[int16]int16{}
 
 func buildop(ctxt *obj.Link) {}
 
+// lowerJALR normalizes a JALR instruction.
+func lowerJALR(p *obj.Prog) {
+	if p.As != AJALR {
+		panic("lowerJALR: not a JALR")
+	}
+
+	// JALR gets parsed like JAL - the linkage pointer goes in From,
+	// and the target is in To. However, we need to assemble it as an
+	// I-type instruction, so place the linkage pointer in To, the
+	// target register in Reg, and the offset in From.
+	p.Reg = p.To.Reg
+	p.From, p.To = p.To, p.From
+	p.From.Type, p.From.Reg = obj.TYPE_CONST, obj.REG_NONE
+}
+
 // progedit is called individually for each *obj.Prog. It normalizes instruction
 // formats and eliminates as many pseudo-instructions as possible.
 func progedit(ctxt *obj.Link, p *obj.Prog, newprog obj.ProgAlloc) {
@@ -70,6 +85,30 @@ func progedit(ctxt *obj.Link, p *obj.Prog, newprog obj.ProgAlloc) {
 	}
 
 	switch p.As {
+	case ALW, ALWU, ALH, ALHU, ALB, ALBU, ALD, AFLW, AFLD:
+		switch p.From.Type {
+		case obj.TYPE_MEM:
+			// Convert loads from memory/addresses to ternary form.
+			p.Reg = p.From.Reg
+			p.From.Type, p.From.Reg = obj.TYPE_CONST, obj.REG_NONE
+		default:
+			p.Ctxt.Diag("%v\tmemory required for source", p)
+		}
+
+	case ASW, ASH, ASB, ASD, AFSW, AFSD:
+		switch p.To.Type {
+		case obj.TYPE_MEM:
+			// Convert stores to memory/addresses to ternary form.
+			p.Reg = p.From.Reg
+			p.From.Type, p.From.Offset, p.From.Reg = obj.TYPE_CONST, p.To.Offset, obj.REG_NONE
+			p.To.Type, p.To.Offset = obj.TYPE_REG, 0
+		default:
+			p.Ctxt.Diag("%v\tmemory required for destination", p)
+		}
+
+	case AJALR:
+		lowerJALR(p)
+
 	case obj.AUNDEF, AECALL, AEBREAK, ASCALL, ASBREAK, ARDCYCLE, ARDTIME, ARDINSTRET:
 		switch p.As {
 		case obj.AUNDEF:
@@ -151,6 +190,19 @@ func preprocess(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 
 	setPCs(cursym.Func.Text, 0)
 
+	// Resolve branch and jump targets.
+	for p := cursym.Func.Text; p != nil; p = p.Link {
+		switch p.As {
+		case AJAL, ABEQ, ABNE, ABLT, ABLTU, ABGE, ABGEU:
+			switch p.To.Type {
+			case obj.TYPE_BRANCH:
+				p.To.Type, p.To.Offset = obj.TYPE_CONST, p.Pcond.Pc-p.Pc
+			case obj.TYPE_MEM:
+				panic("unhandled type")
+			}
+		}
+	}
+
 	// Validate all instructions - this provides nice error messages.
 	for p := cursym.Func.Text; p != nil; p = p.Link {
 		encodingForProg(p).validate(p)
@@ -192,33 +244,61 @@ func regFAddr(a obj.Addr) uint32 {
 	return regAddr(a, REG_F0, REG_F31)
 }
 
-// immFits reports whether immediate value x fits in nbits bits as a
-// signed integer.
-func immFits(x int64, nbits uint) bool {
+// immIFits reports whether immediate value x fits in nbits bits
+// as a signed integer.
+func immIFits(x int64, nbits uint) bool {
 	nbits--
 	var min int64 = -1 << nbits
 	var max int64 = 1<<nbits - 1
 	return min <= x && x <= max
 }
 
-// immI extracts the integer literal of the specified size from an Addr.
+// immUFits reports whether immediate value x fits in nbits bits
+// as an unsigned integer.
+func immUFits(x int64, nbits uint) bool {
+	var max int64 = 1<<nbits - 1
+	return 0 <= x && x <= max
+}
+
+// immI extracts the signed integer literal of the specified size from an Addr.
 func immI(a obj.Addr, nbits uint) uint32 {
 	if a.Type != obj.TYPE_CONST {
 		panic(fmt.Sprintf("ill typed: %+v", a))
 	}
-	if !immFits(a.Offset, nbits) {
-		panic(fmt.Sprintf("immediate %d in %v cannot fit in %d bits", a.Offset, a, nbits))
+	if !immIFits(a.Offset, nbits) {
+		panic(fmt.Sprintf("signed immediate %d in %v cannot fit in %d bits", a.Offset, a, nbits))
 	}
 	return uint32(a.Offset)
 }
 
-func wantImm(p *obj.Prog, pos string, a obj.Addr, nbits uint) {
+// immU extracts the unsigned integer literal of the specified size from an Addr.
+func immU(a obj.Addr, nbits uint) uint32 {
+	if a.Type != obj.TYPE_CONST {
+		panic(fmt.Sprintf("ill typed: %+v", a))
+	}
+	if !immUFits(a.Offset, nbits) {
+		panic(fmt.Sprintf("unsigned immediate %d in %v cannot fit in %d bits", a.Offset, a, nbits))
+	}
+	return uint32(a.Offset)
+}
+
+func wantImmI(p *obj.Prog, pos string, a obj.Addr, nbits uint) {
 	if a.Type != obj.TYPE_CONST {
 		p.Ctxt.Diag("%v\texpected immediate in %s position but got %s", p, pos, obj.Dconv(p, &a))
 		return
 	}
-	if !immFits(a.Offset, nbits) {
-		p.Ctxt.Diag("%v\timmediate in %s position cannot be larger than %d bits but got %d", p, pos, nbits, a.Offset)
+	if !immIFits(a.Offset, nbits) {
+		p.Ctxt.Diag("%v\tsigned immediate in %s position cannot be larger than %d bits but got %d", p, pos, nbits, a.Offset)
+	}
+}
+
+func wantImmU(p *obj.Prog, pos string, a obj.Addr, nbits uint) {
+	if a.Type != obj.TYPE_CONST {
+		p.Ctxt.Diag("%v\texpected immediate in %s position but got %s", p, pos, obj.Dconv(p, &a))
+		return
+	}
+	if !immUFits(a.Offset, nbits) {
+		p.Ctxt.Diag("%v\tunsigned immediate in %s position cannot be larger than %d bits but got %d", p, pos, nbits, a.Offset)
 	}
 }
 
@@ -262,6 +342,13 @@ func wantFloatRegAddr(p *obj.Prog, pos string, a *obj.Addr) {
 	wantRegAddr(p, pos, a, "float", REG_F0, REG_F31)
 }
 
+// wantEvenJumpOffset checks that the jump offset is a multiple of two.
+func wantEvenJumpOffset(p *obj.Prog) {
+	if p.To.Offset%1 != 0 {
+		p.Ctxt.Diag("%v\tjump offset %v must be even", p, obj.Dconv(p, &p.To))
+	}
+}
+
 func validateRIII(p *obj.Prog) {
 	wantIntRegAddr(p, "from", &p.From)
 	wantIntReg(p, "reg", p.Reg)
@@ -296,27 +383,49 @@ func validateRFF(p *obj.Prog) {
 }
 
 func validateII(p *obj.Prog) {
-	wantImm(p, "from", p.From, 12)
+	wantImmI(p, "from", p.From, 12)
 	wantIntReg(p, "reg", p.Reg)
 	wantIntRegAddr(p, "to", &p.To)
 }
 
 func validateIF(p *obj.Prog) {
-	wantImm(p, "from", p.From, 12)
+	wantImmI(p, "from", p.From, 12)
 	wantIntReg(p, "reg", p.Reg)
 	wantFloatRegAddr(p, "to", &p.To)
 }
 
 func validateSI(p *obj.Prog) {
-	wantImm(p, "from", p.From, 12)
+	wantImmI(p, "from", p.From, 12)
 	wantIntReg(p, "reg", p.Reg)
 	wantIntRegAddr(p, "to", &p.To)
 }
 
 func validateSF(p *obj.Prog) {
-	wantImm(p, "from", p.From, 12)
+	wantImmI(p, "from", p.From, 12)
 	wantFloatReg(p, "reg", p.Reg)
 	wantIntRegAddr(p, "to", &p.To)
+}
+
+func validateB(p *obj.Prog) {
+	// Offsets are multiples of two, so accept 13 bit immediates for the
+	// 12 bit slot. We implicitly drop the least significant bit in encodeB.
+	wantEvenJumpOffset(p)
+	wantImmI(p, "to", p.To, 13)
+	wantIntReg(p, "reg", p.Reg)
+	wantIntRegAddr(p, "from", &p.From)
+}
+
+func validateU(p *obj.Prog) {
+	wantImmU(p, "from", p.From, 20)
+	wantIntRegAddr(p, "to", &p.To)
+}
+
+func validateJ(p *obj.Prog) {
+	// Offsets are multiples of two, so accept 21 bit immediates for the
+	// 20 bit slot. We implicitly drop the least significant bit in encodeJ.
+	wantEvenJumpOffset(p)
+	wantImmI(p, "to", p.To, 21)
+	wantIntRegAddr(p, "from", &p.From)
 }
 
 func validateRaw(p *obj.Prog) {
@@ -395,11 +504,11 @@ func encodeIF(p *obj.Prog) uint32 {
 func encodeS(p *obj.Prog, rs2 uint32) uint32 {
 	imm := immI(p.From, 12)
 	rs1 := regIAddr(p.To)
-	i := encode(p.As)
-	if i == nil {
+	ins := encode(p.As)
+	if ins == nil {
 		panic("encodeS: could not encode instruction")
 	}
-	return (imm>>5)<<25 | rs2<<20 | rs1<<15 | i.funct3<<12 | (imm&0x1f)<<7 | i.opcode
+	return (imm>>5)<<25 | rs2<<20 | rs1<<15 | ins.funct3<<12 | (imm&0x1f)<<7 | ins.opcode
 }
 
 func encodeSI(p *obj.Prog) uint32 {
@@ -408,6 +517,44 @@ func encodeSI(p *obj.Prog) uint32 {
 
 func encodeSF(p *obj.Prog) uint32 {
 	return encodeS(p, regF(p.Reg))
+}
+
+// encodeB encodes a B-type RISC-V instruction.
+func encodeB(p *obj.Prog) uint32 {
+	imm := immI(p.To, 13)
+	rs2 := regI(p.Reg)
+	rs1 := regIAddr(p.From)
+	ins := encode(p.As)
+	if ins == nil {
+		panic("encodeB: could not encode instruction")
+	}
+	return (imm>>12)<<31 | ((imm>>5)&0x3f)<<25 | rs2<<20 | rs1<<15 | ins.funct3<<12 | ((imm>>1)&0xf)<<8 | ((imm>>11)&0x1)<<7 | ins.opcode
+}
+
+// encodeU encodes a U-type RISC-V instruction.
+func encodeU(p *obj.Prog) uint32 {
+	// The immediates for encodeU are the upper 20 bits of a 32 bit value.
+	// Rather than have the user/compiler generate a 32 bit constant, the
+	// bottommost bits of which must all be zero, instead accept just the
+	// top bits.
+	imm := immU(p.From, 20)
+	rd := regIAddr(p.To)
+	ins := encode(p.As)
+	if ins == nil {
+		panic("encodeU: could not encode instruction")
+	}
+	return imm<<12 | rd<<7 | ins.opcode
+}
+
+// encodeJ encodes a J-type RISC-V instruction.
+func encodeJ(p *obj.Prog) uint32 {
+	imm := immI(p.To, 21)
+	rd := regIAddr(p.From)
+	ins := encode(p.As)
+	if ins == nil {
+		panic("encodeJ: could not encode instruction")
+	}
+	return (imm>>20)<<31 | ((imm>>1)&0x3ff)<<21 | ((imm>>11)&0x1)<<20 | ((imm>>12)&0xff)<<12 | rd<<7 | ins.opcode
 }
 
 // encodeRaw encodes a raw instruction value.
@@ -433,7 +580,7 @@ type encoding struct {
 var (
 	// Encodings have the following naming convention:
 	//
-	//  1. the instruction encoding (R/I/S/SB/U/UJ), in lowercase
+	//  1. the instruction encoding (R/I/S/B/U/J), in lowercase
 	//  2. zero or more register operand identifiers (I = integer
 	//     register, F = float register), in uppercase
 	//  3. the word "Encoding"
@@ -455,6 +602,10 @@ var (
 	sIEncoding = encoding{encode: encodeSI, validate: validateSI, length: 4}
 	sFEncoding = encoding{encode: encodeSF, validate: validateSF, length: 4}
 
+	bEncoding = encoding{encode: encodeB, validate: validateB, length: 4}
+	uEncoding = encoding{encode: encodeU, validate: validateU, length: 4}
+	jEncoding = encoding{encode: encodeJ, validate: validateJ, length: 4}
+
 	// rawEncoding encodes a raw instruction byte sequence.
 	rawEncoding = encoding{encode: encodeRaw, validate: validateRaw, length: 4}
 
@@ -469,7 +620,6 @@ var (
 // encodingForAs contains the encoding for a RISC-V instruction.
 // Instructions are masked with obj.AMask to keep indices small.
 var encodingForAs = [ALAST & obj.AMask]encoding{
-	// TODO(jsing): Implement remaining instructions.
 
 	// Unprivileged ISA
 
@@ -483,6 +633,8 @@ var encodingForAs = [ALAST & obj.AMask]encoding{
 	ASLLI & obj.AMask:  iIEncoding,
 	ASRLI & obj.AMask:  iIEncoding,
 	ASRAI & obj.AMask:  iIEncoding,
+	ALUI & obj.AMask:   uEncoding,
+	AAUIPC & obj.AMask: uEncoding,
 	AADD & obj.AMask:   rIIIEncoding,
 	ASLT & obj.AMask:   rIIIEncoding,
 	ASLTU & obj.AMask:  rIIIEncoding,
@@ -493,6 +645,16 @@ var encodingForAs = [ALAST & obj.AMask]encoding{
 	ASRL & obj.AMask:   rIIIEncoding,
 	ASUB & obj.AMask:   rIIIEncoding,
 	ASRA & obj.AMask:   rIIIEncoding,
+
+	// 2.5: Control Transfer Instructions
+	AJAL & obj.AMask:  jEncoding,
+	AJALR & obj.AMask: iIEncoding,
+	ABEQ & obj.AMask:  bEncoding,
+	ABNE & obj.AMask:  bEncoding,
+	ABLT & obj.AMask:  bEncoding,
+	ABLTU & obj.AMask: bEncoding,
+	ABGE & obj.AMask:  bEncoding,
+	ABGEU & obj.AMask: bEncoding,
 
 	// 2.6: Load and Store Instructions
 	ALW & obj.AMask:  iIEncoding,
