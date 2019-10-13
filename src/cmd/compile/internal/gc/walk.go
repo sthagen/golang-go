@@ -564,7 +564,6 @@ opswitch:
 		n = mkcall("gorecover", n.Type, init, nod(OADDR, nodfp, nil))
 
 	case OCLOSUREVAR, OCFUNC:
-		n.SetAddable(true)
 
 	case OCALLINTER, OCALLFUNC, OCALLMETH:
 		if n.Op == OCALLINTER {
@@ -705,7 +704,7 @@ opswitch:
 		n = liststmt(ll)
 
 	// x, y = <-c
-	// orderstmt made sure x is addressable.
+	// order.stmt made sure x is addressable or blank.
 	case OAS2RECV:
 		init.AppendNodes(&n.Ninit)
 
@@ -720,7 +719,7 @@ opswitch:
 		}
 		fn := chanfn("chanrecv2", 2, r.Left.Type)
 		ok := n.List.Second()
-		call := mkcall1(fn, ok.Type, init, r.Left, n1)
+		call := mkcall1(fn, types.Types[TBOOL], init, r.Left, n1)
 		n = nod(OAS, ok, call)
 		n = typecheck(n, ctxStmt)
 
