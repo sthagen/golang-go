@@ -201,7 +201,7 @@ func addrescapes(n *Node) {
 		}
 
 		// If a closure reference escapes, mark the outer variable as escaping.
-		if n.IsClosureVar() {
+		if n.Name.IsClosureVar() {
 			addrescapes(n.Name.Defn)
 			break
 		}
@@ -251,7 +251,7 @@ func moveToHeap(n *Node) {
 		Dump("MOVE", n)
 	}
 	if compiling_runtime {
-		yyerror("%v escapes to heap, not allowed in runtime.", n)
+		yyerror("%v escapes to heap, not allowed in runtime", n)
 	}
 	if n.Class() == PAUTOHEAP {
 		Dump("n", n)
@@ -293,7 +293,7 @@ func moveToHeap(n *Node) {
 			// Thus, we need the pointer to the heap copy always available so the
 			// post-deferreturn code can copy the return value back to the stack.
 			// See issue 16095.
-			heapaddr.SetIsOutputParamHeapAddr(true)
+			heapaddr.Name.SetIsOutputParamHeapAddr(true)
 		}
 		n.Name.Param.Stackcopy = stackcopy
 

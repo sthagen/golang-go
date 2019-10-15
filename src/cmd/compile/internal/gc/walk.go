@@ -97,7 +97,7 @@ func paramoutheap(fn *Node) bool {
 	for _, ln := range fn.Func.Dcl {
 		switch ln.Class() {
 		case PPARAMOUT:
-			if ln.isParamStackCopy() || ln.Addrtaken() {
+			if ln.isParamStackCopy() || ln.Name.Addrtaken() {
 				return true
 			}
 
@@ -195,7 +195,7 @@ func walkstmt(n *Node) *Node {
 		v := n.Left
 		if v.Class() == PAUTOHEAP {
 			if compiling_runtime {
-				yyerror("%v escapes to heap, not allowed in runtime.", v)
+				yyerror("%v escapes to heap, not allowed in runtime", v)
 			}
 			if prealloc[v] == nil {
 				prealloc[v] = callnew(v.Type)
@@ -2097,7 +2097,7 @@ func aliased(n *Node, all []*Node, i int) bool {
 			continue
 
 		case PAUTO, PPARAM, PPARAMOUT:
-			if n.Addrtaken() {
+			if n.Name.Addrtaken() {
 				varwrite = true
 				continue
 			}
@@ -2145,7 +2145,7 @@ func varexpr(n *Node) bool {
 	case ONAME:
 		switch n.Class() {
 		case PAUTO, PPARAM, PPARAMOUT:
-			if !n.Addrtaken() {
+			if !n.Name.Addrtaken() {
 				return true
 			}
 		}
