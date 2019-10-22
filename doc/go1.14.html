@@ -112,6 +112,17 @@ TODO
   graphic characters and spaces.
 </p>
 
+<p><!-- golang.org/issue/31481 -->
+  The <code>go</code> command now accepts a new flag, <code>-modcacherw</code>,
+  which leaves newly-created directories in the module cache at their default
+  permissions rather than making them read-only.
+  The use of this flag makes it more likely that tests or other tools will
+  accidentally add files not included in the module's verified checksum.
+  However, it allows the use of <code>rm</code> <code>-rf</code>
+  (instead of <code>go</code> <code>clean</code> <code>-modcache</code>)
+  to remove the module cache.
+</p>
+
 <h2 id="runtime">Runtime</h2>
 
 <p>
@@ -168,6 +179,19 @@ TODO
     </p>
 
 </dl><!-- mime -->
+
+<dl id="math"><dt><a href="/pkg/math/">math</a></dt>
+  <dd>
+    <p><!-- CL 127458 -->
+      The new <a href="/pkg/math/#Fma"><code>Fma</code></a> function
+      computes <code>x*y+z</code> in floating point with no
+      intermediate rounding of the <code>x*y</code>
+      computation. Several architectures implement this computation
+      using dedicated hardware instructions for additional
+      performance.
+    </p>
+
+</dl><!-- math -->
 
 <dl id="plugin"><dt><a href="/pkg/plugin/">plugin</a></dt>
   <dd>
