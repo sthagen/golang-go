@@ -125,8 +125,7 @@ func gcMarkRootCheck() {
 fail:
 	println("gp", gp, "goid", gp.goid,
 		"status", readgstatus(gp),
-		"gcscandone", gp.gcscandone,
-		"gcscanvalid", gp.gcscanvalid)
+		"gcscandone", gp.gcscandone)
 	unlock(&allglock) // Avoid self-deadlock with traceback.
 	throw("scan missed a g")
 }
@@ -211,14 +210,24 @@ func markroot(gcw *gcWork, i uint32) {
 				userG.waitreason = waitReasonGarbageCollectionScan
 			}
 
-			// TODO: scang blocks until gp's stack has
-			// been scanned, which may take a while for
+			// TODO: suspendG blocks (and spins) until gp
+			// stops, which may take a while for
 			// running goroutines. Consider doing this in
 			// two phases where the first is non-blocking:
 			// we scan the stacks we can and ask running
 			// goroutines to scan themselves; and the
 			// second blocks.
-			scang(gp, gcw)
+			stopped := suspendG(gp)
+			if stopped.dead {
+				gp.gcscandone = true
+				return
+			}
+			if gp.gcscandone {
+				throw("g already scanned")
+			}
+			scanstack(gp, gcw)
+			gp.gcscandone = true
+			resumeG(stopped)
 
 			if selfScan {
 				casgstatus(userG, _Gwaiting, _Grunning)
@@ -658,16 +667,16 @@ func gcFlushBgCredit(scanWork int64) {
 
 // scanstack scans gp's stack, greying all pointers found on the stack.
 //
+// scanstack will also shrink the stack if it is safe to do so. If it
+// is not, it schedules a stack shrink for the next synchronous safe
+// point.
+//
 // scanstack is marked go:systemstack because it must not be preempted
 // while using a workbuf.
 //
 //go:nowritebarrier
 //go:systemstack
 func scanstack(gp *g, gcw *gcWork) {
-	if gp.gcscanvalid {
-		return
-	}
-
 	if readgstatus(gp)&_Gscan == 0 {
 		print("runtime:scanstack: gp=", gp, ", goid=", gp.goid, ", gp->atomicstatus=", hex(readgstatus(gp)), "\n")
 		throw("scanstack - bad status")
@@ -690,8 +699,13 @@ func scanstack(gp *g, gcw *gcWork) {
 		throw("can't scan our own stack")
 	}
 
-	// Shrink the stack if not much of it is being used.
-	shrinkstack(gp)
+	if isShrinkStackSafe(gp) {
+		// Shrink the stack if not much of it is being used.
+		shrinkstack(gp)
+	} else {
+		// Otherwise, shrink the stack at the next sync safe point.
+		gp.preemptShrink = true
+	}
 
 	var state stackScanState
 	state.stack = gp.stack
@@ -807,8 +821,6 @@ func scanstack(gp *g, gcw *gcWork) {
 	if state.buf != nil || state.freeBuf != nil {
 		throw("remaining pointer buffers")
 	}
-
-	gp.gcscanvalid = true
 }
 
 // Scan a stack frame: local variables and function arguments/results.

@@ -152,45 +152,29 @@ type siginfo struct {
 	_reason   [40]byte
 }
 
+type gpregs struct {
+	gp_x    [30]uint64
+	gp_lr   uint64
+	gp_sp   uint64
+	gp_elr  uint64
+	gp_spsr uint32
+	gp_pad  int32
+}
+
+type fpregs struct {
+	fp_q     [64]uint64 // actually [32]uint128
+	fp_sr    uint32
+	fp_cr    uint32
+	fp_flags int32
+	fp_pad   int32
+}
+
 type mcontext struct {
-	mc_onstack       uint64
-	mc_rdi           uint64
-	mc_rsi           uint64
-	mc_rdx           uint64
-	mc_rcx           uint64
-	mc_r8            uint64
-	mc_r9            uint64
-	mc_rax           uint64
-	mc_rbx           uint64
-	mc_rbp           uint64
-	mc_r10           uint64
-	mc_r11           uint64
-	mc_r12           uint64
-	mc_r13           uint64
-	mc_r14           uint64
-	mc_r15           uint64
-	mc_trapno        uint32
-	mc_fs            uint16
-	mc_gs            uint16
-	mc_addr          uint64
-	mc_flags         uint32
-	mc_es            uint16
-	mc_ds            uint16
-	mc_err           uint64
-	mc_rip           uint64
-	mc_cs            uint64
-	mc_rflags        uint64
-	mc_rsp           uint64
-	mc_ss            uint64
-	mc_len           uint64
-	mc_fpformat      uint64
-	mc_ownedfp       uint64
-	mc_fpstate       [64]uint64
-	mc_fsbase        uint64
-	mc_gsbase        uint64
-	mc_xfpustate     uint64
-	mc_xfpustate_len uint64
-	mc_spare         [4]uint64
+	mc_gpregs gpregs
+	mc_fpregs fpregs
+	mc_flags  int32
+	mc_pad    int32
+	mc_spare  [8]uint64
 }
 
 type ucontext struct {
@@ -256,9 +240,8 @@ type vdsoTimehands struct {
 	counter_mask uint32
 	offset       bintime
 	boottime     bintime
-	x86_shift    uint32
-	x86_hpet_idx uint32
-	res          [6]uint32
+	physical     uint32
+	res          [7]uint32
 }
 
 type vdsoTimekeep struct {

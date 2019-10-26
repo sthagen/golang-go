@@ -814,7 +814,7 @@ func runInstall(dir string, ch chan struct{}) {
 		// Define GOMIPS_value from gomips.
 		asmArgs = append(asmArgs, "-D", "GOMIPS_"+gomips)
 	}
-	if goarch == "mips64" || goarch == "mipsle64" {
+	if goarch == "mips64" || goarch == "mips64le" {
 		// Define GOMIPS64_value from gomips64.
 		asmArgs = append(asmArgs, "-D", "GOMIPS64_"+gomips64)
 	}
@@ -1485,6 +1485,7 @@ var cgoEnabled = map[string]bool{
 	"freebsd/386":     true,
 	"freebsd/amd64":   true,
 	"freebsd/arm":     true,
+	"freebsd/arm64":   false,
 	"illumos/amd64":   true,
 	"linux/386":       true,
 	"linux/amd64":     true,

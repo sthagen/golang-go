@@ -349,6 +349,32 @@ func heapBitsForAddr(addr uintptr) (h heapBits) {
 	return
 }
 
+// badPointer throws bad pointer in heap panic.
+func badPointer(s *mspan, p, refBase, refOff uintptr) {
+	// Typically this indicates an incorrect use
+	// of unsafe or cgo to store a bad pointer in
+	// the Go heap. It may also indicate a runtime
+	// bug.
+	//
+	// TODO(austin): We could be more aggressive
+	// and detect pointers to unallocated objects
+	// in allocated spans.
+	printlock()
+	print("runtime: pointer ", hex(p))
+	if s.state != mSpanInUse {
+		print(" to unallocated span")
+	} else {
+		print(" to unused region of span")
+	}
+	print(" span.base()=", hex(s.base()), " span.limit=", hex(s.limit), " span.state=", s.state, "\n")
+	if refBase != 0 {
+		print("runtime: found in object at *(", hex(refBase), "+", hex(refOff), ")\n")
+		gcDumpObject("object", refBase, refOff)
+	}
+	getg().m.traceback = 2
+	throw("found bad pointer in Go heap (incorrect use of unsafe or cgo?)")
+}
+
 // findObject returns the base address for the heap object containing
 // the address p, the object's span, and the index of the object in s.
 // If p does not point into a heap object, it returns base == 0.
@@ -359,42 +385,27 @@ func heapBitsForAddr(addr uintptr) (h heapBits) {
 // refBase and refOff optionally give the base address of the object
 // in which the pointer p was found and the byte offset at which it
 // was found. These are used for error reporting.
+//
+// It is nosplit so it is safe for p to be a pointer to the current goroutine's stack.
+// Since p is a uintptr, it would not be adjusted if the stack were to move.
+//go:nosplit
 func findObject(p, refBase, refOff uintptr) (base uintptr, s *mspan, objIndex uintptr) {
 	s = spanOf(p)
+	// If s is nil, the virtual address has never been part of the heap.
+	// This pointer may be to some mmap'd region, so we allow it.
+	if s == nil {
+		return
+	}
 	// If p is a bad pointer, it may not be in s's bounds.
-	if s == nil || p < s.base() || p >= s.limit || s.state != mSpanInUse {
-		if s == nil || s.state == mSpanManual {
-			// If s is nil, the virtual address has never been part of the heap.
-			// This pointer may be to some mmap'd region, so we allow it.
-			// Pointers into stacks are also ok, the runtime manages these explicitly.
+	if p < s.base() || p >= s.limit || s.state != mSpanInUse {
+		// Pointers into stacks are also ok, the runtime manages these explicitly.
+		if s.state == mSpanManual {
 			return
 		}
-
 		// The following ensures that we are rigorous about what data
 		// structures hold valid pointers.
 		if debug.invalidptr != 0 {
-			// Typically this indicates an incorrect use
-			// of unsafe or cgo to store a bad pointer in
-			// the Go heap. It may also indicate a runtime
-			// bug.
-			//
-			// TODO(austin): We could be more aggressive
-			// and detect pointers to unallocated objects
-			// in allocated spans.
-			printlock()
-			print("runtime: pointer ", hex(p))
-			if s.state != mSpanInUse {
-				print(" to unallocated span")
-			} else {
-				print(" to unused region of span")
-			}
-			print(" span.base()=", hex(s.base()), " span.limit=", hex(s.limit), " span.state=", s.state, "\n")
-			if refBase != 0 {
-				print("runtime: found in object at *(", hex(refBase), "+", hex(refOff), ")\n")
-				gcDumpObject("object", refBase, refOff)
-			}
-			getg().m.traceback = 2
-			throw("found bad pointer in Go heap (incorrect use of unsafe or cgo?)")
+			badPointer(s, p, refBase, refOff)
 		}
 		return
 	}
