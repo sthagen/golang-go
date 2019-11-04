@@ -1625,6 +1625,7 @@ func dropm() {
 
 	// Return mp.curg to dead state.
 	casgstatus(mp.curg, _Gsyscall, _Gdead)
+	mp.curg.preemptStop = false
 	atomic.Xadd(&sched.ngsys, +1)
 
 	// Block signals before unminit.
@@ -2486,11 +2487,13 @@ func schedule() {
 	}
 
 top:
+	pp := _g_.m.p.ptr()
+	pp.preempt = false
+
 	if sched.gcwaiting != 0 {
 		gcstopm()
 		goto top
 	}
-	pp := _g_.m.p.ptr()
 	if pp.runSafePointFn != 0 {
 		runSafePointFn()
 	}
@@ -4359,6 +4362,7 @@ func checkdead() {
 	}
 	unlock(&allglock)
 	if grunning == 0 { // possible if main goroutine calls runtime·Goexit()
+		unlock(&sched.lock) // unlock so that GODEBUG=scheddetail=1 doesn't hang
 		throw("no goroutines (main called runtime.Goexit) - deadlock!")
 	}
 
@@ -4411,6 +4415,7 @@ func checkdead() {
 	}
 
 	getg().m.throwing = -1 // do not dump full stacks
+	unlock(&sched.lock)    // unlock so that GODEBUG=scheddetail=1 doesn't hang
 	throw("all goroutines are asleep - deadlock!")
 }
 
@@ -4651,6 +4656,13 @@ func preemptone(_p_ *p) bool {
 	// Setting gp->stackguard0 to StackPreempt folds
 	// preemption into the normal stack overflow check.
 	gp.stackguard0 = stackPreempt
+
+	// Request an async preemption of this P.
+	if preemptMSupported && debug.asyncpreemptoff == 0 {
+		_p_.preempt = true
+		preemptM(mp)
+	}
+
 	return true
 }
 
