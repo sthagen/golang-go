@@ -1187,7 +1187,7 @@ func (ctxt *Link) hostlink() {
 
 	switch ctxt.HeadType {
 	case objabi.Hdarwin:
-		if !ctxt.Arch.InFamily(sys.ARM, sys.ARM64) {
+		if machoPlatform == PLATFORM_MACOS {
 			// -headerpad is incompatible with -fembed-bitcode.
 			argv = append(argv, "-Wl,-headerpad,1144")
 		}
@@ -1227,7 +1227,7 @@ func (ctxt *Link) hostlink() {
 	switch ctxt.BuildMode {
 	case BuildModeExe:
 		if ctxt.HeadType == objabi.Hdarwin {
-			if !ctxt.Arch.InFamily(sys.ARM, sys.ARM64) {
+			if machoPlatform == PLATFORM_MACOS {
 				argv = append(argv, "-Wl,-no_pie")
 				argv = append(argv, "-Wl,-pagezero_size,4000000")
 			}
@@ -2191,9 +2191,8 @@ func stkcheck(ctxt *Link, up *chain, depth int) int {
 		// Process calls in this span.
 		for ; ri < endr && uint32(s.R[ri].Off) < pcsp.NextPC; ri++ {
 			r = &s.R[ri]
-			switch r.Type {
-			// Direct call.
-			case objabi.R_CALL, objabi.R_CALLARM, objabi.R_CALLARM64, objabi.R_CALLPOWER, objabi.R_CALLMIPS:
+			switch {
+			case r.Type.IsDirectCall():
 				ch.limit = int(int32(limit) - pcsp.Value - int32(callsize(ctxt)))
 				ch.sym = r.Sym
 				if stkcheck(ctxt, &ch, depth+1) < 0 {
@@ -2204,9 +2203,8 @@ func stkcheck(ctxt *Link, up *chain, depth int) int {
 			// so we have to make sure it can call morestack.
 			// Arrange the data structures to report both calls, so that
 			// if there is an error, stkprint shows all the steps involved.
-			case objabi.R_CALLIND:
+			case r.Type == objabi.R_CALLIND:
 				ch.limit = int(int32(limit) - pcsp.Value - int32(callsize(ctxt)))
-
 				ch.sym = nil
 				ch1.limit = ch.limit - callsize(ctxt) // for morestack in called prologue
 				ch1.up = &ch
@@ -2525,7 +2523,7 @@ func (ctxt *Link) callgraph() {
 			if r.Sym == nil {
 				continue
 			}
-			if (r.Type == objabi.R_CALL || r.Type == objabi.R_CALLARM || r.Type == objabi.R_CALLARM64 || r.Type == objabi.R_CALLPOWER || r.Type == objabi.R_CALLMIPS) && r.Sym.Type == sym.STEXT {
+			if r.Type.IsDirectCall() && r.Sym.Type == sym.STEXT {
 				ctxt.Logf("%s calls %s\n", s.Name, r.Sym.Name)
 			}
 		}

@@ -2753,7 +2753,22 @@ func preemptPark(gp *g) {
 	casGToPreemptScan(gp, _Grunning, _Gscan|_Gpreempted)
 	dropg()
 	casfrom_Gscanstatus(gp, _Gscan|_Gpreempted, _Gpreempted)
+	schedule()
+}
 
+// goyield is like Gosched, but it:
+// - does not emit a GoSched trace event
+// - puts the current G on the runq of the current P instead of the globrunq
+func goyield() {
+	checkTimeouts()
+	mcall(goyield_m)
+}
+
+func goyield_m(gp *g) {
+	pp := gp.m.p.ptr()
+	casgstatus(gp, _Grunning, _Grunnable)
+	dropg()
+	runqput(pp, gp, false)
 	schedule()
 }
 
@@ -4452,10 +4467,10 @@ func sysmon() {
 		}
 		usleep(delay)
 		now := nanotime()
+		next := timeSleepUntil()
 		if debug.schedtrace <= 0 && (sched.gcwaiting != 0 || atomic.Load(&sched.npidle) == uint32(gomaxprocs)) {
 			lock(&sched.lock)
 			if atomic.Load(&sched.gcwaiting) != 0 || atomic.Load(&sched.npidle) == uint32(gomaxprocs) {
-				next := timeSleepUntil()
 				if next > now {
 					atomic.Store(&sched.sysmonwait, 1)
 					unlock(&sched.lock)
@@ -4474,6 +4489,7 @@ func sysmon() {
 						osRelax(false)
 					}
 					now = nanotime()
+					next = timeSleepUntil()
 					lock(&sched.lock)
 					atomic.Store(&sched.sysmonwait, 0)
 					noteclear(&sched.sysmonnote)
@@ -4505,7 +4521,7 @@ func sysmon() {
 				incidlelocked(1)
 			}
 		}
-		if timeSleepUntil() < now {
+		if next < now {
 			// There are timers that should have already run,
 			// perhaps because there is an unpreemptible P.
 			// Try to start an M to run them.
