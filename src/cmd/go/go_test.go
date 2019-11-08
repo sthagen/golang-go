@@ -917,6 +917,7 @@ func TestNewReleaseRebuildsStalePackagesInGOPATH(t *testing.T) {
 		"src/runtime",
 		"src/internal/bytealg",
 		"src/internal/cpu",
+		"src/math/bits",
 		"src/unsafe",
 		filepath.Join("pkg", runtime.GOOS+"_"+runtime.GOARCH),
 		filepath.Join("pkg/tool", runtime.GOOS+"_"+runtime.GOARCH),
@@ -5181,52 +5182,6 @@ func TestUpxCompression(t *testing.T) {
 	}
 	if string(out) != "hello upx" {
 		t.Fatalf("bad output from compressed go binary:\ngot %q; want %q", out, "hello upx")
-	}
-}
-
-// Test that Go binaries can be run under QEMU in user-emulation mode
-// (See issue #13024).
-func TestQEMUUserMode(t *testing.T) {
-	if testing.Short() && testenv.Builder() == "" {
-		t.Skipf("skipping in -short mode on non-builder")
-	}
-
-	testArchs := []struct {
-		g, qemu string
-	}{
-		{"arm", "arm"},
-		{"arm64", "aarch64"},
-	}
-
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.tempFile("main.go", `package main; import "fmt"; func main() { fmt.Print("hello qemu-user") }`)
-	tg.parallel()
-	src, obj := tg.path("main.go"), tg.path("main")
-
-	for _, arch := range testArchs {
-		arch := arch
-		t.Run(arch.g, func(t *testing.T) {
-			qemu := "qemu-" + arch.qemu
-			testenv.MustHaveExecPath(t, qemu)
-
-			out, err := exec.Command(qemu, "--version").CombinedOutput()
-			if err != nil {
-				t.Fatalf("%s --version failed: %v", qemu, err)
-			}
-
-			tg.setenv("GOARCH", arch.g)
-			tg.run("build", "-o", obj, src)
-
-			out, err = exec.Command(qemu, obj).CombinedOutput()
-			if err != nil {
-				t.Logf("%s output:\n%s\n", qemu, out)
-				t.Fatalf("%s failed with %v", qemu, err)
-			}
-			if want := "hello qemu-user"; string(out) != want {
-				t.Errorf("bad output from %s:\ngot %s; want %s", qemu, out, want)
-			}
-		})
 	}
 }
 

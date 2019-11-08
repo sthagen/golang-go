@@ -2753,22 +2753,7 @@ func preemptPark(gp *g) {
 	casGToPreemptScan(gp, _Grunning, _Gscan|_Gpreempted)
 	dropg()
 	casfrom_Gscanstatus(gp, _Gscan|_Gpreempted, _Gpreempted)
-	schedule()
-}
 
-// goyield is like Gosched, but it:
-// - does not emit a GoSched trace event
-// - puts the current G on the runq of the current P instead of the globrunq
-func goyield() {
-	checkTimeouts()
-	mcall(goyield_m)
-}
-
-func goyield_m(gp *g) {
-	pp := gp.m.p.ptr()
-	casgstatus(gp, _Grunning, _Grunnable)
-	dropg()
-	runqput(pp, gp, false)
 	schedule()
 }
 
@@ -4097,6 +4082,14 @@ func (pp *p) destroy() {
 		}
 		pp.deferpool[i] = pp.deferpoolbuf[i][:0]
 	}
+	systemstack(func() {
+		for i := 0; i < pp.mspancache.len; i++ {
+			// Safe to call since the world is stopped.
+			mheap_.spanalloc.free(unsafe.Pointer(pp.mspancache.buf[i]))
+		}
+		pp.mspancache.len = 0
+		pp.pcache.flush(&mheap_.pages)
+	})
 	freemcache(pp.mcache)
 	pp.mcache = nil
 	gfpurge(pp)

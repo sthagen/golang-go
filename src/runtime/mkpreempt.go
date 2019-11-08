@@ -79,11 +79,11 @@ var arches = map[string]func(){
 	"386":     gen386,
 	"amd64":   genAMD64,
 	"arm":     genARM,
-	"arm64":   notImplemented,
-	"mips64x": notImplemented,
-	"mipsx":   notImplemented,
-	"ppc64x":  notImplemented,
-	"s390x":   notImplemented,
+	"arm64":   genARM64,
+	"mips64x": func() { genMIPS(true) },
+	"mipsx":   func() { genMIPS(false) },
+	"ppc64x":  genPPC64,
+	"s390x":   genS390X,
 	"wasm":    genWasm,
 }
 var beLe = map[string]bool{"mips64x": true, "mipsx": true, "ppc64x": true}
@@ -302,6 +302,207 @@ func genARM() {
 	p("MOVW %d(R13), R14", lfp.stack)     // sigctxt.pushCall pushes LR on stack, restore it
 	p("MOVW.P %d(R13), R15", lfp.stack+4) // load PC, pop frame (including the space pushed by sigctxt.pushCall)
 	p("UNDEF")                            // shouldn't get here
+}
+
+func genARM64() {
+	// Add integer registers R0-R26
+	// R27 (REGTMP), R28 (g), R29 (FP), R30 (LR), R31 (SP) are special
+	// and not saved here.
+	var l = layout{sp: "RSP", stack: 8} // add slot to save PC of interrupted instruction
+	for i := 0; i <= 26; i++ {
+		if i == 18 {
+			continue // R18 is not used, skip
+		}
+		reg := fmt.Sprintf("R%d", i)
+		l.add("MOVD", reg, 8)
+	}
+	// Add flag registers.
+	l.addSpecial(
+		"MOVD NZCV, R0\nMOVD R0, %d(RSP)",
+		"MOVD %d(RSP), R0\nMOVD R0, NZCV",
+		8)
+	l.addSpecial(
+		"MOVD FPSR, R0\nMOVD R0, %d(RSP)",
+		"MOVD %d(RSP), R0\nMOVD R0, FPSR",
+		8)
+	// TODO: FPCR? I don't think we'll change it, so no need to save.
+	// Add floating point registers F0-F31.
+	for i := 0; i <= 31; i++ {
+		reg := fmt.Sprintf("F%d", i)
+		l.add("FMOVD", reg, 8)
+	}
+	if l.stack%16 != 0 {
+		l.stack += 8 // SP needs 16-byte alignment
+	}
+
+	// allocate frame, save PC of interrupted instruction (in LR)
+	p("MOVD R30, %d(RSP)", -l.stack)
+	p("SUB $%d, RSP", l.stack)
+	p("#ifdef GOOS_linux")
+	p("MOVD R29, -8(RSP)") // save frame pointer (only used on Linux)
+	p("SUB $8, RSP, R29")  // set up new frame pointer
+	p("#endif")
+
+	l.save()
+	p("CALL ·asyncPreempt2(SB)")
+	l.restore()
+
+	p("MOVD %d(RSP), R30", l.stack) // sigctxt.pushCall has pushed LR (at interrupt) on stack, restore it
+	p("#ifdef GOOS_linux")
+	p("MOVD -8(RSP), R29") // restore frame pointer
+	p("#endif")
+	p("MOVD (RSP), R27")          // load PC to REGTMP
+	p("ADD $%d, RSP", l.stack+16) // pop frame (including the space pushed by sigctxt.pushCall)
+	p("JMP (R27)")
+}
+
+func genMIPS(_64bit bool) {
+	mov := "MOVW"
+	movf := "MOVF"
+	add := "ADD"
+	sub := "SUB"
+	r28 := "R28"
+	regsize := 4
+	if _64bit {
+		mov = "MOVV"
+		movf = "MOVD"
+		add = "ADDV"
+		sub = "SUBV"
+		r28 = "RSB"
+		regsize = 8
+	}
+
+	// Add integer registers R1-R22, R24-R25, R28
+	// R0 (zero), R23 (REGTMP), R29 (SP), R30 (g), R31 (LR) are special,
+	// and not saved here. R26 and R27 are reserved by kernel and not used.
+	var l = layout{sp: "R29", stack: regsize} // add slot to save PC of interrupted instruction (in LR)
+	for i := 1; i <= 25; i++ {
+		if i == 23 {
+			continue // R23 is REGTMP
+		}
+		reg := fmt.Sprintf("R%d", i)
+		l.add(mov, reg, regsize)
+	}
+	l.add(mov, r28, regsize)
+	l.addSpecial(
+		mov+" HI, R1\n"+mov+" R1, %d(R29)",
+		mov+" %d(R29), R1\n"+mov+" R1, HI",
+		regsize)
+	l.addSpecial(
+		mov+" LO, R1\n"+mov+" R1, %d(R29)",
+		mov+" %d(R29), R1\n"+mov+" R1, LO",
+		regsize)
+	// Add floating point control/status register FCR31 (FCR0-FCR30 are irrelevant)
+	l.addSpecial(
+		mov+" FCR31, R1\n"+mov+" R1, %d(R29)",
+		mov+" %d(R29), R1\n"+mov+" R1, FCR31",
+		regsize)
+	// Add floating point registers F0-F31.
+	for i := 0; i <= 31; i++ {
+		reg := fmt.Sprintf("F%d", i)
+		l.add(movf, reg, regsize)
+	}
+
+	// allocate frame, save PC of interrupted instruction (in LR)
+	p(mov+" R31, -%d(R29)", l.stack)
+	p(sub+" $%d, R29", l.stack)
+
+	l.save()
+	p("CALL ·asyncPreempt2(SB)")
+	l.restore()
+
+	p(mov+" %d(R29), R31", l.stack)     // sigctxt.pushCall has pushed LR (at interrupt) on stack, restore it
+	p(mov + " (R29), R23")              // load PC to REGTMP
+	p(add+" $%d, R29", l.stack+regsize) // pop frame (including the space pushed by sigctxt.pushCall)
+	p("JMP (R23)")
+}
+
+func genPPC64() {
+	// Add integer registers R3-R29
+	// R0 (zero), R1 (SP), R30 (g) are special and not saved here.
+	// R2 (TOC pointer in PIC mode), R12 (function entry address in PIC mode) have been saved in sigctxt.pushCall.
+	// R31 (REGTMP) will be saved manually.
+	var l = layout{sp: "R1", stack: 32 + 8} // MinFrameSize on PPC64, plus one word for saving R31
+	for i := 3; i <= 29; i++ {
+		if i == 12 || i == 13 {
+			// R12 has been saved in sigctxt.pushCall.
+			// R13 is TLS pointer, not used by Go code. we must NOT
+			// restore it, otherwise if we parked and resumed on a
+			// different thread we'll mess up TLS addresses.
+			continue
+		}
+		reg := fmt.Sprintf("R%d", i)
+		l.add("MOVD", reg, 8)
+	}
+	l.addSpecial(
+		"MOVW CR, R31\nMOVW R31, %d(R1)",
+		"MOVW %d(R1), R31\nMOVFL R31, $0xff", // this is MOVW R31, CR
+		8)                                    // CR is 4-byte wide, but just keep the alignment
+	l.addSpecial(
+		"MOVD XER, R31\nMOVD R31, %d(R1)",
+		"MOVD %d(R1), R31\nMOVD R31, XER",
+		8)
+	// Add floating point registers F0-F31.
+	for i := 0; i <= 31; i++ {
+		reg := fmt.Sprintf("F%d", i)
+		l.add("FMOVD", reg, 8)
+	}
+	// Add floating point control/status register FPSCR.
+	l.addSpecial(
+		"MOVFL FPSCR, F0\nFMOVD F0, %d(R1)",
+		"FMOVD %d(R1), F0\nMOVFL F0, FPSCR",
+		8)
+
+	p("MOVD R31, -%d(R1)", l.stack-32) // save R31 first, we'll use R31 for saving LR
+	p("MOVD LR, R31")
+	p("MOVDU R31, -%d(R1)", l.stack) // allocate frame, save PC of interrupted instruction (in LR)
+
+	l.save()
+	p("CALL ·asyncPreempt2(SB)")
+	l.restore()
+
+	p("MOVD %d(R1), R31", l.stack) // sigctxt.pushCall has pushed LR, R2, R12 (at interrupt) on stack, restore them
+	p("MOVD R31, LR")
+	p("MOVD %d(R1), R2", l.stack+8)
+	p("MOVD %d(R1), R12", l.stack+16)
+	p("MOVD (R1), R31") // load PC to CTR
+	p("MOVD R31, CTR")
+	p("MOVD 32(R1), R31")        // restore R31
+	p("ADD $%d, R1", l.stack+32) // pop frame (including the space pushed by sigctxt.pushCall)
+	p("JMP (CTR)")
+}
+
+func genS390X() {
+	// Add integer registers R0-R12
+	// R13 (g), R14 (LR), R15 (SP) are special, and not saved here.
+	// Saving R10 (REGTMP) is not necessary, but it is saved anyway.
+	var l = layout{sp: "R15", stack: 16} // add slot to save PC of interrupted instruction and flags
+	l.addSpecial(
+		"STMG R0, R12, %d(R15)",
+		"LMG %d(R15), R0, R12",
+		13*8)
+	// Add floating point registers F0-F31.
+	for i := 0; i <= 15; i++ {
+		reg := fmt.Sprintf("F%d", i)
+		l.add("FMOVD", reg, 8)
+	}
+
+	// allocate frame, save PC of interrupted instruction (in LR) and flags (condition code)
+	p("IPM R10") // save flags upfront, as ADD will clobber flags
+	p("MOVD R14, -%d(R15)", l.stack)
+	p("ADD $-%d, R15", l.stack)
+	p("MOVW R10, 8(R15)") // save flags
+
+	l.save()
+	p("CALL ·asyncPreempt2(SB)")
+	l.restore()
+
+	p("MOVD %d(R15), R14", l.stack)    // sigctxt.pushCall has pushed LR (at interrupt) on stack, restore it
+	p("ADD $%d, R15", l.stack+8)       // pop frame (including the space pushed by sigctxt.pushCall)
+	p("MOVWZ -%d(R15), R10", l.stack)  // load flags to REGTMP
+	p("TMLH R10, $(3<<12)")            // restore flags
+	p("MOVD -%d(R15), R10", l.stack+8) // load PC to REGTMP
+	p("JMP (R10)")
 }
 
 func genWasm() {
