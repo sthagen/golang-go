@@ -75,6 +75,7 @@ func MkEnv() []cfg.EnvVar {
 		{Name: "GOFLAGS", Value: cfg.Getenv("GOFLAGS")},
 		{Name: "GOHOSTARCH", Value: runtime.GOARCH},
 		{Name: "GOHOSTOS", Value: runtime.GOOS},
+		{Name: "GOINSECURE", Value: cfg.GOINSECURE},
 		{Name: "GONOPROXY", Value: cfg.GONOPROXY},
 		{Name: "GONOSUMDB", Value: cfg.GONOSUMDB},
 		{Name: "GOOS", Value: cfg.Goos},
@@ -352,6 +353,13 @@ func checkEnvWrite(key, val string) error {
 		case "", "auto", "on", "off":
 		default:
 			return fmt.Errorf("invalid %s value %q", key, val)
+		}
+	case "GOPATH":
+		if strings.HasPrefix(val, "~") {
+			return fmt.Errorf("GOPATH entry cannot start with shell metacharacter '~': %q", val)
+		}
+		if !filepath.IsAbs(val) && val != "" {
+			return fmt.Errorf("GOPATH entry is relative; must be absolute path: %q", val)
 		}
 	}
 
