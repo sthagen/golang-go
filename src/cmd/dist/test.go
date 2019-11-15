@@ -192,8 +192,14 @@ func (t *tester) run() {
 	}
 
 	// On a few builders, make GOROOT unwritable to catch tests writing to it.
+	restoreGOROOT := func() {}
 	if strings.HasPrefix(os.Getenv("GO_BUILDER_NAME"), "linux-") {
-		t.makeGOROOTUnwritable()
+		if os.Getuid() == 0 {
+			// Don't bother making GOROOT unwritable:
+			// we're running as root, so permissions would have no effect.
+		} else {
+			restoreGOROOT = t.makeGOROOTUnwritable()
+		}
 	}
 
 	for _, dt := range t.tests {
@@ -208,12 +214,15 @@ func (t *tester) run() {
 			if t.keepGoing {
 				log.Printf("Failed: %v", err)
 			} else {
+				restoreGOROOT()
 				log.Fatalf("Failed: %v", err)
 			}
 		}
 	}
 	t.runPending(nil)
+	restoreGOROOT()
 	timelog("end", "dist test")
+
 	if t.failed {
 		fmt.Println("\nFAILED")
 		os.Exit(1)
@@ -664,15 +673,13 @@ func (t *tester) registerTests() {
 		})
 	}
 
-	if t.hasBash() && t.cgoEnabled && goos != "android" && goos != "darwin" {
-		t.registerTest("testgodefs", "../misc/cgo/testgodefs", "./test.bash")
-	}
-
 	// Don't run these tests with $GO_GCFLAGS because most of them
 	// assume that they can run "go install" with no -gcflags and not
 	// recompile the entire standard library. If make.bash ran with
 	// special -gcflags, that's not true.
 	if t.cgoEnabled && gogcflags == "" {
+		t.registerHostTest("testgodefs", "../misc/cgo/testgodefs", "misc/cgo/testgodefs", ".")
+
 		t.registerTest("testso", "../misc/cgo/testso", t.goTest(), t.timeout(600), ".")
 		t.registerTest("testsovar", "../misc/cgo/testsovar", t.goTest(), t.timeout(600), ".")
 		if t.supportedBuildmode("c-archive") {
@@ -703,10 +710,10 @@ func (t *tester) registerTests() {
 
 	// Doc tests only run on builders.
 	// They find problems approximately never.
-	if t.hasBash() && goos != "js" && goos != "android" && !t.iOS() && os.Getenv("GO_BUILDER_NAME") != "" {
-		t.registerTest("doc_progs", "../doc/progs", "time", "go", "run", "run.go")
-		t.registerTest("wiki", "../doc/articles/wiki", "./test.bash")
-		t.registerTest("codewalk", "../doc/codewalk", "time", "./run")
+	if goos != "js" && goos != "android" && !t.iOS() && os.Getenv("GO_BUILDER_NAME") != "" {
+		t.registerTest("doc_progs", "../doc/progs", "go", "run", "run.go")
+		t.registerTest("wiki", "../doc/articles/wiki", t.goTest(), ".")
+		t.registerTest("codewalk", "../doc/codewalk", t.goTest(), "codewalk_test.go")
 	}
 
 	if goos != "android" && !t.iOS() {
@@ -1423,32 +1430,45 @@ func (t *tester) packageHasBenchmarks(pkg string) bool {
 
 // makeGOROOTUnwritable makes all $GOROOT files & directories non-writable to
 // check that no tests accidentally write to $GOROOT.
-func (t *tester) makeGOROOTUnwritable() {
-	if os.Getenv("GO_BUILDER_NAME") == "" {
-		panic("not a builder")
-	}
-	if os.Getenv("GOROOT") == "" {
+func (t *tester) makeGOROOTUnwritable() (undo func()) {
+	dir := os.Getenv("GOROOT")
+	if dir == "" {
 		panic("GOROOT not set")
 	}
-	err := filepath.Walk(os.Getenv("GOROOT"), func(name string, fi os.FileInfo, err error) error {
-		if err != nil {
-			return err
+
+	type pathMode struct {
+		path string
+		mode os.FileMode
+	}
+	var dirs []pathMode // in lexical order
+
+	undo = func() {
+		for i := range dirs {
+			os.Chmod(dirs[i].path, dirs[i].mode) // best effort
 		}
-		if !fi.Mode().IsRegular() && !fi.IsDir() {
-			return nil
-		}
-		mode := fi.Mode()
-		newMode := mode & ^os.FileMode(0222)
-		if newMode != mode {
-			if err := os.Chmod(name, newMode); err != nil {
-				return err
+	}
+
+	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err == nil {
+			mode := info.Mode()
+			if mode&0222 != 0 && (mode.IsDir() || mode.IsRegular()) {
+				dirs = append(dirs, pathMode{path, mode})
 			}
 		}
 		return nil
 	})
-	if err != nil {
-		log.Fatalf("making builder's files read-only: %v", err)
+
+	// Run over list backward to chmod children before parents.
+	for i := len(dirs) - 1; i >= 0; i-- {
+		err := os.Chmod(dirs[i].path, dirs[i].mode&^0222)
+		if err != nil {
+			dirs = dirs[i:] // Only undo what we did so far.
+			undo()
+			log.Fatalf("failed to make GOROOT read-only: %v", err)
+		}
 	}
+
+	return undo
 }
 
 // shouldUsePrecompiledStdTest reports whether "dist test" should use
