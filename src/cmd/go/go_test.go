@@ -946,7 +946,7 @@ func TestNewReleaseRebuildsStalePackagesInGOPATH(t *testing.T) {
 					return err
 				}
 				tg.tempFile(dest, string(data))
-				if err := os.Chmod(tg.path(dest), info.Mode()); err != nil {
+				if err := os.Chmod(tg.path(dest), info.Mode()|0200); err != nil {
 					return err
 				}
 				return nil
@@ -1315,23 +1315,6 @@ func TestRelativeGOBINFail(t *testing.T) {
 	tg.grepStderr("cannot install, GOBIN must be an absolute path", "go install must fail if $GOBIN is a relative path")
 }
 
-func TestPackageMainTestImportsArchiveNotBinary(t *testing.T) {
-	tooSlow(t)
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.parallel()
-	gobin := filepath.Join(tg.pwd(), "testdata", "bin")
-	tg.creatingTemp(gobin)
-	tg.setenv("GOBIN", gobin)
-	tg.setenv("GOPATH", filepath.Join(tg.pwd(), "testdata"))
-	tg.must(os.Chtimes("./testdata/src/main_test/m.go", time.Now(), time.Now()))
-	tg.sleep()
-	tg.run("test", "main_test")
-	tg.run("install", "main_test")
-	tg.wantNotStale("main_test", "", "after go install, main listed as stale")
-	tg.run("test", "main_test")
-}
-
 func TestPackageMainTestCompilerFlags(t *testing.T) {
 	tg := testgo(t)
 	defer tg.cleanup()
@@ -1391,48 +1374,6 @@ func TestGoGetTestOnlyPkg(t *testing.T) {
 	tg.setenv("GOPATH", tg.path("gopath"))
 	tg.run("get", "golang.org/x/tour/content...")
 	tg.run("get", "-t", "golang.org/x/tour/content...")
-}
-
-func TestInstalls(t *testing.T) {
-	if testing.Short() {
-		t.Skip("don't install into GOROOT in short mode")
-	}
-
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.parallel()
-	tg.tempDir("gobin")
-	tg.setenv("GOPATH", tg.path("."))
-	goroot := runtime.GOROOT()
-	tg.setenv("GOROOT", goroot)
-
-	// cmd/fix installs into tool
-	tg.run("env", "GOOS")
-	goos := strings.TrimSpace(tg.getStdout())
-	tg.setenv("GOOS", goos)
-	tg.run("env", "GOARCH")
-	goarch := strings.TrimSpace(tg.getStdout())
-	tg.setenv("GOARCH", goarch)
-	fixbin := filepath.Join(goroot, "pkg", "tool", goos+"_"+goarch, "fix") + exeSuffix
-	tg.must(robustio.RemoveAll(fixbin))
-	tg.run("install", "cmd/fix")
-	tg.wantExecutable(fixbin, "did not install cmd/fix to $GOROOT/pkg/tool")
-	tg.must(os.Remove(fixbin))
-	tg.setenv("GOBIN", tg.path("gobin"))
-	tg.run("install", "cmd/fix")
-	tg.wantExecutable(fixbin, "did not install cmd/fix to $GOROOT/pkg/tool with $GOBIN set")
-	tg.unsetenv("GOBIN")
-
-	// gopath program installs into GOBIN
-	tg.tempFile("src/progname/p.go", `package main; func main() {}`)
-	tg.setenv("GOBIN", tg.path("gobin"))
-	tg.run("install", "progname")
-	tg.unsetenv("GOBIN")
-	tg.wantExecutable(tg.path("gobin/progname")+exeSuffix, "did not install progname to $GOBIN/progname")
-
-	// gopath program installs into GOPATH/bin
-	tg.run("install", "progname")
-	tg.wantExecutable(tg.path("bin/progname")+exeSuffix, "did not install progname to $GOPATH/bin/progname")
 }
 
 // Issue 4104.
@@ -3308,7 +3249,17 @@ func TestGoTestRaceInstallCgo(t *testing.T) {
 	cgo := strings.TrimSpace(tg.stdout.String())
 	old, err := os.Stat(cgo)
 	tg.must(err)
-	tg.run("test", "-race", "-i", "runtime/race")
+
+	// For this test, we don't actually care whether 'go test -race -i' succeeds.
+	// It may fail, for example, if GOROOT was installed from source as root and
+	// is now read-only.
+	// We only care that — regardless of whether it succeeds — it does not
+	// overwrite cmd/cgo.
+	runArgs := []string{"test", "-race", "-i", "runtime/race"}
+	if status := tg.doRun(runArgs); status != nil {
+		tg.t.Logf("go %v failure ignored: %v", runArgs, status)
+	}
+
 	new, err := os.Stat(cgo)
 	tg.must(err)
 	if !new.ModTime().Equal(old.ModTime()) {
@@ -4867,122 +4818,6 @@ func TestTestCache(t *testing.T) {
 	// collection of unused variables is not turned on by default.
 	if runtime.Compiler != "gccgo" {
 		tg.grepStdout(`ok  \tt/t4\t\(cached\)`, "did not cache t/t4")
-	}
-}
-
-func TestTestCacheInputs(t *testing.T) {
-	tooSlow(t)
-
-	if strings.Contains(os.Getenv("GODEBUG"), "gocacheverify") {
-		t.Skip("GODEBUG gocacheverify")
-	}
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.parallel()
-	tg.makeTempdir()
-	tg.setenv("GOPATH", filepath.Join(tg.pwd(), "testdata"))
-	tg.setenv("GOCACHE", tg.path("cache"))
-
-	defer os.Remove(filepath.Join(tg.pwd(), "testdata/src/testcache/file.txt"))
-	defer os.Remove(filepath.Join(tg.pwd(), "testdata/src/testcache/script.sh"))
-	tg.must(ioutil.WriteFile(filepath.Join(tg.pwd(), "testdata/src/testcache/file.txt"), []byte("x"), 0644))
-	old := time.Now().Add(-1 * time.Minute)
-	tg.must(os.Chtimes(filepath.Join(tg.pwd(), "testdata/src/testcache/file.txt"), old, old))
-	info, err := os.Stat(filepath.Join(tg.pwd(), "testdata/src/testcache/file.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Logf("file.txt: old=%v, info.ModTime=%v", old, info.ModTime()) // help debug when Chtimes lies about succeeding
-	tg.setenv("TESTKEY", "x")
-
-	tg.must(ioutil.WriteFile(filepath.Join(tg.pwd(), "testdata/src/testcache/script.sh"), []byte("#!/bin/sh\nexit 0\n"), 0755))
-	tg.must(os.Chtimes(filepath.Join(tg.pwd(), "testdata/src/testcache/script.sh"), old, old))
-
-	tg.run("test", "testcache")
-	tg.run("test", "testcache")
-	tg.grepStdout(`\(cached\)`, "did not cache")
-
-	tg.setenv("TESTKEY", "y")
-	tg.run("test", "testcache")
-	tg.grepStdoutNot(`\(cached\)`, "did not notice env var change")
-	tg.run("test", "testcache")
-	tg.grepStdout(`\(cached\)`, "did not cache")
-
-	tg.run("test", "testcache", "-run=FileSize")
-	tg.run("test", "testcache", "-run=FileSize")
-	tg.grepStdout(`\(cached\)`, "did not cache")
-	tg.must(ioutil.WriteFile(filepath.Join(tg.pwd(), "testdata/src/testcache/file.txt"), []byte("xxx"), 0644))
-	tg.run("test", "testcache", "-run=FileSize")
-	tg.grepStdoutNot(`\(cached\)`, "did not notice file size change")
-	tg.run("test", "testcache", "-run=FileSize")
-	tg.grepStdout(`\(cached\)`, "did not cache")
-
-	tg.run("test", "testcache", "-run=Chdir")
-	tg.run("test", "testcache", "-run=Chdir")
-	tg.grepStdout(`\(cached\)`, "did not cache")
-	tg.must(ioutil.WriteFile(filepath.Join(tg.pwd(), "testdata/src/testcache/file.txt"), []byte("xxxxx"), 0644))
-	tg.run("test", "testcache", "-run=Chdir")
-	tg.grepStdoutNot(`\(cached\)`, "did not notice file size change")
-	tg.run("test", "testcache", "-run=Chdir")
-	tg.grepStdout(`\(cached\)`, "did not cache")
-
-	tg.must(os.Chtimes(filepath.Join(tg.pwd(), "testdata/src/testcache/file.txt"), old, old))
-	tg.run("test", "testcache", "-run=FileContent")
-	tg.run("test", "testcache", "-run=FileContent")
-	tg.grepStdout(`\(cached\)`, "did not cache")
-	tg.must(ioutil.WriteFile(filepath.Join(tg.pwd(), "testdata/src/testcache/file.txt"), []byte("yyy"), 0644))
-	old2 := old.Add(10 * time.Second)
-	tg.must(os.Chtimes(filepath.Join(tg.pwd(), "testdata/src/testcache/file.txt"), old2, old2))
-	tg.run("test", "testcache", "-run=FileContent")
-	tg.grepStdoutNot(`\(cached\)`, "did not notice file content change")
-	tg.run("test", "testcache", "-run=FileContent")
-	tg.grepStdout(`\(cached\)`, "did not cache")
-
-	tg.run("test", "testcache", "-run=DirList")
-	tg.run("test", "testcache", "-run=DirList")
-	tg.grepStdout(`\(cached\)`, "did not cache")
-	tg.must(os.Remove(filepath.Join(tg.pwd(), "testdata/src/testcache/file.txt")))
-	tg.run("test", "testcache", "-run=DirList")
-	tg.grepStdoutNot(`\(cached\)`, "did not notice directory change")
-	tg.run("test", "testcache", "-run=DirList")
-	tg.grepStdout(`\(cached\)`, "did not cache")
-
-	tg.tempFile("file.txt", "")
-	tg.must(ioutil.WriteFile(filepath.Join(tg.pwd(), "testdata/src/testcache/testcachetmp_test.go"), []byte(`package testcache
-
-		import (
-			"os"
-			"testing"
-		)
-
-		func TestExternalFile(t *testing.T) {
-			os.Open(`+fmt.Sprintf("%q", tg.path("file.txt"))+`)
-			_, err := os.Stat(`+fmt.Sprintf("%q", tg.path("file.txt"))+`)
-			if err != nil {
-				t.Fatal(err)
-			}
-		}
-	`), 0666))
-	defer os.Remove(filepath.Join(tg.pwd(), "testdata/src/testcache/testcachetmp_test.go"))
-	tg.run("test", "testcache", "-run=ExternalFile")
-	tg.run("test", "testcache", "-run=ExternalFile")
-	tg.grepStdout(`\(cached\)`, "did not cache")
-	tg.must(os.Remove(filepath.Join(tg.tempdir, "file.txt")))
-	tg.run("test", "testcache", "-run=ExternalFile")
-	tg.grepStdout(`\(cached\)`, "did not cache")
-
-	switch runtime.GOOS {
-	case "plan9", "windows":
-		// no shell scripts
-	default:
-		tg.run("test", "testcache", "-run=Exec")
-		tg.run("test", "testcache", "-run=Exec")
-		tg.grepStdout(`\(cached\)`, "did not cache")
-		tg.must(os.Chtimes(filepath.Join(tg.pwd(), "testdata/src/testcache/script.sh"), old2, old2))
-		tg.run("test", "testcache", "-run=Exec")
-		tg.grepStdoutNot(`\(cached\)`, "did not notice script change")
-		tg.run("test", "testcache", "-run=Exec")
-		tg.grepStdout(`\(cached\)`, "did not cache")
 	}
 }
 
