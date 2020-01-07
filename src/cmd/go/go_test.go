@@ -2144,17 +2144,6 @@ func TestCoverageNoStatements(t *testing.T) {
 	tg.grepStdout("[no statements]", "expected [no statements] for pkg4")
 }
 
-func TestCoverageImportMainLoop(t *testing.T) {
-	skipIfGccgo(t, "gccgo has no cover tool")
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.setenv("GOPATH", filepath.Join(tg.pwd(), "testdata"))
-	tg.runFail("test", "importmain/test")
-	tg.grepStderr("not an importable package", "did not detect import main")
-	tg.runFail("test", "-cover", "importmain/test")
-	tg.grepStderr("not an importable package", "did not detect import main")
-}
-
 func TestCoverageErrorLine(t *testing.T) {
 	skipIfGccgo(t, "gccgo has no cover tool")
 	tooSlow(t)
@@ -2585,29 +2574,6 @@ func TestGoTestMainAsNormalTest(t *testing.T) {
 	defer tg.cleanup()
 	tg.run("test", "testdata/standalone_main_normal_test.go")
 	tg.grepBoth(okPattern, "go test did not say ok")
-}
-
-func TestGoTestMainTwice(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping in short mode")
-	}
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.makeTempdir()
-	tg.setenv("GOCACHE", tg.tempdir)
-	tg.setenv("GOPATH", filepath.Join(tg.pwd(), "testdata"))
-	tg.run("test", "-v", "multimain")
-	if strings.Count(tg.getStdout(), "notwithstanding") != 2 {
-		t.Fatal("tests did not run twice")
-	}
-}
-
-func TestGoTestFlagsAfterPackage(t *testing.T) {
-	tooSlow(t)
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.run("test", "testdata/flag_test.go", "-v", "-args", "-v=7") // Two distinct -v flags.
-	tg.run("test", "-v", "testdata/flag_test.go", "-args", "-v=7") // Two distinct -v flags.
 }
 
 func TestGoTestXtestonlyWorks(t *testing.T) {
@@ -4120,60 +4086,6 @@ func main() {}`)
 	}))
 }
 
-func TestTestRegexps(t *testing.T) {
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.setenv("GOPATH", filepath.Join(tg.pwd(), "testdata"))
-	tg.run("test", "-cpu=1", "-run=X/Y", "-bench=X/Y", "-count=2", "-v", "testregexp")
-	var lines []string
-	for _, line := range strings.SplitAfter(tg.getStdout(), "\n") {
-		if strings.Contains(line, "=== RUN") || strings.Contains(line, "--- BENCH") || strings.Contains(line, "LOG") {
-			lines = append(lines, line)
-		}
-	}
-
-	// Important parts:
-	//	TestX is run, twice
-	//	TestX/Y is run, twice
-	//	TestXX is run, twice
-	//	TestZ is not run
-	//	BenchmarkX is run but only with N=1, once
-	//	BenchmarkXX is run but only with N=1, once
-	//	BenchmarkX/Y is run in full, twice
-	want := `=== RUN   TestX
-    TestX: x_test.go:6: LOG: X running
-=== RUN   TestX/Y
-    TestX/Y: x_test.go:8: LOG: Y running
-=== RUN   TestXX
-    TestXX: z_test.go:10: LOG: XX running
-=== RUN   TestX
-    TestX: x_test.go:6: LOG: X running
-=== RUN   TestX/Y
-    TestX/Y: x_test.go:8: LOG: Y running
-=== RUN   TestXX
-    TestXX: z_test.go:10: LOG: XX running
-    BenchmarkX: x_test.go:13: LOG: X running N=1
-    BenchmarkX/Y: x_test.go:15: LOG: Y running N=1
-    BenchmarkX/Y: x_test.go:15: LOG: Y running N=100
-    BenchmarkX/Y: x_test.go:15: LOG: Y running N=10000
-    BenchmarkX/Y: x_test.go:15: LOG: Y running N=1000000
-    BenchmarkX/Y: x_test.go:15: LOG: Y running N=100000000
-    BenchmarkX/Y: x_test.go:15: LOG: Y running N=1000000000
-    BenchmarkX/Y: x_test.go:15: LOG: Y running N=1
-    BenchmarkX/Y: x_test.go:15: LOG: Y running N=100
-    BenchmarkX/Y: x_test.go:15: LOG: Y running N=10000
-    BenchmarkX/Y: x_test.go:15: LOG: Y running N=1000000
-    BenchmarkX/Y: x_test.go:15: LOG: Y running N=100000000
-    BenchmarkX/Y: x_test.go:15: LOG: Y running N=1000000000
-    BenchmarkXX: z_test.go:18: LOG: XX running N=1
-`
-
-	have := strings.Join(lines, "")
-	if have != want {
-		t.Errorf("reduced output:<<<\n%s>>> want:<<<\n%s>>>", have, want)
-	}
-}
-
 func TestListTests(t *testing.T) {
 	tooSlow(t)
 	var tg *testgoData
@@ -4765,14 +4677,6 @@ func TestInstallDeps(t *testing.T) {
 
 	tg.run("install", "-i", "p2")
 	tg.mustExist(p1)
-}
-
-func TestGoTestMinusN(t *testing.T) {
-	// Intent here is to verify that 'go test -n' works without crashing.
-	// This reuses flag_test.go, but really any test would do.
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.run("test", "testdata/flag_test.go", "-n", "-args", "-v=7")
 }
 
 func TestGoTestJSON(t *testing.T) {
