@@ -1041,56 +1041,6 @@ func TestInternalCache(t *testing.T) {
 	tg.grepStderr("internal", "did not fail to build p")
 }
 
-func TestImportCommandMatch(t *testing.T) {
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.setenv("GOPATH", filepath.Join(tg.pwd(), "testdata/importcom"))
-	tg.run("build", "./testdata/importcom/works.go")
-}
-
-func TestImportCommentMismatch(t *testing.T) {
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.setenv("GOPATH", filepath.Join(tg.pwd(), "testdata/importcom"))
-	tg.runFail("build", "./testdata/importcom/wrongplace.go")
-	tg.grepStderr(`wrongplace expects import "my/x"`, "go build did not mention incorrect import")
-}
-
-func TestImportCommentSyntaxError(t *testing.T) {
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.setenv("GOPATH", filepath.Join(tg.pwd(), "testdata/importcom"))
-	tg.runFail("build", "./testdata/importcom/bad.go")
-	tg.grepStderr("cannot parse import comment", "go build did not mention syntax error")
-}
-
-func TestImportCommentConflict(t *testing.T) {
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.setenv("GOPATH", filepath.Join(tg.pwd(), "testdata/importcom"))
-	tg.runFail("build", "./testdata/importcom/conflict.go")
-	tg.grepStderr("found import comments", "go build did not mention comment conflict")
-}
-
-func TestImportCycle(t *testing.T) {
-	tg := testgo(t)
-	defer tg.cleanup()
-	tg.parallel()
-	tg.setenv("GOPATH", filepath.Join(tg.pwd(), "testdata/importcycle"))
-	tg.runFail("build", "selfimport")
-
-	count := tg.grepCountBoth("import cycle not allowed")
-	if count == 0 {
-		t.Fatal("go build did not mention cyclical import")
-	}
-	if count > 1 {
-		t.Fatal("go build mentioned import cycle more than once")
-	}
-
-	// Don't hang forever.
-	tg.run("list", "-e", "-json", "selfimport")
-}
-
 // cmd/go: custom import path checking should not apply to Go packages without import comment.
 func TestIssue10952(t *testing.T) {
 	testenv.MustHaveExternalNetwork(t)
@@ -3092,29 +3042,6 @@ func TestGoTestRaceInstallCgo(t *testing.T) {
 	}
 }
 
-func TestGoTestRaceFailures(t *testing.T) {
-	tooSlow(t)
-
-	if !canRace {
-		t.Skip("skipping because race detector not supported")
-	}
-
-	tg := testgo(t)
-	tg.parallel()
-	defer tg.cleanup()
-	tg.setenv("GOPATH", filepath.Join(tg.pwd(), "testdata"))
-
-	tg.run("test", "testrace")
-
-	tg.runFail("test", "-race", "testrace")
-	tg.grepStdout("FAIL: TestRace", "TestRace did not fail")
-	tg.grepBothNot("PASS", "something passed")
-
-	tg.runFail("test", "-race", "testrace", "-run", "XXX", "-bench", ".")
-	tg.grepStdout("FAIL: BenchmarkRace", "BenchmarkRace did not fail")
-	tg.grepBothNot("PASS", "something passed")
-}
-
 func TestGoGetUpdate(t *testing.T) {
 	// golang.org/issue/9224.
 	// The recursive updating was trying to walk to
@@ -4026,25 +3953,6 @@ func TestCgoFlagContainsSpace(t *testing.T) {
 	tg.grepStderrNot(`"-I[^"]+c flags".*"-I[^"]+c flags"`, "found too many quoted c flags")
 	tg.grepStderr(`"-L[^"]+ld flags"`, "did not find quoted ld flags")
 	tg.grepStderrNot(`"-L[^"]+c flags".*"-L[^"]+c flags"`, "found too many quoted ld flags")
-}
-
-// Issue #20435.
-func TestGoTestRaceCoverModeFailures(t *testing.T) {
-	tooSlow(t)
-	if !canRace {
-		t.Skip("skipping because race detector not supported")
-	}
-
-	tg := testgo(t)
-	tg.parallel()
-	defer tg.cleanup()
-	tg.setenv("GOPATH", filepath.Join(tg.pwd(), "testdata"))
-
-	tg.run("test", "testrace")
-
-	tg.runFail("test", "-race", "-covermode=set", "testrace")
-	tg.grepStderr(`-covermode must be "atomic", not "set", when -race is enabled`, "-race -covermode=set was allowed")
-	tg.grepBothNot("PASS", "something passed")
 }
 
 // Issue 9737: verify that GOARM and GO386 affect the computed build ID.
