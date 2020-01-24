@@ -55,6 +55,15 @@ func jalrToSym(ctxt *obj.Link, p *obj.Prog, newprog obj.ProgAlloc, lr int16) *ob
 	p.Mark |= NEED_PCREL_ITYPE_RELOC
 	p = obj.Appendp(p, newprog)
 
+	// TODO(jsing): This instruction is not necessary, as the lower bits
+	// of the immediate can be encoded directly in the JALR instruction.
+	// However, other code currently depends on jalrToSym being 12 bytes...
+	p.As = AADDI
+	p.From = obj.Addr{Type: obj.TYPE_CONST}
+	p.Reg = REG_TMP
+	p.To = obj.Addr{Type: obj.TYPE_REG, Reg: REG_TMP}
+	p = obj.Appendp(p, newprog)
+
 	// Leave Sym only for the CALL reloc in assemble.
 	p.As = AJALR
 	p.From.Type = obj.TYPE_REG
@@ -91,7 +100,9 @@ func progedit(ctxt *obj.Link, p *obj.Prog, newprog obj.ProgAlloc) {
 	if p.Reg == 0 {
 		switch p.As {
 		case AADDI, ASLTI, ASLTIU, AANDI, AORI, AXORI, ASLLI, ASRLI, ASRAI,
-			AADD, AAND, AOR, AXOR, ASLL, ASRL, ASUB, ASRA:
+			AADD, AAND, AOR, AXOR, ASLL, ASRL, ASUB, ASRA,
+			AMUL, AMULH, AMULHU, AMULHSU, AMULW, ADIV, ADIVU, ADIVW, ADIVUW,
+			AREM, AREMU, AREMW, AREMUW:
 			p.Reg = p.To.Reg
 		}
 	}
