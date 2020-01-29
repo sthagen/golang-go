@@ -116,6 +116,15 @@ TODO
   and <code>IsNaN</code> methods.
 </p>
 
+<h3 id="riscv">RISC-V</h3>
+
+<p><!-- Issue 27532 -->
+  Go 1.14 contains experimental support for 64-bit RISC-V on Linux
+  (<code>GOOS=linux</code>, <code>GOARCH=riscv64</code>). Be aware
+  that performance, assembly syntax stability, and possibly
+  correctness are a work in progress.
+</p>
+
 <h3 id="freebsd">FreeBSD</h3>
 
 <p><!-- CL 199919 -->
@@ -442,6 +451,17 @@ TODO
     </p>
 
 </dl><!-- encoding/asn1 -->
+
+<dl id="encoding/json"><dt><a href="/pkg/encoding/json/">encoding/json</a></dt>
+  <dd>
+    <p><!-- CL 200217 -->
+      <a href="/pkg/encoding/json/#Compact"><code>Compact</code></a> no longer
+      escapes the <code>U+2028</code> and <code>U+2029</code> characters, which
+      was never a documented feature. For proper escaping, see <a
+      href="/pkg/encoding/json/#HTMLEscape"><code>HTMLEscape</code></a>.
+    </p>
+
+</dl><!-- encoding/json -->
 
 <dl id="mime"><dt><a href="/pkg/mime/">mime</a></dt>
   <dd>
