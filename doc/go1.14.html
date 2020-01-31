@@ -41,11 +41,13 @@ appropriately.)
 <h2 id="language">Changes to the language</h2>
 
 <p>
-TODO
-</p>
-
-<p><!-- CL 187519 -->
-  TODO: <a href="https://golang.org/cl/187519">https://golang.org/cl/187519</a>: allow embedding overlapping interfaces
+  Per the <a href="https://github.com/golang/proposal/blob/master/design/6977-overlapping-interfaces.md">overlapping interfaces proposal</a>,
+  Go 1.14 now permits embedding of interfaces with overlapping method sets:
+  methods from an embedded interface may have the same names and identical signatures
+  as methods already present in the (embedding) interface. This solves problems that typically
+  (but not exclusively) occur with diamond-shaped embedding graphs.
+  Explicitly declared methods in an interface must remain
+  <a href="https://tip.golang.org/ref/spec#Uniqueness_of_identifiers">unique</a>, as before.
 </p>
 
 <h2 id="ports">Ports</h2>
@@ -139,6 +141,8 @@ TODO
   Go 1.14 drops support for the Native Client platform (<code>GOOS=nacl</code>).
 </p>
 
+<h3 id="illumos">Illumos</h3>
+
 <p><!-- CL 203758 -->
   The runtime now respects zone CPU caps
   (the <code>zone.cpu-cap</code> resource control)
@@ -174,7 +178,8 @@ TODO
   <code>go</code> <code>list</code> <code>-m</code> no longer silently omits
   transitive dependencies that do not provide packages in
   the <code>vendor</code> directory. It now fails explicitly if
-  <code>-mod=vendor</code> is set.
+  <code>-mod=vendor</code> is set and information is requested for a module not
+  mentioned in <code>vendor/modules.txt</code>.
 </p>
 
 <h4 id="go-flags">Flags</h4>
@@ -204,12 +209,13 @@ TODO
 
 <p><!-- golang.org/issue/34506 -->
   <code>-modfile=file</code> is a new flag that instructs the <code>go</code>
-  command to read (and possibly write) an alternate go.mod file instead of the
-  one in the module root directory. A file named "go.mod" must still be present
-  in order to determine the module root directory, but it is not
-  accessed. When <code>-modfile</code> is specified, an alternate go.sum file
-  is also used: its path is derived from the <code>-modfile</code> flag by
-  trimming the ".mod" extension and appending ".sum".
+  command to read (and possibly write) an alternate <code>go.mod</code> file
+  instead of the one in the module root directory. A file
+  named <code>go.mod</code> must still be present in order to determine the
+  module root directory, but it is not accessed. When <code>-modfile</code> is
+  specified, an alternate <code>go.sum</code> file is also used: its path is
+  derived from the <code>-modfile</code> flag by trimming the <code>.mod</code>
+  extension and appending <code>.sum</code>.
 </p>
 
 <h4 id="go-env-vars">Environment variables</h4>
@@ -244,8 +250,7 @@ TODO
 <p>
   <code>go</code> <code>get</code> continues to work as before, as do
   <code>go</code> <code>mod</code> <code>download</code> and
-  <code>go</code> <code>list</code> <code>-m</code> with explicit version
-  patterns.
+  <code>go</code> <code>list</code> <code>-m</code> with explicit versions.
 </p>
 
 <h4 id="incompatible-versions"><code>+incompatible</code> versions</h4>
@@ -282,8 +287,8 @@ TODO
 
 <p>
   When <code>-mod=readonly</code> is set, <code>go</code> commands will no
-  longer fail due to a missing <code>go</code> directive or erroneous
-  <code>// indirect</code> comment.
+  longer fail due to a missing <code>go</code> directive or an erroneous
+  <code>//&nbsp;indirect</code> comment.
 </p>
 
 <h4 id="module-downloading">Module downloading</h4>
@@ -427,7 +432,13 @@ TODO
 <dl id="hash/maphash"><dt><a href="/pkg/hash/maphash">hash/maphash</a></dt>
   <dd>
     <p><!-- CL 186877 -->
-      TODO: <a href="https://golang.org/cl/186877">https://golang.org/cl/186877</a>: add hashing package for bytes and strings
+      This new package provides hash functions on byte sequences.
+      These hash functions are intended to be used to implement hash tables or
+      other data structures that need to map arbitrary strings or byte
+      sequences to a uniform distribution of integers.
+    </p>
+    <p>
+      The hash functions are collision-resistant but not cryptographically secure.
     </p>
 
 </dl><!-- hash/maphash -->
@@ -471,6 +482,26 @@ TODO
 
 </dl><!-- encoding/json -->
 
+<dl id="go/doc"><dt><a href="/go/doc/">go/doc</a></dt>
+  <dd>
+    <p><!-- CL 204830 -->
+      The new
+      function <a href="/pkg/go/doc/#NewFromFiles"><code>NewFromFiles</code></a>
+      computes package documentation from a list
+      of <code>*ast.File</code>'s and associates examples with the
+      appropriate package elements.
+      The new information is available in a new <code>Examples</code>
+      field
+      in the <a href="/pkg/go/doc/#Package"><code>Package</code></a>, <a href="/pkg/go/doc/#Type"><code>Type</code></a>,
+      and <a href="/pkg/go/doc/#Func"><code>Func</code></a> types, and a
+      new <a href="/pkg/go/doc/#Example.Suffix"><code>Suffix</code></a>
+      field in
+      the <a href="/pkg/go/doc/#Example"><code>Example</code></a>
+      type.
+    </p>
+  </dd>
+</dl><!-- go/doc -->
+
 <dl id="mime"><dt><a href="/pkg/mime/">mime</a></dt>
   <dd>
     <p><!-- CL 186927 -->
@@ -494,7 +525,7 @@ TODO
 <dl id="math/big"><dt><a href="/pkg/math/big">math/big</a></dt>
   <dd>
     <p><!-- CL 164972 -->
-      The <a href="/pkg/math/big#GCD"><code>GCD</code></a> function
+      The <a href="/pkg/math/big/#GCD"><code>GCD</code></a> function
       now allows the inputs <code>a</code> and <code>b</code> to be
       zero or negative.
     </p>
