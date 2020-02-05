@@ -27,9 +27,6 @@ Do not send CLs removing the interior tags from such phrases.
 <p>
 Module support in the <code>go</code> command is now ready for production use,
 and we encourage all users to migrate to Go modules for dependency management.
-</p>
-
-<p>
 If you are unable to migrate due to a problem in the Go toolchain,
 please ensure that the problem has an
 <a href="https://golang.org/issue?q=is%3Aissue+is%3Aopen+label%3Amodules">open issue</a>
@@ -51,24 +48,6 @@ appropriately.)
 </p>
 
 <h2 id="ports">Ports</h2>
-
-<p>
-  TODO: is Dragonfly passing? On both Dragonfly release & tip? (ABI
-  change happened) Does the net package's interface APIs work on both?
-  https://golang.org/issue/34368.
-</p>
-
-<p>
-  TODO: is Illumos up with a builder and passing?
-  https://golang.org/issue/15581.
-</p>
-
-<p>
-  TODO: announce something about the Go Solaris port? Solaris itself
-  is unmaintained? The builder is still running at Oracle, but the
-  employee who set it up left the company and we have no way to
-  maintain it.
-</p>
 
 <h3 id="darwin">Darwin</h3>
 
@@ -425,7 +404,7 @@ appropriately.)
 <h2 id="library">Core library</h2>
 
 <p>
-TODO
+  All of the changes to the standard library are minor.
 </p>
 
 <h3 id="minor_library_changes">Minor changes to the library</h3>
@@ -436,7 +415,7 @@ TODO
   in mind.
 </p>
 
-<dl id="hash/maphash"><dt><a href="/pkg/hash/maphash">hash/maphash</a></dt>
+<dl id="hash/maphash"><dt><a href="/pkg/hash/maphash/">hash/maphash</a></dt>
   <dd>
     <p><!-- CL 186877 -->
       This new package provides hash functions on byte sequences.
@@ -546,7 +525,10 @@ TODO
 <dl id="encoding/asn1"><dt><a href="/pkg/encoding/asn1/">encoding/asn1</a></dt>
   <dd>
     <p><!-- CL 126624 -->
-      TODO: <a href="https://golang.org/cl/126624">https://golang.org/cl/126624</a>: handle ASN1&#39;s string type BMPString
+      <a href="/pkg/encoding/asn1/#Unmarshal"><code>Unmarshal</code></a>
+      now supports ASN.1 string type BMPString, represented by the new
+      <a href="/pkg/encoding/asn1/#TagBMPString"><code>TagBMPString</code></a>
+      constant.
     </p>
 
 </dl><!-- encoding/asn1 -->
@@ -594,7 +576,7 @@ TODO
   </dd>
 </dl><!-- log -->
 
-<dl id="go/doc"><dt><a href="/go/doc/">go/doc</a></dt>
+<dl id="go/doc"><dt><a href="/pkg/go/doc/">go/doc</a></dt>
   <dd>
     <p><!-- CL 204830 -->
       The new
@@ -626,7 +608,7 @@ TODO
 
 </dl><!-- math -->
 
-<dl id="math/big"><dt><a href="/pkg/math/big">math/big</a></dt>
+<dl id="math/big"><dt><a href="/pkg/math/big/">math/big</a></dt>
   <dd>
     <p><!-- CL 164972 -->
       The <a href="/pkg/math/big/#Int.GCD"><code>GCD</code></a> method
@@ -698,7 +680,7 @@ TODO
   </dd>
 </dl><!-- net/http -->
 
-<dl id="net/http/httptest"><dt><a href="/net/http/httptest/">net/http/httptest</a></dt>
+<dl id="net/http/httptest"><dt><a href="/pkg/net/http/httptest/">net/http/httptest</a></dt>
   <dd>
     <p><!-- CL 201557 -->
       The
@@ -720,6 +702,18 @@ TODO
     </p>
   </dd>
 </dl><!-- net/textproto -->
+
+<dl id="os/signal"><dt><a href="/pkg/os/signal/">os/signal</a></dt>
+  <dd>
+    <p><!-- CL 187739 -->
+      On Windows,
+      the <code>CTRL_CLOSE_EVENT</code>, <code>CTRL_LOGOFF_EVENT</code>,
+      and <code>CTRL_SHUTDOWN_EVENT</code> events now generate
+      a <code>syscall.SIGTERM</code> signal, similar to how Control-C
+      and Control-Break generate a <code>syscall.SIGINT</code> signal.
+    </p>
+
+</dl><!-- os/signal -->
 
 <dl id="plugin"><dt><a href="/pkg/plugin/">plugin</a></dt>
   <dd>
@@ -759,7 +753,7 @@ TODO
 
 </dl><!-- runtime -->
 
-<dl id="runtime/pprof"><dt><a href="/pkg/runtime/pprof">runtime/pprof</a></dt>
+<dl id="runtime/pprof"><dt><a href="/pkg/runtime/pprof/">runtime/pprof</a></dt>
   <dd>
     <p><!-- CL 204636, 205097 -->
     The generated profile no longer includes the pseudo-PCs used for inline
@@ -769,18 +763,6 @@ TODO
     during recent releases.
     </p>
 </dl><!-- runtime/pprof -->
-
-<dl id="signal"><dt><a href="/pkg/signal/">signal</a></dt>
-  <dd>
-    <p><!-- CL 187739 -->
-      On Windows,
-      the <code>CTRL_CLOSE_EVENT</code>, <code>CTRL_LOGOFF_EVENT</code>,
-      and <code>CTRL_SHUTDOWN_EVENT</code> events now generate
-      a <code>syscall.SIGTERM</code> signal, similar to how Control-C
-      and Control-Break generate a <code>syscall.SIGINT</code> signal.
-    </p>
-
-</dl><!-- signal -->
 
 <dl id="strconv"><dt><a href="/pkg/strconv/">strconv</a></dt>
   <dd>
