@@ -551,6 +551,7 @@ type object struct {
 func fprint(w io.Writer, n Node) {
 	switch n := n.(type) {
 	case *File:
+		seenRewrite := make(map[[3]string]string)
 		fmt.Fprintf(w, "// Code generated from gen/%s%s.rules; DO NOT EDIT.\n", n.arch.name, n.suffix)
 		fmt.Fprintf(w, "// generated with: cd gen; go run *.go\n")
 		fmt.Fprintf(w, "\npackage ssa\n")
@@ -569,6 +570,15 @@ func fprint(w io.Writer, n Node) {
 			fmt.Fprintf(w, "%c *%s) bool {\n", strings.ToLower(f.kind)[0], f.kind)
 			for _, n := range f.list {
 				fprint(w, n)
+
+				if rr, ok := n.(*RuleRewrite); ok {
+					k := [3]string{rr.match, rr.cond, rr.result}
+					if prev, ok := seenRewrite[k]; ok {
+						log.Fatalf("duplicate rule %s, previously seen at %s\n", rr.loc, prev)
+					} else {
+						seenRewrite[k] = rr.loc
+					}
+				}
 			}
 			fmt.Fprintf(w, "}\n")
 		}
@@ -1361,26 +1371,7 @@ func commute1(m string, cnt map[string]int, arch arch) []string {
 	s := split(m[1 : len(m)-1])
 	op := s[0]
 
-	// Figure out if the op is commutative or not.
-	commutative := false
-	for _, x := range genericOps {
-		if op == x.name {
-			if x.commutative {
-				commutative = true
-			}
-			break
-		}
-	}
-	if arch.name != "generic" {
-		for _, x := range arch.ops {
-			if op == x.name {
-				if x.commutative {
-					commutative = true
-				}
-				break
-			}
-		}
-	}
+	commutative := opIsCommutative(op, arch)
 	var idx0, idx1 int
 	if commutative {
 		// Find indexes of two args we can swap.
@@ -1400,9 +1391,10 @@ func commute1(m string, cnt map[string]int, arch arch) []string {
 		if idx1 == 0 {
 			log.Fatalf("couldn't find first two args of commutative op %q", s[0])
 		}
-		if cnt[s[idx0]] == 1 && cnt[s[idx1]] == 1 || s[idx0] == s[idx1] && cnt[s[idx0]] == 2 {
+		if cnt[s[idx0]] == 1 && cnt[s[idx1]] == 1 || s[idx0] == s[idx1] {
 			// When we have (Add x y) with no other uses of x and y in the matching rule,
 			// then we can skip the commutative match (Add y x).
+			// Same for (Add x x), for any x.
 			commutative = false
 		}
 	}
@@ -1482,4 +1474,27 @@ func normalizeWhitespace(x string) string {
 	x = strings.Replace(x, " )", ")", -1)
 	x = strings.Replace(x, ")->", ") ->", -1)
 	return x
+}
+
+// opIsCommutative reports whether op s is commutative.
+func opIsCommutative(op string, arch arch) bool {
+	for _, x := range genericOps {
+		if op == x.name {
+			if x.commutative {
+				return true
+			}
+			break
+		}
+	}
+	if arch.name != "generic" {
+		for _, x := range arch.ops {
+			if op == x.name {
+				if x.commutative {
+					return true
+				}
+				break
+			}
+		}
+	}
+	return false
 }

@@ -483,13 +483,13 @@ func rewriteValueS390X(v *Value) bool {
 	case OpRsh8x8:
 		return rewriteValueS390X_OpRsh8x8_0(v)
 	case OpS390XADD:
-		return rewriteValueS390X_OpS390XADD_0(v) || rewriteValueS390X_OpS390XADD_10(v)
+		return rewriteValueS390X_OpS390XADD_0(v)
 	case OpS390XADDC:
 		return rewriteValueS390X_OpS390XADDC_0(v)
 	case OpS390XADDE:
 		return rewriteValueS390X_OpS390XADDE_0(v)
 	case OpS390XADDW:
-		return rewriteValueS390X_OpS390XADDW_0(v) || rewriteValueS390X_OpS390XADDW_10(v)
+		return rewriteValueS390X_OpS390XADDW_0(v)
 	case OpS390XADDWconst:
 		return rewriteValueS390X_OpS390XADDWconst_0(v)
 	case OpS390XADDWload:
@@ -501,7 +501,7 @@ func rewriteValueS390X(v *Value) bool {
 	case OpS390XAND:
 		return rewriteValueS390X_OpS390XAND_0(v) || rewriteValueS390X_OpS390XAND_10(v)
 	case OpS390XANDW:
-		return rewriteValueS390X_OpS390XANDW_0(v) || rewriteValueS390X_OpS390XANDW_10(v)
+		return rewriteValueS390X_OpS390XANDW_0(v)
 	case OpS390XANDWconst:
 		return rewriteValueS390X_OpS390XANDWconst_0(v)
 	case OpS390XANDWload:
@@ -635,7 +635,7 @@ func rewriteValueS390X(v *Value) bool {
 	case OpS390XMOVWloadidx:
 		return rewriteValueS390X_OpS390XMOVWloadidx_0(v)
 	case OpS390XMOVWreg:
-		return rewriteValueS390X_OpS390XMOVWreg_0(v) || rewriteValueS390X_OpS390XMOVWreg_10(v) || rewriteValueS390X_OpS390XMOVWreg_20(v)
+		return rewriteValueS390X_OpS390XMOVWreg_0(v) || rewriteValueS390X_OpS390XMOVWreg_10(v)
 	case OpS390XMOVWstore:
 		return rewriteValueS390X_OpS390XMOVWstore_0(v) || rewriteValueS390X_OpS390XMOVWstore_10(v)
 	case OpS390XMOVWstoreconst:
@@ -665,7 +665,7 @@ func rewriteValueS390X(v *Value) bool {
 	case OpS390XOR:
 		return rewriteValueS390X_OpS390XOR_0(v) || rewriteValueS390X_OpS390XOR_10(v) || rewriteValueS390X_OpS390XOR_20(v) || rewriteValueS390X_OpS390XOR_30(v) || rewriteValueS390X_OpS390XOR_40(v) || rewriteValueS390X_OpS390XOR_50(v) || rewriteValueS390X_OpS390XOR_60(v) || rewriteValueS390X_OpS390XOR_70(v) || rewriteValueS390X_OpS390XOR_80(v) || rewriteValueS390X_OpS390XOR_90(v) || rewriteValueS390X_OpS390XOR_100(v) || rewriteValueS390X_OpS390XOR_110(v) || rewriteValueS390X_OpS390XOR_120(v) || rewriteValueS390X_OpS390XOR_130(v) || rewriteValueS390X_OpS390XOR_140(v) || rewriteValueS390X_OpS390XOR_150(v) || rewriteValueS390X_OpS390XOR_160(v)
 	case OpS390XORW:
-		return rewriteValueS390X_OpS390XORW_0(v) || rewriteValueS390X_OpS390XORW_10(v) || rewriteValueS390X_OpS390XORW_20(v) || rewriteValueS390X_OpS390XORW_30(v) || rewriteValueS390X_OpS390XORW_40(v) || rewriteValueS390X_OpS390XORW_50(v) || rewriteValueS390X_OpS390XORW_60(v) || rewriteValueS390X_OpS390XORW_70(v) || rewriteValueS390X_OpS390XORW_80(v) || rewriteValueS390X_OpS390XORW_90(v)
+		return rewriteValueS390X_OpS390XORW_0(v) || rewriteValueS390X_OpS390XORW_10(v) || rewriteValueS390X_OpS390XORW_20(v) || rewriteValueS390X_OpS390XORW_30(v) || rewriteValueS390X_OpS390XORW_40(v) || rewriteValueS390X_OpS390XORW_50(v) || rewriteValueS390X_OpS390XORW_60(v) || rewriteValueS390X_OpS390XORW_70(v) || rewriteValueS390X_OpS390XORW_80(v)
 	case OpS390XORWconst:
 		return rewriteValueS390X_OpS390XORWconst_0(v)
 	case OpS390XORWload:
@@ -721,9 +721,9 @@ func rewriteValueS390X(v *Value) bool {
 	case OpS390XSumBytes8:
 		return rewriteValueS390X_OpS390XSumBytes8_0(v)
 	case OpS390XXOR:
-		return rewriteValueS390X_OpS390XXOR_0(v) || rewriteValueS390X_OpS390XXOR_10(v)
+		return rewriteValueS390X_OpS390XXOR_0(v)
 	case OpS390XXORW:
-		return rewriteValueS390X_OpS390XXORW_0(v) || rewriteValueS390X_OpS390XXORW_10(v)
+		return rewriteValueS390X_OpS390XXORW_0(v)
 	case OpS390XXORWconst:
 		return rewriteValueS390X_OpS390XXORWconst_0(v)
 	case OpS390XXORWload:
@@ -6798,62 +6798,6 @@ func rewriteValueS390X_OpS390XADD_0(v *Value) bool {
 	}
 	return false
 }
-func rewriteValueS390X_OpS390XADD_10(v *Value) bool {
-	// match: (ADD <t> g:(MOVDload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ADDload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVDload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XADDload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (ADD <t> x g:(MOVDload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ADDload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
-		if g.Op != OpS390XMOVDload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XADDload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	return false
-}
 func rewriteValueS390X_OpS390XADDC_0(v *Value) bool {
 	// match: (ADDC x (MOVDconst [c]))
 	// cond: is16Bit(c)
@@ -6923,43 +6867,6 @@ func rewriteValueS390X_OpS390XADDE_0(v *Value) bool {
 		v.reset(OpS390XADDC)
 		v.AddArg(x)
 		v.AddArg(y)
-		return true
-	}
-	// match: (ADDE x y (Select1 (ADDCconst [-1] (Select0 (ADDE (MOVDconst [0]) (MOVDconst [0]) c)))))
-	// result: (ADDE x y c)
-	for {
-		_ = v.Args[2]
-		x := v.Args[0]
-		y := v.Args[1]
-		v_2 := v.Args[2]
-		if v_2.Op != OpSelect1 {
-			break
-		}
-		v_2_0 := v_2.Args[0]
-		if v_2_0.Op != OpS390XADDCconst || v_2_0.AuxInt != -1 {
-			break
-		}
-		v_2_0_0 := v_2_0.Args[0]
-		if v_2_0_0.Op != OpSelect0 {
-			break
-		}
-		v_2_0_0_0 := v_2_0_0.Args[0]
-		if v_2_0_0_0.Op != OpS390XADDE {
-			break
-		}
-		c := v_2_0_0_0.Args[2]
-		v_2_0_0_0_0 := v_2_0_0_0.Args[0]
-		if v_2_0_0_0_0.Op != OpS390XMOVDconst || v_2_0_0_0_0.AuxInt != 0 {
-			break
-		}
-		v_2_0_0_0_1 := v_2_0_0_0.Args[1]
-		if v_2_0_0_0_1.Op != OpS390XMOVDconst || v_2_0_0_0_1.AuxInt != 0 {
-			break
-		}
-		v.reset(OpS390XADDE)
-		v.AddArg(x)
-		v.AddArg(y)
-		v.AddArg(c)
 		return true
 	}
 	// match: (ADDE x y (Select1 (ADDCconst [-1] (Select0 (ADDE (MOVDconst [0]) (MOVDconst [0]) c)))))
@@ -7161,62 +7068,6 @@ func rewriteValueS390X_OpS390XADDW_0(v *Value) bool {
 		v.AddArg(mem)
 		return true
 	}
-	// match: (ADDW <t> g:(MOVWload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ADDWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVWload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XADDWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (ADDW <t> x g:(MOVWload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ADDWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
-		if g.Op != OpS390XMOVWload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XADDWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	return false
-}
-func rewriteValueS390X_OpS390XADDW_10(v *Value) bool {
 	// match: (ADDW <t> x g:(MOVWZload [off] {sym} ptr mem))
 	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
 	// result: (ADDWload <t> [off] {sym} x ptr mem)
@@ -7251,59 +7102,6 @@ func rewriteValueS390X_OpS390XADDW_10(v *Value) bool {
 		t := v.Type
 		x := v.Args[1]
 		g := v.Args[0]
-		if g.Op != OpS390XMOVWZload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XADDWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (ADDW <t> g:(MOVWZload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ADDWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVWZload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XADDWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (ADDW <t> x g:(MOVWZload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ADDWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
 		if g.Op != OpS390XMOVWZload {
 			break
 		}
@@ -7921,59 +7719,6 @@ func rewriteValueS390X_OpS390XAND_10(v *Value) bool {
 		v.AddArg(mem)
 		return true
 	}
-	// match: (AND <t> g:(MOVDload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ANDload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVDload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XANDload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (AND <t> x g:(MOVDload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ANDload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
-		if g.Op != OpS390XMOVDload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XANDload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
 	return false
 }
 func rewriteValueS390X_OpS390XANDW_0(v *Value) bool {
@@ -8071,59 +7816,6 @@ func rewriteValueS390X_OpS390XANDW_0(v *Value) bool {
 		v.AddArg(mem)
 		return true
 	}
-	// match: (ANDW <t> g:(MOVWload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ANDWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVWload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XANDWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (ANDW <t> x g:(MOVWload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ANDWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
-		if g.Op != OpS390XMOVWload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XANDWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
 	// match: (ANDW <t> x g:(MOVWZload [off] {sym} ptr mem))
 	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
 	// result: (ANDWload <t> [off] {sym} x ptr mem)
@@ -8158,62 +7850,6 @@ func rewriteValueS390X_OpS390XANDW_0(v *Value) bool {
 		t := v.Type
 		x := v.Args[1]
 		g := v.Args[0]
-		if g.Op != OpS390XMOVWZload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XANDWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (ANDW <t> g:(MOVWZload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ANDWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVWZload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XANDWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	return false
-}
-func rewriteValueS390X_OpS390XANDW_10(v *Value) bool {
-	// match: (ANDW <t> x g:(MOVWZload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ANDWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
 		if g.Op != OpS390XMOVWZload {
 			break
 		}
@@ -11085,23 +10721,6 @@ func rewriteValueS390X_OpS390XMOVBZreg_0(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVBZreg x:(MOVBZloadidx _ _ _))
-	// cond: (!x.Type.IsSigned() || x.Type.Size() > 1)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVBZloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(!x.Type.IsSigned() || x.Type.Size() > 1) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
 	// match: (MOVBZreg <t> x:(MOVBload [o] {s} p mem))
 	// cond: x.Uses == 1 && clobber(x)
 	// result: @x.Block (MOVBZload <t> [o] {s} p mem)
@@ -11128,11 +10747,6 @@ func rewriteValueS390X_OpS390XMOVBZreg_0(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XMOVBZreg_10(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (MOVBZreg <t> x:(MOVBloadidx [o] {s} p i mem))
 	// cond: x.Uses == 1 && clobber(x)
 	// result: @x.Block (MOVBZloadidx <t> [o] {s} p i mem)
@@ -11161,6 +10775,11 @@ func rewriteValueS390X_OpS390XMOVBZreg_10(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XMOVBZreg_10(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (MOVBZreg x:(Arg <t>))
 	// cond: !t.IsSigned() && t.Size() == 1
 	// result: x
@@ -11592,23 +11211,6 @@ func rewriteValueS390X_OpS390XMOVBreg_0(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVBreg x:(MOVBloadidx _ _ _))
-	// cond: (x.Type.IsSigned() || x.Type.Size() == 8)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVBloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(x.Type.IsSigned() || x.Type.Size() == 8) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
 	// match: (MOVBreg <t> x:(MOVBZload [o] {s} p mem))
 	// cond: x.Uses == 1 && clobber(x)
 	// result: @x.Block (MOVBload <t> [o] {s} p mem)
@@ -11635,11 +11237,6 @@ func rewriteValueS390X_OpS390XMOVBreg_0(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XMOVBreg_10(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (MOVBreg <t> x:(MOVBZloadidx [o] {s} p i mem))
 	// cond: x.Uses == 1 && clobber(x)
 	// result: @x.Block (MOVBloadidx <t> [o] {s} p i mem)
@@ -11668,6 +11265,11 @@ func rewriteValueS390X_OpS390XMOVBreg_10(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XMOVBreg_10(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (MOVBreg x:(Arg <t>))
 	// cond: t.IsSigned() && t.Size() == 1
 	// result: x
@@ -15049,6 +14651,7 @@ func rewriteValueS390X_OpS390XMOVHZloadidx_0(v *Value) bool {
 	return false
 }
 func rewriteValueS390X_OpS390XMOVHZreg_0(v *Value) bool {
+	b := v.Block
 	// match: (MOVHZreg e:(MOVBZreg x))
 	// cond: clobberIfDead(e)
 	// result: (MOVBZreg x)
@@ -15163,23 +14766,6 @@ func rewriteValueS390X_OpS390XMOVHZreg_0(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVHZreg x:(MOVBZloadidx _ _ _))
-	// cond: (!x.Type.IsSigned() || x.Type.Size() > 1)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVBZloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(!x.Type.IsSigned() || x.Type.Size() > 1) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
 	// match: (MOVHZreg x:(MOVHZload _ _))
 	// cond: (!x.Type.IsSigned() || x.Type.Size() > 2)
 	// result: x
@@ -15197,28 +14783,6 @@ func rewriteValueS390X_OpS390XMOVHZreg_0(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVHZreg x:(MOVHZloadidx _ _ _))
-	// cond: (!x.Type.IsSigned() || x.Type.Size() > 2)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVHZloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(!x.Type.IsSigned() || x.Type.Size() > 2) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
-	return false
-}
-func rewriteValueS390X_OpS390XMOVHZreg_10(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (MOVHZreg x:(MOVHZloadidx _ _ _))
 	// cond: (!x.Type.IsSigned() || x.Type.Size() > 2)
 	// result: x
@@ -15262,6 +14826,11 @@ func rewriteValueS390X_OpS390XMOVHZreg_10(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XMOVHZreg_10(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (MOVHZreg <t> x:(MOVHloadidx [o] {s} p i mem))
 	// cond: x.Uses == 1 && clobber(x)
 	// result: @x.Block (MOVHZloadidx <t> [o] {s} p i mem)
@@ -15678,23 +15247,6 @@ func rewriteValueS390X_OpS390XMOVHreg_0(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVHreg x:(MOVBloadidx _ _ _))
-	// cond: (x.Type.IsSigned() || x.Type.Size() == 8)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVBloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(x.Type.IsSigned() || x.Type.Size() == 8) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
 	// match: (MOVHreg x:(MOVHload _ _))
 	// cond: (x.Type.IsSigned() || x.Type.Size() == 8)
 	// result: x
@@ -15729,28 +15281,6 @@ func rewriteValueS390X_OpS390XMOVHreg_0(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XMOVHreg_10(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
-	// match: (MOVHreg x:(MOVHloadidx _ _ _))
-	// cond: (x.Type.IsSigned() || x.Type.Size() == 8)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVHloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(x.Type.IsSigned() || x.Type.Size() == 8) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
 	// match: (MOVHreg x:(MOVBZload _ _))
 	// cond: (!x.Type.IsSigned() || x.Type.Size() > 1)
 	// result: x
@@ -15768,23 +15298,11 @@ func rewriteValueS390X_OpS390XMOVHreg_10(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVHreg x:(MOVBZloadidx _ _ _))
-	// cond: (!x.Type.IsSigned() || x.Type.Size() > 1)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVBZloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(!x.Type.IsSigned() || x.Type.Size() > 1) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
+	return false
+}
+func rewriteValueS390X_OpS390XMOVHreg_10(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (MOVHreg x:(MOVBZloadidx _ _ _))
 	// cond: (!x.Type.IsSigned() || x.Type.Size() > 1)
 	// result: x
@@ -17602,23 +17120,6 @@ func rewriteValueS390X_OpS390XMOVWZreg_0(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVWZreg x:(MOVBZloadidx _ _ _))
-	// cond: (!x.Type.IsSigned() || x.Type.Size() > 1)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVBZloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(!x.Type.IsSigned() || x.Type.Size() > 1) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
 	// match: (MOVWZreg x:(MOVHZload _ _))
 	// cond: (!x.Type.IsSigned() || x.Type.Size() > 2)
 	// result: x
@@ -17653,27 +17154,6 @@ func rewriteValueS390X_OpS390XMOVWZreg_0(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVWZreg x:(MOVHZloadidx _ _ _))
-	// cond: (!x.Type.IsSigned() || x.Type.Size() > 2)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVHZloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(!x.Type.IsSigned() || x.Type.Size() > 2) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
-	return false
-}
-func rewriteValueS390X_OpS390XMOVWZreg_10(v *Value) bool {
-	b := v.Block
 	// match: (MOVWZreg x:(MOVWZload _ _))
 	// cond: (!x.Type.IsSigned() || x.Type.Size() > 4)
 	// result: x
@@ -17708,23 +17188,10 @@ func rewriteValueS390X_OpS390XMOVWZreg_10(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVWZreg x:(MOVWZloadidx _ _ _))
-	// cond: (!x.Type.IsSigned() || x.Type.Size() > 4)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVWZloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(!x.Type.IsSigned() || x.Type.Size() > 4) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
+	return false
+}
+func rewriteValueS390X_OpS390XMOVWZreg_10(v *Value) bool {
+	b := v.Block
 	// match: (MOVWZreg <t> x:(MOVWload [o] {s} p mem))
 	// cond: x.Uses == 1 && clobber(x)
 	// result: @x.Block (MOVWZload <t> [o] {s} p mem)
@@ -18135,23 +17602,6 @@ func rewriteValueS390X_OpS390XMOVWreg_0(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVWreg x:(MOVBloadidx _ _ _))
-	// cond: (x.Type.IsSigned() || x.Type.Size() == 8)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVBloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(x.Type.IsSigned() || x.Type.Size() == 8) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
 	// match: (MOVWreg x:(MOVHload _ _))
 	// cond: (x.Type.IsSigned() || x.Type.Size() == 8)
 	// result: x
@@ -18186,27 +17636,6 @@ func rewriteValueS390X_OpS390XMOVWreg_0(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVWreg x:(MOVHloadidx _ _ _))
-	// cond: (x.Type.IsSigned() || x.Type.Size() == 8)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVHloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(x.Type.IsSigned() || x.Type.Size() == 8) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
-	return false
-}
-func rewriteValueS390X_OpS390XMOVWreg_10(v *Value) bool {
-	b := v.Block
 	// match: (MOVWreg x:(MOVWload _ _))
 	// cond: (x.Type.IsSigned() || x.Type.Size() == 8)
 	// result: x
@@ -18241,23 +17670,10 @@ func rewriteValueS390X_OpS390XMOVWreg_10(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVWreg x:(MOVWloadidx _ _ _))
-	// cond: (x.Type.IsSigned() || x.Type.Size() == 8)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVWloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(x.Type.IsSigned() || x.Type.Size() == 8) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
+	return false
+}
+func rewriteValueS390X_OpS390XMOVWreg_10(v *Value) bool {
+	b := v.Block
 	// match: (MOVWreg x:(MOVBZload _ _))
 	// cond: (!x.Type.IsSigned() || x.Type.Size() > 1)
 	// result: x
@@ -18267,23 +17683,6 @@ func rewriteValueS390X_OpS390XMOVWreg_10(v *Value) bool {
 			break
 		}
 		_ = x.Args[1]
-		if !(!x.Type.IsSigned() || x.Type.Size() > 1) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
-	// match: (MOVWreg x:(MOVBZloadidx _ _ _))
-	// cond: (!x.Type.IsSigned() || x.Type.Size() > 1)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVBZloadidx {
-			break
-		}
-		_ = x.Args[2]
 		if !(!x.Type.IsSigned() || x.Type.Size() > 1) {
 			break
 		}
@@ -18343,23 +17742,6 @@ func rewriteValueS390X_OpS390XMOVWreg_10(v *Value) bool {
 		v.AddArg(x)
 		return true
 	}
-	// match: (MOVWreg x:(MOVHZloadidx _ _ _))
-	// cond: (!x.Type.IsSigned() || x.Type.Size() > 2)
-	// result: x
-	for {
-		x := v.Args[0]
-		if x.Op != OpS390XMOVHZloadidx {
-			break
-		}
-		_ = x.Args[2]
-		if !(!x.Type.IsSigned() || x.Type.Size() > 2) {
-			break
-		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
-		return true
-	}
 	// match: (MOVWreg <t> x:(MOVWZload [o] {s} p mem))
 	// cond: x.Uses == 1 && clobber(x)
 	// result: @x.Block (MOVWload <t> [o] {s} p mem)
@@ -18386,10 +17768,6 @@ func rewriteValueS390X_OpS390XMOVWreg_10(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XMOVWreg_20(v *Value) bool {
-	b := v.Block
 	// match: (MOVWreg <t> x:(MOVWZloadidx [o] {s} p i mem))
 	// cond: x.Uses == 1 && clobber(x)
 	// result: @x.Block (MOVWloadidx <t> [o] {s} p i mem)
@@ -19338,59 +18716,6 @@ func rewriteValueS390X_OpS390XMULLD_0(v *Value) bool {
 		v.AddArg(mem)
 		return true
 	}
-	// match: (MULLD <t> g:(MOVDload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (MULLDload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVDload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XMULLDload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (MULLD <t> x g:(MOVDload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (MULLDload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
-		if g.Op != OpS390XMOVDload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XMULLDload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
 	return false
 }
 func rewriteValueS390X_OpS390XMULLDconst_0(v *Value) bool {
@@ -19656,59 +18981,6 @@ func rewriteValueS390X_OpS390XMULLW_0(v *Value) bool {
 		v.AddArg(mem)
 		return true
 	}
-	// match: (MULLW <t> g:(MOVWload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (MULLWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVWload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XMULLWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (MULLW <t> x g:(MOVWload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (MULLWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
-		if g.Op != OpS390XMOVWload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XMULLWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
 	// match: (MULLW <t> x g:(MOVWZload [off] {sym} ptr mem))
 	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
 	// result: (MULLWload <t> [off] {sym} x ptr mem)
@@ -19743,59 +19015,6 @@ func rewriteValueS390X_OpS390XMULLW_0(v *Value) bool {
 		t := v.Type
 		x := v.Args[1]
 		g := v.Args[0]
-		if g.Op != OpS390XMOVWZload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XMULLWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (MULLW <t> g:(MOVWZload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (MULLWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVWZload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XMULLWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (MULLW <t> x g:(MOVWZload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (MULLWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
 		if g.Op != OpS390XMOVWZload {
 			break
 		}
@@ -20715,59 +19934,6 @@ func rewriteValueS390X_OpS390XOR_20(v *Value) bool {
 		v.AddArg(mem)
 		return true
 	}
-	// match: (OR <t> g:(MOVDload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ORload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVDload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XORload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (OR <t> x g:(MOVDload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ORload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
-		if g.Op != OpS390XMOVDload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XORload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
 	// match: (OR x1:(MOVBZload [i1] {s} p mem) sh:(SLDconst [8] x0:(MOVBZload [i0] {s} p mem)))
 	// cond: i1 == i0+1 && p.Op != OpSB && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVHZload [i0] {s} p mem)
@@ -20963,11 +20129,6 @@ func rewriteValueS390X_OpS390XOR_20(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_30(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR sh:(SLDconst [32] x0:(MOVWZload [i0] {s} p mem)) x1:(MOVWZload [i1] {s} p mem))
 	// cond: i1 == i0+4 && p.Op != OpSB && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVDload [i0] {s} p mem)
@@ -21063,6 +20224,11 @@ func rewriteValueS390X_OpS390XOR_30(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_30(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR s0:(SLDconst [j0] x0:(MOVBZload [i0] {s} p mem)) or:(OR y s1:(SLDconst [j1] x1:(MOVBZload [i1] {s} p mem))))
 	// cond: i1 == i0+1 && j1 == j0-8 && j1 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j1] (MOVHZload [i0] {s} p mem)) y)
@@ -21500,11 +20666,6 @@ func rewriteValueS390X_OpS390XOR_30(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_40(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR x1:(MOVBZloadidx [i1] {s} idx p mem) sh:(SLDconst [8] x0:(MOVBZloadidx [i0] {s} p idx mem)))
 	// cond: i1 == i0+1 && p.Op != OpSB && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVHZloadidx [i0] {s} p idx mem)
@@ -21587,6 +20748,11 @@ func rewriteValueS390X_OpS390XOR_40(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_40(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR x1:(MOVBZloadidx [i1] {s} idx p mem) sh:(SLDconst [8] x0:(MOVBZloadidx [i0] {s} idx p mem)))
 	// cond: i1 == i0+1 && p.Op != OpSB && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVHZloadidx [i0] {s} p idx mem)
@@ -21915,11 +21081,6 @@ func rewriteValueS390X_OpS390XOR_40(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_50(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR x1:(MOVHZloadidx [i1] {s} idx p mem) sh:(SLDconst [16] x0:(MOVHZloadidx [i0] {s} idx p mem)))
 	// cond: i1 == i0+2 && p.Op != OpSB && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVWZloadidx [i0] {s} p idx mem)
@@ -22002,6 +21163,11 @@ func rewriteValueS390X_OpS390XOR_50(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_50(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR sh:(SLDconst [16] x0:(MOVHZloadidx [i0] {s} idx p mem)) x1:(MOVHZloadidx [i1] {s} p idx mem))
 	// cond: i1 == i0+2 && p.Op != OpSB && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVWZloadidx [i0] {s} p idx mem)
@@ -22330,11 +21496,6 @@ func rewriteValueS390X_OpS390XOR_50(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_60(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR sh:(SLDconst [32] x0:(MOVWZloadidx [i0] {s} idx p mem)) x1:(MOVWZloadidx [i1] {s} p idx mem))
 	// cond: i1 == i0+4 && p.Op != OpSB && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVDloadidx [i0] {s} p idx mem)
@@ -22417,6 +21578,11 @@ func rewriteValueS390X_OpS390XOR_60(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_60(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR sh:(SLDconst [32] x0:(MOVWZloadidx [i0] {s} idx p mem)) x1:(MOVWZloadidx [i1] {s} idx p mem))
 	// cond: i1 == i0+4 && p.Op != OpSB && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVDloadidx [i0] {s} p idx mem)
@@ -22867,11 +22033,6 @@ func rewriteValueS390X_OpS390XOR_60(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_70(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR s0:(SLDconst [j0] x0:(MOVBZloadidx [i0] {s} idx p mem)) or:(OR y s1:(SLDconst [j1] x1:(MOVBZloadidx [i1] {s} idx p mem))))
 	// cond: i1 == i0+1 && j1 == j0-8 && j1 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j1] (MOVHZloadidx [i0] {s} p idx mem)) y)
@@ -22989,6 +22150,11 @@ func rewriteValueS390X_OpS390XOR_70(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_70(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR or:(OR s1:(SLDconst [j1] x1:(MOVBZloadidx [i1] {s} idx p mem)) y) s0:(SLDconst [j0] x0:(MOVBZloadidx [i0] {s} p idx mem)))
 	// cond: i1 == i0+1 && j1 == j0-8 && j1 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j1] (MOVHZloadidx [i0] {s} p idx mem)) y)
@@ -23457,11 +22623,6 @@ func rewriteValueS390X_OpS390XOR_70(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_80(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR s0:(SLDconst [j0] x0:(MOVHZloadidx [i0] {s} idx p mem)) or:(OR s1:(SLDconst [j1] x1:(MOVHZloadidx [i1] {s} p idx mem)) y))
 	// cond: i1 == i0+2 && j1 == j0-16 && j1 % 32 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j1] (MOVWZloadidx [i0] {s} p idx mem)) y)
@@ -23578,6 +22739,11 @@ func rewriteValueS390X_OpS390XOR_80(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_80(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR s0:(SLDconst [j0] x0:(MOVHZloadidx [i0] {s} idx p mem)) or:(OR s1:(SLDconst [j1] x1:(MOVHZloadidx [i1] {s} idx p mem)) y))
 	// cond: i1 == i0+2 && j1 == j0-16 && j1 % 32 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j1] (MOVWZloadidx [i0] {s} p idx mem)) y)
@@ -24047,11 +23213,6 @@ func rewriteValueS390X_OpS390XOR_80(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_90(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR or:(OR y s1:(SLDconst [j1] x1:(MOVHZloadidx [i1] {s} idx p mem))) s0:(SLDconst [j0] x0:(MOVHZloadidx [i0] {s} p idx mem)))
 	// cond: i1 == i0+2 && j1 == j0-16 && j1 % 32 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j1] (MOVWZloadidx [i0] {s} p idx mem)) y)
@@ -24169,6 +23330,11 @@ func rewriteValueS390X_OpS390XOR_90(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_90(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR or:(OR s1:(SLDconst [j1] x1:(MOVHZloadidx [i1] {s} idx p mem)) y) s0:(SLDconst [j0] x0:(MOVHZloadidx [i0] {s} idx p mem)))
 	// cond: i1 == i0+2 && j1 == j0-16 && j1 % 32 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j1] (MOVWZloadidx [i0] {s} p idx mem)) y)
@@ -24572,11 +23738,6 @@ func rewriteValueS390X_OpS390XOR_90(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_100(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR sh:(SLDconst [32] r1:(MOVWZreg x1:(MOVWBRload [i1] {s} p mem))) r0:(MOVWZreg x0:(MOVWBRload [i0] {s} p mem)))
 	// cond: i1 == i0+4 && x0.Uses == 1 && x1.Uses == 1 && r0.Uses == 1 && r1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(r0) && clobber(r1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVDBRload [i0] {s} p mem)
@@ -24682,6 +23843,11 @@ func rewriteValueS390X_OpS390XOR_100(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_100(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR s1:(SLDconst [j1] x1:(MOVBZload [i1] {s} p mem)) or:(OR y s0:(SLDconst [j0] x0:(MOVBZload [i0] {s} p mem))))
 	// cond: p.Op != OpSB && i1 == i0+1 && j1 == j0+8 && j0 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j0] (MOVHZreg (MOVHBRload [i0] {s} p mem))) y)
@@ -25167,11 +24333,6 @@ func rewriteValueS390X_OpS390XOR_100(v *Value) bool {
 		v0.AddArg(v1)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_110(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR x0:(MOVBZloadidx [i0] {s} idx p mem) sh:(SLDconst [8] x1:(MOVBZloadidx [i1] {s} p idx mem)))
 	// cond: p.Op != OpSB && i1 == i0+1 && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVHZreg (MOVHBRloadidx [i0] {s} p idx mem))
@@ -25258,6 +24419,11 @@ func rewriteValueS390X_OpS390XOR_110(v *Value) bool {
 		v0.AddArg(v1)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_110(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR x0:(MOVBZloadidx [i0] {s} idx p mem) sh:(SLDconst [8] x1:(MOVBZloadidx [i1] {s} idx p mem)))
 	// cond: p.Op != OpSB && i1 == i0+1 && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVHZreg (MOVHBRloadidx [i0] {s} p idx mem))
@@ -25626,11 +24792,6 @@ func rewriteValueS390X_OpS390XOR_110(v *Value) bool {
 		v0.AddArg(v1)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_120(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR r0:(MOVHZreg x0:(MOVHBRloadidx [i0] {s} idx p mem)) sh:(SLDconst [16] r1:(MOVHZreg x1:(MOVHBRloadidx [i1] {s} idx p mem))))
 	// cond: i1 == i0+2 && x0.Uses == 1 && x1.Uses == 1 && r0.Uses == 1 && r1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(r0) && clobber(r1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVWZreg (MOVWBRloadidx [i0] {s} p idx mem))
@@ -25733,6 +24894,11 @@ func rewriteValueS390X_OpS390XOR_120(v *Value) bool {
 		v0.AddArg(v1)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_120(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR sh:(SLDconst [16] r1:(MOVHZreg x1:(MOVHBRloadidx [i1] {s} idx p mem))) r0:(MOVHZreg x0:(MOVHBRloadidx [i0] {s} p idx mem)))
 	// cond: i1 == i0+2 && x0.Uses == 1 && x1.Uses == 1 && r0.Uses == 1 && r1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(r0) && clobber(r1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVWZreg (MOVWBRloadidx [i0] {s} p idx mem))
@@ -26131,11 +25297,6 @@ func rewriteValueS390X_OpS390XOR_120(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_130(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR sh:(SLDconst [32] r1:(MOVWZreg x1:(MOVWBRloadidx [i1] {s} idx p mem))) r0:(MOVWZreg x0:(MOVWBRloadidx [i0] {s} p idx mem)))
 	// cond: i1 == i0+4 && x0.Uses == 1 && x1.Uses == 1 && r0.Uses == 1 && r1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(r0) && clobber(r1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVDBRloadidx [i0] {s} p idx mem)
@@ -26234,6 +25395,11 @@ func rewriteValueS390X_OpS390XOR_130(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_130(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR sh:(SLDconst [32] r1:(MOVWZreg x1:(MOVWBRloadidx [i1] {s} idx p mem))) r0:(MOVWZreg x0:(MOVWBRloadidx [i0] {s} idx p mem)))
 	// cond: i1 == i0+4 && x0.Uses == 1 && x1.Uses == 1 && r0.Uses == 1 && r1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(r0) && clobber(r1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVDBRloadidx [i0] {s} p idx mem)
@@ -26706,11 +25872,6 @@ func rewriteValueS390X_OpS390XOR_130(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_140(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR s1:(SLDconst [j1] x1:(MOVBZloadidx [i1] {s} idx p mem)) or:(OR y s0:(SLDconst [j0] x0:(MOVBZloadidx [i0] {s} idx p mem))))
 	// cond: p.Op != OpSB && i1 == i0+1 && j1 == j0+8 && j0 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j0] (MOVHZreg (MOVHBRloadidx [i0] {s} p idx mem))) y)
@@ -26832,6 +25993,11 @@ func rewriteValueS390X_OpS390XOR_140(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_140(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR or:(OR s0:(SLDconst [j0] x0:(MOVBZloadidx [i0] {s} idx p mem)) y) s1:(SLDconst [j1] x1:(MOVBZloadidx [i1] {s} p idx mem)))
 	// cond: p.Op != OpSB && i1 == i0+1 && j1 == j0+8 && j0 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j0] (MOVHZreg (MOVHBRloadidx [i0] {s} p idx mem))) y)
@@ -27324,11 +26490,6 @@ func rewriteValueS390X_OpS390XOR_140(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_150(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR s1:(SLDconst [j1] r1:(MOVHZreg x1:(MOVHBRloadidx [i1] {s} idx p mem))) or:(OR s0:(SLDconst [j0] r0:(MOVHZreg x0:(MOVHBRloadidx [i0] {s} p idx mem))) y))
 	// cond: i1 == i0+2 && j1 == j0+16 && j0 % 32 == 0 && x0.Uses == 1 && x1.Uses == 1 && r0.Uses == 1 && r1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(r0) && clobber(r1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j0] (MOVWZreg (MOVWBRloadidx [i0] {s} p idx mem))) y)
@@ -27465,6 +26626,11 @@ func rewriteValueS390X_OpS390XOR_150(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_150(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR s1:(SLDconst [j1] r1:(MOVHZreg x1:(MOVHBRloadidx [i1] {s} idx p mem))) or:(OR s0:(SLDconst [j0] r0:(MOVHZreg x0:(MOVHBRloadidx [i0] {s} idx p mem))) y))
 	// cond: i1 == i0+2 && j1 == j0+16 && j0 % 32 == 0 && x0.Uses == 1 && x1.Uses == 1 && r0.Uses == 1 && r1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(r0) && clobber(r1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j0] (MOVWZreg (MOVWBRloadidx [i0] {s} p idx mem))) y)
@@ -28014,11 +27180,6 @@ func rewriteValueS390X_OpS390XOR_150(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XOR_160(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (OR or:(OR y s0:(SLDconst [j0] r0:(MOVHZreg x0:(MOVHBRloadidx [i0] {s} idx p mem)))) s1:(SLDconst [j1] r1:(MOVHZreg x1:(MOVHBRloadidx [i1] {s} p idx mem))))
 	// cond: i1 == i0+2 && j1 == j0+16 && j0 % 32 == 0 && x0.Uses == 1 && x1.Uses == 1 && r0.Uses == 1 && r1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(r0) && clobber(r1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j0] (MOVWZreg (MOVWBRloadidx [i0] {s} p idx mem))) y)
@@ -28156,6 +27317,11 @@ func rewriteValueS390X_OpS390XOR_160(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XOR_160(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (OR or:(OR s0:(SLDconst [j0] r0:(MOVHZreg x0:(MOVHBRloadidx [i0] {s} idx p mem))) y) s1:(SLDconst [j1] r1:(MOVHZreg x1:(MOVHBRloadidx [i1] {s} idx p mem))))
 	// cond: i1 == i0+2 && j1 == j0+16 && j0 % 32 == 0 && x0.Uses == 1 && x1.Uses == 1 && r0.Uses == 1 && r1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(r0) && clobber(r1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (OR <v.Type> (SLDconst <v.Type> [j0] (MOVWZreg (MOVWBRloadidx [i0] {s} p idx mem))) y)
@@ -28365,6 +27531,8 @@ func rewriteValueS390X_OpS390XOR_160(v *Value) bool {
 	return false
 }
 func rewriteValueS390X_OpS390XORW_0(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (ORW x (MOVDconst [c]))
 	// result: (ORWconst [int64(int32(c))] x)
 	for {
@@ -28507,59 +27675,6 @@ func rewriteValueS390X_OpS390XORW_0(v *Value) bool {
 		v.AddArg(mem)
 		return true
 	}
-	// match: (ORW <t> g:(MOVWload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ORWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVWload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XORWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (ORW <t> x g:(MOVWload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ORWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
-		if g.Op != OpS390XMOVWload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XORWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
 	// match: (ORW <t> x g:(MOVWZload [off] {sym} ptr mem))
 	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
 	// result: (ORWload <t> [off] {sym} x ptr mem)
@@ -28587,11 +27702,6 @@ func rewriteValueS390X_OpS390XORW_0(v *Value) bool {
 		v.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XORW_10(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (ORW <t> g:(MOVWZload [off] {sym} ptr mem) x)
 	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
 	// result: (ORWload <t> [off] {sym} x ptr mem)
@@ -28599,59 +27709,6 @@ func rewriteValueS390X_OpS390XORW_10(v *Value) bool {
 		t := v.Type
 		x := v.Args[1]
 		g := v.Args[0]
-		if g.Op != OpS390XMOVWZload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XORWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (ORW <t> g:(MOVWZload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ORWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVWZload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XORWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (ORW <t> x g:(MOVWZload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (ORWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
 		if g.Op != OpS390XMOVWZload {
 			break
 		}
@@ -28710,6 +27767,11 @@ func rewriteValueS390X_OpS390XORW_10(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XORW_10(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (ORW sh:(SLWconst [8] x0:(MOVBZload [i0] {s} p mem)) x1:(MOVBZload [i1] {s} p mem))
 	// cond: i1 == i0+1 && p.Op != OpSB && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVHZload [i0] {s} p mem)
@@ -28996,11 +28058,6 @@ func rewriteValueS390X_OpS390XORW_10(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XORW_20(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (ORW or:(ORW y s1:(SLWconst [j1] x1:(MOVBZload [i1] {s} p mem))) s0:(SLWconst [j0] x0:(MOVBZload [i0] {s} p mem)))
 	// cond: i1 == i0+1 && j1 == j0-8 && j1 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (ORW <v.Type> (SLWconst <v.Type> [j1] (MOVHZload [i0] {s} p mem)) y)
@@ -29181,6 +28238,11 @@ func rewriteValueS390X_OpS390XORW_20(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XORW_20(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (ORW x1:(MOVBZloadidx [i1] {s} idx p mem) sh:(SLWconst [8] x0:(MOVBZloadidx [i0] {s} idx p mem)))
 	// cond: i1 == i0+1 && p.Op != OpSB && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVHZloadidx [i0] {s} p idx mem)
@@ -29427,11 +28489,6 @@ func rewriteValueS390X_OpS390XORW_20(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XORW_30(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (ORW x1:(MOVHZloadidx [i1] {s} idx p mem) sh:(SLWconst [16] x0:(MOVHZloadidx [i0] {s} p idx mem)))
 	// cond: i1 == i0+2 && p.Op != OpSB && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVWZloadidx [i0] {s} p idx mem)
@@ -29596,6 +28653,11 @@ func rewriteValueS390X_OpS390XORW_30(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XORW_30(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (ORW sh:(SLWconst [16] x0:(MOVHZloadidx [i0] {s} idx p mem)) x1:(MOVHZloadidx [i1] {s} p idx mem))
 	// cond: i1 == i0+2 && p.Op != OpSB && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVWZloadidx [i0] {s} p idx mem)
@@ -29893,11 +28955,6 @@ func rewriteValueS390X_OpS390XORW_30(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XORW_40(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (ORW s0:(SLWconst [j0] x0:(MOVBZloadidx [i0] {s} idx p mem)) or:(ORW s1:(SLWconst [j1] x1:(MOVBZloadidx [i1] {s} idx p mem)) y))
 	// cond: i1 == i0+1 && j1 == j0-8 && j1 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (ORW <v.Type> (SLWconst <v.Type> [j1] (MOVHZloadidx [i0] {s} p idx mem)) y)
@@ -30133,6 +29190,11 @@ func rewriteValueS390X_OpS390XORW_40(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XORW_40(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (ORW s0:(SLWconst [j0] x0:(MOVBZloadidx [i0] {s} idx p mem)) or:(ORW y s1:(SLWconst [j1] x1:(MOVBZloadidx [i1] {s} idx p mem))))
 	// cond: i1 == i0+1 && j1 == j0-8 && j1 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (ORW <v.Type> (SLWconst <v.Type> [j1] (MOVHZloadidx [i0] {s} p idx mem)) y)
@@ -30484,11 +29546,6 @@ func rewriteValueS390X_OpS390XORW_40(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XORW_50(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (ORW or:(ORW s1:(SLWconst [j1] x1:(MOVBZloadidx [i1] {s} idx p mem)) y) s0:(SLWconst [j0] x0:(MOVBZloadidx [i0] {s} idx p mem)))
 	// cond: i1 == i0+1 && j1 == j0-8 && j1 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (ORW <v.Type> (SLWconst <v.Type> [j1] (MOVHZloadidx [i0] {s} p idx mem)) y)
@@ -30706,6 +29763,11 @@ func rewriteValueS390X_OpS390XORW_50(v *Value) bool {
 		v0.AddArg(v1)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XORW_50(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (ORW sh:(SLWconst [8] x1:(MOVBZload [i1] {s} p mem)) x0:(MOVBZload [i0] {s} p mem))
 	// cond: p.Op != OpSB && i1 == i0+1 && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVHZreg (MOVHBRload [i0] {s} p mem))
@@ -31016,11 +30078,6 @@ func rewriteValueS390X_OpS390XORW_50(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XORW_60(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (ORW or:(ORW y s0:(SLWconst [j0] x0:(MOVBZload [i0] {s} p mem))) s1:(SLWconst [j1] x1:(MOVBZload [i1] {s} p mem)))
 	// cond: p.Op != OpSB && i1 == i0+1 && j1 == j0+8 && j0 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (ORW <v.Type> (SLWconst <v.Type> [j0] (MOVHZreg (MOVHBRload [i0] {s} p mem))) y)
@@ -31209,6 +30266,11 @@ func rewriteValueS390X_OpS390XORW_60(v *Value) bool {
 		v0.AddArg(v1)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XORW_60(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (ORW x0:(MOVBZloadidx [i0] {s} idx p mem) sh:(SLWconst [8] x1:(MOVBZloadidx [i1] {s} idx p mem)))
 	// cond: p.Op != OpSB && i1 == i0+1 && x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVHZreg (MOVHBRloadidx [i0] {s} p idx mem))
@@ -31473,11 +30535,6 @@ func rewriteValueS390X_OpS390XORW_60(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XORW_70(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (ORW r0:(MOVHZreg x0:(MOVHBRloadidx [i0] {s} idx p mem)) sh:(SLWconst [16] r1:(MOVHZreg x1:(MOVHBRloadidx [i1] {s} p idx mem))))
 	// cond: i1 == i0+2 && x0.Uses == 1 && x1.Uses == 1 && r0.Uses == 1 && r1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(r0) && clobber(r1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVWBRloadidx [i0] {s} p idx mem)
@@ -31674,6 +30731,11 @@ func rewriteValueS390X_OpS390XORW_70(v *Value) bool {
 		v0.AddArg(mem)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XORW_70(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (ORW sh:(SLWconst [16] r1:(MOVHZreg x1:(MOVHBRloadidx [i1] {s} idx p mem))) r0:(MOVHZreg x0:(MOVHBRloadidx [i0] {s} p idx mem)))
 	// cond: i1 == i0+2 && x0.Uses == 1 && x1.Uses == 1 && r0.Uses == 1 && r1.Uses == 1 && sh.Uses == 1 && mergePoint(b,x0,x1) != nil && clobber(x0) && clobber(x1) && clobber(r0) && clobber(r1) && clobber(sh)
 	// result: @mergePoint(b,x0,x1) (MOVWBRloadidx [i0] {s} p idx mem)
@@ -32001,11 +31063,6 @@ func rewriteValueS390X_OpS390XORW_70(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XORW_80(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (ORW s1:(SLWconst [j1] x1:(MOVBZloadidx [i1] {s} idx p mem)) or:(ORW s0:(SLWconst [j0] x0:(MOVBZloadidx [i0] {s} idx p mem)) y))
 	// cond: p.Op != OpSB && i1 == i0+1 && j1 == j0+8 && j0 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (ORW <v.Type> (SLWconst <v.Type> [j0] (MOVHZreg (MOVHBRloadidx [i0] {s} p idx mem))) y)
@@ -32249,6 +31306,11 @@ func rewriteValueS390X_OpS390XORW_80(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
+	return false
+}
+func rewriteValueS390X_OpS390XORW_80(v *Value) bool {
+	b := v.Block
+	typ := &b.Func.Config.Types
 	// match: (ORW s1:(SLWconst [j1] x1:(MOVBZloadidx [i1] {s} idx p mem)) or:(ORW y s0:(SLWconst [j0] x0:(MOVBZloadidx [i0] {s} idx p mem))))
 	// cond: p.Op != OpSB && i1 == i0+1 && j1 == j0+8 && j0 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (ORW <v.Type> (SLWconst <v.Type> [j0] (MOVHZreg (MOVHBRloadidx [i0] {s} p idx mem))) y)
@@ -32612,11 +31674,6 @@ func rewriteValueS390X_OpS390XORW_80(v *Value) bool {
 		v0.AddArg(y)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XORW_90(v *Value) bool {
-	b := v.Block
-	typ := &b.Func.Config.Types
 	// match: (ORW or:(ORW s0:(SLWconst [j0] x0:(MOVBZloadidx [i0] {s} idx p mem)) y) s1:(SLWconst [j1] x1:(MOVBZloadidx [i1] {s} idx p mem)))
 	// cond: p.Op != OpSB && i1 == i0+1 && j1 == j0+8 && j0 % 16 == 0 && x0.Uses == 1 && x1.Uses == 1 && s0.Uses == 1 && s1.Uses == 1 && or.Uses == 1 && mergePoint(b,x0,x1,y) != nil && clobber(x0) && clobber(x1) && clobber(s0) && clobber(s1) && clobber(or)
 	// result: @mergePoint(b,x0,x1,y) (ORW <v.Type> (SLWconst <v.Type> [j0] (MOVHZreg (MOVHBRloadidx [i0] {s} p idx mem))) y)
@@ -34992,62 +34049,6 @@ func rewriteValueS390X_OpS390XXOR_0(v *Value) bool {
 		v.AddArg(mem)
 		return true
 	}
-	// match: (XOR <t> g:(MOVDload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (XORload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVDload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XXORload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	return false
-}
-func rewriteValueS390X_OpS390XXOR_10(v *Value) bool {
-	// match: (XOR <t> x g:(MOVDload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (XORload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
-		if g.Op != OpS390XMOVDload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XXORload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
 	return false
 }
 func rewriteValueS390X_OpS390XXORW_0(v *Value) bool {
@@ -35192,59 +34193,6 @@ func rewriteValueS390X_OpS390XXORW_0(v *Value) bool {
 		v.AddArg(mem)
 		return true
 	}
-	// match: (XORW <t> g:(MOVWload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (XORWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVWload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XXORWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (XORW <t> x g:(MOVWload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (XORWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
-		if g.Op != OpS390XMOVWload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XXORWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
 	// match: (XORW <t> x g:(MOVWZload [off] {sym} ptr mem))
 	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
 	// result: (XORWload <t> [off] {sym} x ptr mem)
@@ -35272,9 +34220,6 @@ func rewriteValueS390X_OpS390XXORW_0(v *Value) bool {
 		v.AddArg(mem)
 		return true
 	}
-	return false
-}
-func rewriteValueS390X_OpS390XXORW_10(v *Value) bool {
 	// match: (XORW <t> g:(MOVWZload [off] {sym} ptr mem) x)
 	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
 	// result: (XORWload <t> [off] {sym} x ptr mem)
@@ -35282,59 +34227,6 @@ func rewriteValueS390X_OpS390XXORW_10(v *Value) bool {
 		t := v.Type
 		x := v.Args[1]
 		g := v.Args[0]
-		if g.Op != OpS390XMOVWZload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XXORWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (XORW <t> g:(MOVWZload [off] {sym} ptr mem) x)
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (XORWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		x := v.Args[1]
-		g := v.Args[0]
-		if g.Op != OpS390XMOVWZload {
-			break
-		}
-		off := g.AuxInt
-		sym := g.Aux
-		mem := g.Args[1]
-		ptr := g.Args[0]
-		if !(ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)) {
-			break
-		}
-		v.reset(OpS390XXORWload)
-		v.Type = t
-		v.AuxInt = off
-		v.Aux = sym
-		v.AddArg(x)
-		v.AddArg(ptr)
-		v.AddArg(mem)
-		return true
-	}
-	// match: (XORW <t> x g:(MOVWZload [off] {sym} ptr mem))
-	// cond: ptr.Op != OpSB && is20Bit(off) && canMergeLoadClobber(v, g, x) && clobber(g)
-	// result: (XORWload <t> [off] {sym} x ptr mem)
-	for {
-		t := v.Type
-		_ = v.Args[1]
-		x := v.Args[0]
-		g := v.Args[1]
 		if g.Op != OpS390XMOVWZload {
 			break
 		}
