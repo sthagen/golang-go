@@ -54,7 +54,10 @@ import (
 
 // If multiple rules match, the first one in file order is selected.
 
-var genLog = flag.Bool("log", false, "generate code that logs; for debugging only")
+var (
+	genLog  = flag.Bool("log", false, "generate code that logs; for debugging only")
+	addLine = flag.Bool("line", false, "add line number comment to generated rules; for debugging only")
+)
 
 type Rule struct {
 	rule string
@@ -598,6 +601,9 @@ func fprint(w io.Writer, n Node) {
 			fprint(w, n)
 		}
 	case *RuleRewrite:
+		if *addLine {
+			fmt.Fprintf(w, "// %s\n", n.loc)
+		}
 		fmt.Fprintf(w, "// match: %s\n", n.match)
 		if n.cond != "" {
 			fmt.Fprintf(w, "// cond: %s\n", n.cond)
@@ -1333,7 +1339,7 @@ func expandOr(r string) []string {
 // Potentially exponential, be careful.
 func commute(r string, arch arch) []string {
 	match, cond, result := Rule{rule: r}.parse()
-	a := commute1(match, varCount(match), arch)
+	a := commute1(match, varCount(match, cond), arch)
 	for i, m := range a {
 		if cond != "" {
 			m += " && " + cond
@@ -1422,10 +1428,22 @@ func commute1(m string, cnt map[string]int, arch arch) []string {
 }
 
 // varCount returns a map which counts the number of occurrences of
-// Value variables in m.
-func varCount(m string) map[string]int {
+// Value variables in the s-expression "match" and the Go expression "cond".
+func varCount(match, cond string) map[string]int {
 	cnt := map[string]int{}
-	varCount1(m, cnt)
+	varCount1(match, cnt)
+	if cond != "" {
+		expr, err := parser.ParseExpr(cond)
+		if err != nil {
+			log.Fatalf("failed to parse cond %q: %v", cond, err)
+		}
+		ast.Inspect(expr, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok {
+				cnt[id.Name]++
+			}
+			return true
+		})
+	}
 	return cnt
 }
 
