@@ -141,8 +141,7 @@
 // For positive x, bit 63 of x-1 is always 0, so the result is -1.
 // For zero x, bit 63 of x-1 is 1, so the result is 0.
 //
-// TODO(prattmic): Use XORconst etc instead of XOR (MOVDconst).
-(Slicemask <t> x) -> (XOR (MOVDconst [-1]) (SRA <t> (SUB <t> x (MOVDconst [1])) (MOVDconst [63])))
+(Slicemask <t> x) -> (XORI [-1] (SRAI <t> [63] (ADDI <t> [-1] x)))
 
 // Truncations
 // We ignore the unused high parts of registers, so truncates are just copies.
@@ -267,7 +266,7 @@
 
 (EqPtr x y) -> (SEQZ (SUB <x.Type> x y))
 (Eq64  x y) -> (SEQZ (SUB <x.Type> x y))
-(Eq32  x y) -> (SEQZ (ZeroExt32to64 (SUB <x.Type> x y)))
+(Eq32  x y) -> (SEQZ (SUBW <x.Type> x y))
 (Eq16  x y) -> (SEQZ (ZeroExt16to64 (SUB <x.Type> x y)))
 (Eq8   x y) -> (SEQZ (ZeroExt8to64  (SUB <x.Type> x y)))
 (Eq64F ...) -> (FEQD ...)
@@ -275,7 +274,7 @@
 
 (NeqPtr x y) -> (SNEZ (SUB <x.Type> x y))
 (Neq64  x y) -> (SNEZ (SUB <x.Type> x y))
-(Neq32  x y) -> (SNEZ (ZeroExt32to64 (SUB <x.Type> x y)))
+(Neq32  x y) -> (SNEZ (SUBW <x.Type> x y))
 (Neq16  x y) -> (SNEZ (ZeroExt16to64 (SUB <x.Type> x y)))
 (Neq8   x y) -> (SNEZ (ZeroExt8to64  (SUB <x.Type> x y)))
 (Neq64F ...) -> (FNED ...)
