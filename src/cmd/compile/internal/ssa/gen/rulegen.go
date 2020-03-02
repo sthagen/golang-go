@@ -891,7 +891,7 @@ func genBlockRewrite(rule Rule, arch arch, data blockData) *RuleRewrite {
 	}
 
 	blockName, _ := getBlockInfo(outop, arch)
-	rr.add(stmtf("b.Reset(%s)", blockName))
+	var genControls [2]string
 	for i, control := range t[:outdata.controls] {
 		// Select a source position for any new control values.
 		// TODO: does it always make sense to use the source position
@@ -904,9 +904,19 @@ func genBlockRewrite(rule Rule, arch arch, data blockData) *RuleRewrite {
 		}
 
 		// Generate a new control value (or copy an existing value).
-		v := genResult0(rr, arch, control, false, false, newpos)
-		rr.add(stmtf("b.AddControl(%s)", v))
+		genControls[i] = genResult0(rr, arch, control, false, false, newpos)
 	}
+	switch outdata.controls {
+	case 0:
+		rr.add(stmtf("b.Reset(%s)", blockName))
+	case 1:
+		rr.add(stmtf("b.resetWithControl(%s, %s)", blockName, genControls[0]))
+	case 2:
+		rr.add(stmtf("b.resetWithControl2(%s, %s, %s)", blockName, genControls[0], genControls[1]))
+	default:
+		log.Fatalf("too many controls: %d", outdata.controls)
+	}
+
 	if auxint != "" {
 		rr.add(stmtf("b.AuxInt = %s", auxint))
 	}
@@ -991,16 +1001,21 @@ func genMatch0(rr *RuleRewrite, arch arch, match, v string, cnt map[string]int, 
 		}
 	}
 
-	// Access last argument first to minimize bounds checks.
-	if n := len(args); n > 1 && !pregenTop {
-		a := args[n-1]
-		if a != "_" && !rr.declared(a) && token.IsIdentifier(a) && !(commutative && len(args) == 2) {
-			rr.add(declf(a, "%s.Args[%d]", v, n-1))
-
-			// delete the last argument so it is not reprocessed
-			args = args[:n-1]
-		} else {
-			rr.add(stmtf("_ = %s.Args[%d]", v, n-1))
+	if !pregenTop {
+		// Access last argument first to minimize bounds checks.
+		for n := len(args) - 1; n > 0; n-- {
+			a := args[n]
+			if a == "_" {
+				continue
+			}
+			if !rr.declared(a) && token.IsIdentifier(a) && !(commutative && len(args) == 2) {
+				rr.add(declf(a, "%s.Args[%d]", v, n))
+				// delete the last argument so it is not reprocessed
+				args = args[:n]
+			} else {
+				rr.add(stmtf("_ = %s.Args[%d]", v, n))
+			}
+			break
 		}
 	}
 	if commutative && !pregenTop {

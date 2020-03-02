@@ -5120,9 +5120,8 @@ func rewriteValueARM_OpARMMOVBUload(v *Value) bool {
 		}
 		off2 := v_1.AuxInt
 		sym2 := v_1.Aux
-		_ = v_1.Args[2]
-		ptr2 := v_1.Args[0]
 		x := v_1.Args[1]
+		ptr2 := v_1.Args[0]
 		if !(sym == sym2 && off == off2 && isSamePtr(ptr, ptr2)) {
 			break
 		}
@@ -5179,13 +5178,9 @@ func rewriteValueARM_OpARMMOVBUloadidx(v *Value) bool {
 		if v_2.Op != OpARMMOVBstoreidx {
 			break
 		}
-		_ = v_2.Args[3]
-		ptr2 := v_2.Args[0]
-		if idx != v_2.Args[1] {
-			break
-		}
 		x := v_2.Args[2]
-		if !(isSamePtr(ptr, ptr2)) {
+		ptr2 := v_2.Args[0]
+		if idx != v_2.Args[1] || !(isSamePtr(ptr, ptr2)) {
 			break
 		}
 		v.reset(OpARMMOVBUreg)
@@ -5231,7 +5226,6 @@ func rewriteValueARM_OpARMMOVBUreg(v *Value) bool {
 		if x.Op != OpARMMOVBUload {
 			break
 		}
-		_ = x.Args[1]
 		v.reset(OpARMMOVWreg)
 		v.AddArg(x)
 		return true
@@ -5344,9 +5338,8 @@ func rewriteValueARM_OpARMMOVBload(v *Value) bool {
 		}
 		off2 := v_1.AuxInt
 		sym2 := v_1.Aux
-		_ = v_1.Args[2]
-		ptr2 := v_1.Args[0]
 		x := v_1.Args[1]
+		ptr2 := v_1.Args[0]
 		if !(sym == sym2 && off == off2 && isSamePtr(ptr, ptr2)) {
 			break
 		}
@@ -5390,13 +5383,9 @@ func rewriteValueARM_OpARMMOVBloadidx(v *Value) bool {
 		if v_2.Op != OpARMMOVBstoreidx {
 			break
 		}
-		_ = v_2.Args[3]
-		ptr2 := v_2.Args[0]
-		if idx != v_2.Args[1] {
-			break
-		}
 		x := v_2.Args[2]
-		if !(isSamePtr(ptr, ptr2)) {
+		ptr2 := v_2.Args[0]
+		if idx != v_2.Args[1] || !(isSamePtr(ptr, ptr2)) {
 			break
 		}
 		v.reset(OpARMMOVBreg)
@@ -5442,7 +5431,6 @@ func rewriteValueARM_OpARMMOVBreg(v *Value) bool {
 		if x.Op != OpARMMOVBload {
 			break
 		}
-		_ = x.Args[1]
 		v.reset(OpARMMOVWreg)
 		v.AddArg(x)
 		return true
@@ -5751,9 +5739,8 @@ func rewriteValueARM_OpARMMOVDload(v *Value) bool {
 		}
 		off2 := v_1.AuxInt
 		sym2 := v_1.Aux
-		_ = v_1.Args[2]
-		ptr2 := v_1.Args[0]
 		x := v_1.Args[1]
+		ptr2 := v_1.Args[0]
 		if !(sym == sym2 && off == off2 && isSamePtr(ptr, ptr2)) {
 			break
 		}
@@ -5898,9 +5885,8 @@ func rewriteValueARM_OpARMMOVFload(v *Value) bool {
 		}
 		off2 := v_1.AuxInt
 		sym2 := v_1.Aux
-		_ = v_1.Args[2]
-		ptr2 := v_1.Args[0]
 		x := v_1.Args[1]
+		ptr2 := v_1.Args[0]
 		if !(sym == sym2 && off == off2 && isSamePtr(ptr, ptr2)) {
 			break
 		}
@@ -6047,9 +6033,8 @@ func rewriteValueARM_OpARMMOVHUload(v *Value) bool {
 		}
 		off2 := v_1.AuxInt
 		sym2 := v_1.Aux
-		_ = v_1.Args[2]
-		ptr2 := v_1.Args[0]
 		x := v_1.Args[1]
+		ptr2 := v_1.Args[0]
 		if !(sym == sym2 && off == off2 && isSamePtr(ptr, ptr2)) {
 			break
 		}
@@ -6106,13 +6091,9 @@ func rewriteValueARM_OpARMMOVHUloadidx(v *Value) bool {
 		if v_2.Op != OpARMMOVHstoreidx {
 			break
 		}
-		_ = v_2.Args[3]
-		ptr2 := v_2.Args[0]
-		if idx != v_2.Args[1] {
-			break
-		}
 		x := v_2.Args[2]
-		if !(isSamePtr(ptr, ptr2)) {
+		ptr2 := v_2.Args[0]
+		if idx != v_2.Args[1] || !(isSamePtr(ptr, ptr2)) {
 			break
 		}
 		v.reset(OpARMMOVHUreg)
@@ -6158,7 +6139,6 @@ func rewriteValueARM_OpARMMOVHUreg(v *Value) bool {
 		if x.Op != OpARMMOVBUload {
 			break
 		}
-		_ = x.Args[1]
 		v.reset(OpARMMOVWreg)
 		v.AddArg(x)
 		return true
@@ -6170,7 +6150,6 @@ func rewriteValueARM_OpARMMOVHUreg(v *Value) bool {
 		if x.Op != OpARMMOVHUload {
 			break
 		}
-		_ = x.Args[1]
 		v.reset(OpARMMOVWreg)
 		v.AddArg(x)
 		return true
@@ -6294,9 +6273,8 @@ func rewriteValueARM_OpARMMOVHload(v *Value) bool {
 		}
 		off2 := v_1.AuxInt
 		sym2 := v_1.Aux
-		_ = v_1.Args[2]
-		ptr2 := v_1.Args[0]
 		x := v_1.Args[1]
+		ptr2 := v_1.Args[0]
 		if !(sym == sym2 && off == off2 && isSamePtr(ptr, ptr2)) {
 			break
 		}
@@ -6340,13 +6318,9 @@ func rewriteValueARM_OpARMMOVHloadidx(v *Value) bool {
 		if v_2.Op != OpARMMOVHstoreidx {
 			break
 		}
-		_ = v_2.Args[3]
-		ptr2 := v_2.Args[0]
-		if idx != v_2.Args[1] {
-			break
-		}
 		x := v_2.Args[2]
-		if !(isSamePtr(ptr, ptr2)) {
+		ptr2 := v_2.Args[0]
+		if idx != v_2.Args[1] || !(isSamePtr(ptr, ptr2)) {
 			break
 		}
 		v.reset(OpARMMOVHreg)
@@ -6392,7 +6366,6 @@ func rewriteValueARM_OpARMMOVHreg(v *Value) bool {
 		if x.Op != OpARMMOVBload {
 			break
 		}
-		_ = x.Args[1]
 		v.reset(OpARMMOVWreg)
 		v.AddArg(x)
 		return true
@@ -6404,7 +6377,6 @@ func rewriteValueARM_OpARMMOVHreg(v *Value) bool {
 		if x.Op != OpARMMOVBUload {
 			break
 		}
-		_ = x.Args[1]
 		v.reset(OpARMMOVWreg)
 		v.AddArg(x)
 		return true
@@ -6416,7 +6388,6 @@ func rewriteValueARM_OpARMMOVHreg(v *Value) bool {
 		if x.Op != OpARMMOVHload {
 			break
 		}
-		_ = x.Args[1]
 		v.reset(OpARMMOVWreg)
 		v.AddArg(x)
 		return true
@@ -6715,9 +6686,8 @@ func rewriteValueARM_OpARMMOVWload(v *Value) bool {
 		}
 		off2 := v_1.AuxInt
 		sym2 := v_1.Aux
-		_ = v_1.Args[2]
-		ptr2 := v_1.Args[0]
 		x := v_1.Args[1]
+		ptr2 := v_1.Args[0]
 		if !(sym == sym2 && off == off2 && isSamePtr(ptr, ptr2)) {
 			break
 		}
@@ -6842,13 +6812,9 @@ func rewriteValueARM_OpARMMOVWloadidx(v *Value) bool {
 		if v_2.Op != OpARMMOVWstoreidx {
 			break
 		}
-		_ = v_2.Args[3]
-		ptr2 := v_2.Args[0]
-		if idx != v_2.Args[1] {
-			break
-		}
 		x := v_2.Args[2]
-		if !(isSamePtr(ptr, ptr2)) {
+		ptr2 := v_2.Args[0]
+		if idx != v_2.Args[1] || !(isSamePtr(ptr, ptr2)) {
 			break
 		}
 		v.copyOf(x)
@@ -6989,13 +6955,9 @@ func rewriteValueARM_OpARMMOVWloadshiftLL(v *Value) bool {
 			break
 		}
 		d := v_2.AuxInt
-		_ = v_2.Args[3]
-		ptr2 := v_2.Args[0]
-		if idx != v_2.Args[1] {
-			break
-		}
 		x := v_2.Args[2]
-		if !(c == d && isSamePtr(ptr, ptr2)) {
+		ptr2 := v_2.Args[0]
+		if idx != v_2.Args[1] || !(c == d && isSamePtr(ptr, ptr2)) {
 			break
 		}
 		v.copyOf(x)
@@ -7033,13 +6995,9 @@ func rewriteValueARM_OpARMMOVWloadshiftRA(v *Value) bool {
 			break
 		}
 		d := v_2.AuxInt
-		_ = v_2.Args[3]
-		ptr2 := v_2.Args[0]
-		if idx != v_2.Args[1] {
-			break
-		}
 		x := v_2.Args[2]
-		if !(c == d && isSamePtr(ptr, ptr2)) {
+		ptr2 := v_2.Args[0]
+		if idx != v_2.Args[1] || !(c == d && isSamePtr(ptr, ptr2)) {
 			break
 		}
 		v.copyOf(x)
@@ -7077,13 +7035,9 @@ func rewriteValueARM_OpARMMOVWloadshiftRL(v *Value) bool {
 			break
 		}
 		d := v_2.AuxInt
-		_ = v_2.Args[3]
-		ptr2 := v_2.Args[0]
-		if idx != v_2.Args[1] {
-			break
-		}
 		x := v_2.Args[2]
-		if !(c == d && isSamePtr(ptr, ptr2)) {
+		ptr2 := v_2.Args[0]
+		if idx != v_2.Args[1] || !(c == d && isSamePtr(ptr, ptr2)) {
 			break
 		}
 		v.copyOf(x)
@@ -16828,8 +16782,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMInvertFlags {
 			v_0 := b.Controls[0]
 			cmp := v_0.Args[0]
-			b.Reset(BlockARMEQ)
-			b.AddControl(cmp)
+			b.resetWithControl(BlockARMEQ, cmp)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(SUB x y)) yes no)
@@ -16849,10 +16802,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMP, types.TypeFlags)
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(MULS x y a)) yes no)
@@ -16873,12 +16825,11 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMP, types.TypeFlags)
 			v1 := b.NewValue0(v_0.Pos, OpARMMUL, x.Type)
 			v1.AddArg2(x, y)
 			v0.AddArg2(a, v1)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(SUBconst [c] x)) yes no)
@@ -16898,11 +16849,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(SUBshiftLL x y [c])) yes no)
@@ -16923,11 +16873,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(SUBshiftRL x y [c])) yes no)
@@ -16948,11 +16897,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(SUBshiftRA x y [c])) yes no)
@@ -16973,11 +16921,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(SUBshiftLLreg x y z)) yes no)
@@ -16998,10 +16945,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(SUBshiftRLreg x y z)) yes no)
@@ -17022,10 +16968,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(SUBshiftRAreg x y z)) yes no)
@@ -17046,10 +16991,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ADD x y)) yes no)
@@ -17073,10 +17017,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMEQ)
 				v0 := b.NewValue0(v_0.Pos, OpARMCMN, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMEQ, v0)
 				return true
 			}
 			break
@@ -17099,12 +17042,11 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMN, types.TypeFlags)
 			v1 := b.NewValue0(v_0.Pos, OpARMMUL, x.Type)
 			v1.AddArg2(x, y)
 			v0.AddArg2(a, v1)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ADDconst [c] x)) yes no)
@@ -17124,11 +17066,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ADDshiftLL x y [c])) yes no)
@@ -17149,11 +17090,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ADDshiftRL x y [c])) yes no)
@@ -17174,11 +17114,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ADDshiftRA x y [c])) yes no)
@@ -17199,11 +17138,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ADDshiftLLreg x y z)) yes no)
@@ -17224,10 +17162,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ADDshiftRLreg x y z)) yes no)
@@ -17248,10 +17185,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ADDshiftRAreg x y z)) yes no)
@@ -17272,10 +17208,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(AND x y)) yes no)
@@ -17299,10 +17234,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMEQ)
 				v0 := b.NewValue0(v_0.Pos, OpARMTST, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMEQ, v0)
 				return true
 			}
 			break
@@ -17324,11 +17258,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ANDshiftLL x y [c])) yes no)
@@ -17349,11 +17282,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ANDshiftRL x y [c])) yes no)
@@ -17374,11 +17306,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ANDshiftRA x y [c])) yes no)
@@ -17399,11 +17330,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ANDshiftLLreg x y z)) yes no)
@@ -17424,10 +17354,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ANDshiftRLreg x y z)) yes no)
@@ -17448,10 +17377,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(ANDshiftRAreg x y z)) yes no)
@@ -17472,10 +17400,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(XOR x y)) yes no)
@@ -17499,10 +17426,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMEQ)
 				v0 := b.NewValue0(v_0.Pos, OpARMTEQ, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMEQ, v0)
 				return true
 			}
 			break
@@ -17524,11 +17450,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(XORshiftLL x y [c])) yes no)
@@ -17549,11 +17474,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(XORshiftRL x y [c])) yes no)
@@ -17574,11 +17498,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(XORshiftRA x y [c])) yes no)
@@ -17599,11 +17522,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(XORshiftLLreg x y z)) yes no)
@@ -17624,10 +17546,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(XORshiftRLreg x y z)) yes no)
@@ -17648,10 +17569,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 		// match: (EQ (CMPconst [0] l:(XORshiftRAreg x y z)) yes no)
@@ -17672,10 +17592,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMEQ)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMEQ, v0)
 			return true
 		}
 	case BlockARMGE:
@@ -17716,8 +17635,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMInvertFlags {
 			v_0 := b.Controls[0]
 			cmp := v_0.Args[0]
-			b.Reset(BlockARMLE)
-			b.AddControl(cmp)
+			b.resetWithControl(BlockARMLE, cmp)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(SUB x y)) yes no)
@@ -17737,10 +17655,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMP, types.TypeFlags)
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(MULS x y a)) yes no)
@@ -17761,12 +17678,11 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMP, types.TypeFlags)
 			v1 := b.NewValue0(v_0.Pos, OpARMMUL, x.Type)
 			v1.AddArg2(x, y)
 			v0.AddArg2(a, v1)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(SUBconst [c] x)) yes no)
@@ -17786,11 +17702,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(SUBshiftLL x y [c])) yes no)
@@ -17811,11 +17726,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(SUBshiftRL x y [c])) yes no)
@@ -17836,11 +17750,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(SUBshiftRA x y [c])) yes no)
@@ -17861,11 +17774,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(SUBshiftLLreg x y z)) yes no)
@@ -17886,10 +17798,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(SUBshiftRLreg x y z)) yes no)
@@ -17910,10 +17821,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(SUBshiftRAreg x y z)) yes no)
@@ -17934,10 +17844,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ADD x y)) yes no)
@@ -17961,10 +17870,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMGE)
 				v0 := b.NewValue0(v_0.Pos, OpARMCMN, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMGE, v0)
 				return true
 			}
 			break
@@ -17987,12 +17895,11 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMN, types.TypeFlags)
 			v1 := b.NewValue0(v_0.Pos, OpARMMUL, x.Type)
 			v1.AddArg2(x, y)
 			v0.AddArg2(a, v1)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ADDconst [c] x)) yes no)
@@ -18012,11 +17919,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ADDshiftLL x y [c])) yes no)
@@ -18037,11 +17943,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ADDshiftRL x y [c])) yes no)
@@ -18062,11 +17967,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ADDshiftRA x y [c])) yes no)
@@ -18087,11 +17991,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ADDshiftLLreg x y z)) yes no)
@@ -18112,10 +18015,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ADDshiftRLreg x y z)) yes no)
@@ -18136,10 +18038,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ADDshiftRAreg x y z)) yes no)
@@ -18160,10 +18061,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(AND x y)) yes no)
@@ -18187,10 +18087,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMGE)
 				v0 := b.NewValue0(v_0.Pos, OpARMTST, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMGE, v0)
 				return true
 			}
 			break
@@ -18212,11 +18111,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ANDshiftLL x y [c])) yes no)
@@ -18237,11 +18135,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ANDshiftRL x y [c])) yes no)
@@ -18262,11 +18159,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ANDshiftRA x y [c])) yes no)
@@ -18287,11 +18183,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ANDshiftLLreg x y z)) yes no)
@@ -18312,10 +18207,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ANDshiftRLreg x y z)) yes no)
@@ -18336,10 +18230,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(ANDshiftRAreg x y z)) yes no)
@@ -18360,10 +18253,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(XOR x y)) yes no)
@@ -18387,10 +18279,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMGE)
 				v0 := b.NewValue0(v_0.Pos, OpARMTEQ, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMGE, v0)
 				return true
 			}
 			break
@@ -18412,11 +18303,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(XORshiftLL x y [c])) yes no)
@@ -18437,11 +18327,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(XORshiftRL x y [c])) yes no)
@@ -18462,11 +18351,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(XORshiftRA x y [c])) yes no)
@@ -18487,11 +18375,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(XORshiftLLreg x y z)) yes no)
@@ -18512,10 +18399,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(XORshiftRLreg x y z)) yes no)
@@ -18536,10 +18422,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 		// match: (GE (CMPconst [0] l:(XORshiftRAreg x y z)) yes no)
@@ -18560,10 +18445,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGE, v0)
 			return true
 		}
 	case BlockARMGT:
@@ -18605,8 +18489,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMInvertFlags {
 			v_0 := b.Controls[0]
 			cmp := v_0.Args[0]
-			b.Reset(BlockARMLT)
-			b.AddControl(cmp)
+			b.resetWithControl(BlockARMLT, cmp)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(SUB x y)) yes no)
@@ -18626,10 +18509,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMP, types.TypeFlags)
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(MULS x y a)) yes no)
@@ -18650,12 +18532,11 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMP, types.TypeFlags)
 			v1 := b.NewValue0(v_0.Pos, OpARMMUL, x.Type)
 			v1.AddArg2(x, y)
 			v0.AddArg2(a, v1)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(SUBconst [c] x)) yes no)
@@ -18675,11 +18556,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(SUBshiftLL x y [c])) yes no)
@@ -18700,11 +18580,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(SUBshiftRL x y [c])) yes no)
@@ -18725,11 +18604,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(SUBshiftRA x y [c])) yes no)
@@ -18750,11 +18628,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(SUBshiftLLreg x y z)) yes no)
@@ -18775,10 +18652,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(SUBshiftRLreg x y z)) yes no)
@@ -18799,10 +18675,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(SUBshiftRAreg x y z)) yes no)
@@ -18823,10 +18698,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ADD x y)) yes no)
@@ -18850,10 +18724,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMGT)
 				v0 := b.NewValue0(v_0.Pos, OpARMCMN, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMGT, v0)
 				return true
 			}
 			break
@@ -18875,11 +18748,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ADDshiftLL x y [c])) yes no)
@@ -18900,11 +18772,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ADDshiftRL x y [c])) yes no)
@@ -18925,11 +18796,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ADDshiftRA x y [c])) yes no)
@@ -18950,11 +18820,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ADDshiftLLreg x y z)) yes no)
@@ -18975,10 +18844,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ADDshiftRLreg x y z)) yes no)
@@ -18999,10 +18867,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ADDshiftRAreg x y z)) yes no)
@@ -19023,10 +18890,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(AND x y)) yes no)
@@ -19050,10 +18916,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMGT)
 				v0 := b.NewValue0(v_0.Pos, OpARMTST, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMGT, v0)
 				return true
 			}
 			break
@@ -19076,12 +18941,11 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMN, types.TypeFlags)
 			v1 := b.NewValue0(v_0.Pos, OpARMMUL, x.Type)
 			v1.AddArg2(x, y)
 			v0.AddArg2(a, v1)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ANDconst [c] x)) yes no)
@@ -19101,11 +18965,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ANDshiftLL x y [c])) yes no)
@@ -19126,11 +18989,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ANDshiftRL x y [c])) yes no)
@@ -19151,11 +19013,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ANDshiftRA x y [c])) yes no)
@@ -19176,11 +19037,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ANDshiftLLreg x y z)) yes no)
@@ -19201,10 +19061,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ANDshiftRLreg x y z)) yes no)
@@ -19225,10 +19084,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(ANDshiftRAreg x y z)) yes no)
@@ -19249,10 +19107,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(XOR x y)) yes no)
@@ -19276,10 +19133,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMGT)
 				v0 := b.NewValue0(v_0.Pos, OpARMTEQ, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMGT, v0)
 				return true
 			}
 			break
@@ -19301,11 +19157,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(XORshiftLL x y [c])) yes no)
@@ -19326,11 +19181,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(XORshiftRL x y [c])) yes no)
@@ -19351,11 +19205,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(XORshiftRA x y [c])) yes no)
@@ -19376,11 +19229,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(XORshiftLLreg x y z)) yes no)
@@ -19401,10 +19253,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(XORshiftRLreg x y z)) yes no)
@@ -19425,10 +19276,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 		// match: (GT (CMPconst [0] l:(XORshiftRAreg x y z)) yes no)
@@ -19449,10 +19299,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMGT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMGT, v0)
 			return true
 		}
 	case BlockIf:
@@ -19461,8 +19310,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMEqual {
 			v_0 := b.Controls[0]
 			cc := v_0.Args[0]
-			b.Reset(BlockARMEQ)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMEQ, cc)
 			return true
 		}
 		// match: (If (NotEqual cc) yes no)
@@ -19470,8 +19318,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMNotEqual {
 			v_0 := b.Controls[0]
 			cc := v_0.Args[0]
-			b.Reset(BlockARMNE)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMNE, cc)
 			return true
 		}
 		// match: (If (LessThan cc) yes no)
@@ -19479,8 +19326,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMLessThan {
 			v_0 := b.Controls[0]
 			cc := v_0.Args[0]
-			b.Reset(BlockARMLT)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMLT, cc)
 			return true
 		}
 		// match: (If (LessThanU cc) yes no)
@@ -19488,8 +19334,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMLessThanU {
 			v_0 := b.Controls[0]
 			cc := v_0.Args[0]
-			b.Reset(BlockARMULT)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMULT, cc)
 			return true
 		}
 		// match: (If (LessEqual cc) yes no)
@@ -19497,8 +19342,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMLessEqual {
 			v_0 := b.Controls[0]
 			cc := v_0.Args[0]
-			b.Reset(BlockARMLE)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMLE, cc)
 			return true
 		}
 		// match: (If (LessEqualU cc) yes no)
@@ -19506,8 +19350,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMLessEqualU {
 			v_0 := b.Controls[0]
 			cc := v_0.Args[0]
-			b.Reset(BlockARMULE)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMULE, cc)
 			return true
 		}
 		// match: (If (GreaterThan cc) yes no)
@@ -19515,8 +19358,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMGreaterThan {
 			v_0 := b.Controls[0]
 			cc := v_0.Args[0]
-			b.Reset(BlockARMGT)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMGT, cc)
 			return true
 		}
 		// match: (If (GreaterThanU cc) yes no)
@@ -19524,8 +19366,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMGreaterThanU {
 			v_0 := b.Controls[0]
 			cc := v_0.Args[0]
-			b.Reset(BlockARMUGT)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMUGT, cc)
 			return true
 		}
 		// match: (If (GreaterEqual cc) yes no)
@@ -19533,8 +19374,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMGreaterEqual {
 			v_0 := b.Controls[0]
 			cc := v_0.Args[0]
-			b.Reset(BlockARMGE)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMGE, cc)
 			return true
 		}
 		// match: (If (GreaterEqualU cc) yes no)
@@ -19542,19 +19382,17 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMGreaterEqualU {
 			v_0 := b.Controls[0]
 			cc := v_0.Args[0]
-			b.Reset(BlockARMUGE)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMUGE, cc)
 			return true
 		}
 		// match: (If cond yes no)
 		// result: (NE (CMPconst [0] cond) yes no)
 		for {
 			cond := b.Controls[0]
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(cond.Pos, OpARMCMPconst, types.TypeFlags)
 			v0.AuxInt = 0
 			v0.AddArg(cond)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 	case BlockARMLE:
@@ -19595,8 +19433,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMInvertFlags {
 			v_0 := b.Controls[0]
 			cmp := v_0.Args[0]
-			b.Reset(BlockARMGE)
-			b.AddControl(cmp)
+			b.resetWithControl(BlockARMGE, cmp)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(SUB x y)) yes no)
@@ -19616,10 +19453,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMP, types.TypeFlags)
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(MULS x y a)) yes no)
@@ -19640,12 +19476,11 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMP, types.TypeFlags)
 			v1 := b.NewValue0(v_0.Pos, OpARMMUL, x.Type)
 			v1.AddArg2(x, y)
 			v0.AddArg2(a, v1)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(SUBconst [c] x)) yes no)
@@ -19665,11 +19500,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(SUBshiftLL x y [c])) yes no)
@@ -19690,11 +19524,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(SUBshiftRL x y [c])) yes no)
@@ -19715,11 +19548,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(SUBshiftRA x y [c])) yes no)
@@ -19740,11 +19572,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(SUBshiftLLreg x y z)) yes no)
@@ -19765,10 +19596,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(SUBshiftRLreg x y z)) yes no)
@@ -19789,10 +19619,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(SUBshiftRAreg x y z)) yes no)
@@ -19813,10 +19642,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ADD x y)) yes no)
@@ -19840,10 +19668,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMLE)
 				v0 := b.NewValue0(v_0.Pos, OpARMCMN, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMLE, v0)
 				return true
 			}
 			break
@@ -19866,12 +19693,11 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMN, types.TypeFlags)
 			v1 := b.NewValue0(v_0.Pos, OpARMMUL, x.Type)
 			v1.AddArg2(x, y)
 			v0.AddArg2(a, v1)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ADDconst [c] x)) yes no)
@@ -19891,11 +19717,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ADDshiftLL x y [c])) yes no)
@@ -19916,11 +19741,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ADDshiftRL x y [c])) yes no)
@@ -19941,11 +19765,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ADDshiftRA x y [c])) yes no)
@@ -19966,11 +19789,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ADDshiftLLreg x y z)) yes no)
@@ -19991,10 +19813,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ADDshiftRLreg x y z)) yes no)
@@ -20015,10 +19836,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ADDshiftRAreg x y z)) yes no)
@@ -20039,10 +19859,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(AND x y)) yes no)
@@ -20066,10 +19885,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMLE)
 				v0 := b.NewValue0(v_0.Pos, OpARMTST, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMLE, v0)
 				return true
 			}
 			break
@@ -20091,11 +19909,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ANDshiftLL x y [c])) yes no)
@@ -20116,11 +19933,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ANDshiftRL x y [c])) yes no)
@@ -20141,11 +19957,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ANDshiftRA x y [c])) yes no)
@@ -20166,11 +19981,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ANDshiftLLreg x y z)) yes no)
@@ -20191,10 +20005,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ANDshiftRLreg x y z)) yes no)
@@ -20215,10 +20028,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(ANDshiftRAreg x y z)) yes no)
@@ -20239,10 +20051,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(XOR x y)) yes no)
@@ -20266,10 +20077,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMLE)
 				v0 := b.NewValue0(v_0.Pos, OpARMTEQ, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMLE, v0)
 				return true
 			}
 			break
@@ -20291,11 +20101,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(XORshiftLL x y [c])) yes no)
@@ -20316,11 +20125,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(XORshiftRL x y [c])) yes no)
@@ -20341,11 +20149,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(XORshiftRA x y [c])) yes no)
@@ -20366,11 +20173,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(XORshiftLLreg x y z)) yes no)
@@ -20391,10 +20197,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(XORshiftRLreg x y z)) yes no)
@@ -20415,10 +20220,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 		// match: (LE (CMPconst [0] l:(XORshiftRAreg x y z)) yes no)
@@ -20439,10 +20243,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLE, v0)
 			return true
 		}
 	case BlockARMLT:
@@ -20484,8 +20287,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMInvertFlags {
 			v_0 := b.Controls[0]
 			cmp := v_0.Args[0]
-			b.Reset(BlockARMGT)
-			b.AddControl(cmp)
+			b.resetWithControl(BlockARMGT, cmp)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(SUB x y)) yes no)
@@ -20505,10 +20307,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMP, types.TypeFlags)
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(MULS x y a)) yes no)
@@ -20529,12 +20330,11 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMP, types.TypeFlags)
 			v1 := b.NewValue0(v_0.Pos, OpARMMUL, x.Type)
 			v1.AddArg2(x, y)
 			v0.AddArg2(a, v1)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(SUBconst [c] x)) yes no)
@@ -20554,11 +20354,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(SUBshiftLL x y [c])) yes no)
@@ -20579,11 +20378,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(SUBshiftRL x y [c])) yes no)
@@ -20604,11 +20402,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(SUBshiftRA x y [c])) yes no)
@@ -20629,11 +20426,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(SUBshiftLLreg x y z)) yes no)
@@ -20654,10 +20450,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(SUBshiftRLreg x y z)) yes no)
@@ -20678,10 +20473,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(SUBshiftRAreg x y z)) yes no)
@@ -20702,10 +20496,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ADD x y)) yes no)
@@ -20729,10 +20522,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMLT)
 				v0 := b.NewValue0(v_0.Pos, OpARMCMN, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMLT, v0)
 				return true
 			}
 			break
@@ -20755,12 +20547,11 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMN, types.TypeFlags)
 			v1 := b.NewValue0(v_0.Pos, OpARMMUL, x.Type)
 			v1.AddArg2(x, y)
 			v0.AddArg2(a, v1)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ADDconst [c] x)) yes no)
@@ -20780,11 +20571,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ADDshiftLL x y [c])) yes no)
@@ -20805,11 +20595,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ADDshiftRL x y [c])) yes no)
@@ -20830,11 +20619,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ADDshiftRA x y [c])) yes no)
@@ -20855,11 +20643,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ADDshiftLLreg x y z)) yes no)
@@ -20880,10 +20667,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ADDshiftRLreg x y z)) yes no)
@@ -20904,10 +20690,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ADDshiftRAreg x y z)) yes no)
@@ -20928,10 +20713,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(AND x y)) yes no)
@@ -20955,10 +20739,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMLT)
 				v0 := b.NewValue0(v_0.Pos, OpARMTST, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMLT, v0)
 				return true
 			}
 			break
@@ -20980,11 +20763,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ANDshiftLL x y [c])) yes no)
@@ -21005,11 +20787,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ANDshiftRL x y [c])) yes no)
@@ -21030,11 +20811,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ANDshiftRA x y [c])) yes no)
@@ -21055,11 +20835,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ANDshiftLLreg x y z)) yes no)
@@ -21080,10 +20859,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ANDshiftRLreg x y z)) yes no)
@@ -21104,10 +20882,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(ANDshiftRAreg x y z)) yes no)
@@ -21128,10 +20905,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(XOR x y)) yes no)
@@ -21155,10 +20931,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMLT)
 				v0 := b.NewValue0(v_0.Pos, OpARMTEQ, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMLT, v0)
 				return true
 			}
 			break
@@ -21180,11 +20955,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(XORshiftLL x y [c])) yes no)
@@ -21205,11 +20979,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(XORshiftRL x y [c])) yes no)
@@ -21230,11 +21003,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(XORshiftRA x y [c])) yes no)
@@ -21255,11 +21027,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(XORshiftLLreg x y z)) yes no)
@@ -21280,10 +21051,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(XORshiftRLreg x y z)) yes no)
@@ -21304,10 +21074,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 		// match: (LT (CMPconst [0] l:(XORshiftRAreg x y z)) yes no)
@@ -21328,10 +21097,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMLT)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMLT, v0)
 			return true
 		}
 	case BlockARMNE:
@@ -21347,8 +21115,7 @@ func rewriteBlockARM(b *Block) bool {
 				break
 			}
 			cc := v_0_0.Args[0]
-			b.Reset(BlockARMEQ)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMEQ, cc)
 			return true
 		}
 		// match: (NE (CMPconst [0] (NotEqual cc)) yes no)
@@ -21363,8 +21130,7 @@ func rewriteBlockARM(b *Block) bool {
 				break
 			}
 			cc := v_0_0.Args[0]
-			b.Reset(BlockARMNE)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMNE, cc)
 			return true
 		}
 		// match: (NE (CMPconst [0] (LessThan cc)) yes no)
@@ -21379,8 +21145,7 @@ func rewriteBlockARM(b *Block) bool {
 				break
 			}
 			cc := v_0_0.Args[0]
-			b.Reset(BlockARMLT)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMLT, cc)
 			return true
 		}
 		// match: (NE (CMPconst [0] (LessThanU cc)) yes no)
@@ -21395,8 +21160,7 @@ func rewriteBlockARM(b *Block) bool {
 				break
 			}
 			cc := v_0_0.Args[0]
-			b.Reset(BlockARMULT)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMULT, cc)
 			return true
 		}
 		// match: (NE (CMPconst [0] (LessEqual cc)) yes no)
@@ -21411,8 +21175,7 @@ func rewriteBlockARM(b *Block) bool {
 				break
 			}
 			cc := v_0_0.Args[0]
-			b.Reset(BlockARMLE)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMLE, cc)
 			return true
 		}
 		// match: (NE (CMPconst [0] (LessEqualU cc)) yes no)
@@ -21427,8 +21190,7 @@ func rewriteBlockARM(b *Block) bool {
 				break
 			}
 			cc := v_0_0.Args[0]
-			b.Reset(BlockARMULE)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMULE, cc)
 			return true
 		}
 		// match: (NE (CMPconst [0] (GreaterThan cc)) yes no)
@@ -21443,8 +21205,7 @@ func rewriteBlockARM(b *Block) bool {
 				break
 			}
 			cc := v_0_0.Args[0]
-			b.Reset(BlockARMGT)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMGT, cc)
 			return true
 		}
 		// match: (NE (CMPconst [0] (GreaterThanU cc)) yes no)
@@ -21459,8 +21220,7 @@ func rewriteBlockARM(b *Block) bool {
 				break
 			}
 			cc := v_0_0.Args[0]
-			b.Reset(BlockARMUGT)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMUGT, cc)
 			return true
 		}
 		// match: (NE (CMPconst [0] (GreaterEqual cc)) yes no)
@@ -21475,8 +21235,7 @@ func rewriteBlockARM(b *Block) bool {
 				break
 			}
 			cc := v_0_0.Args[0]
-			b.Reset(BlockARMGE)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMGE, cc)
 			return true
 		}
 		// match: (NE (CMPconst [0] (GreaterEqualU cc)) yes no)
@@ -21491,8 +21250,7 @@ func rewriteBlockARM(b *Block) bool {
 				break
 			}
 			cc := v_0_0.Args[0]
-			b.Reset(BlockARMUGE)
-			b.AddControl(cc)
+			b.resetWithControl(BlockARMUGE, cc)
 			return true
 		}
 		// match: (NE (FlagEQ) yes no)
@@ -21531,8 +21289,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMInvertFlags {
 			v_0 := b.Controls[0]
 			cmp := v_0.Args[0]
-			b.Reset(BlockARMNE)
-			b.AddControl(cmp)
+			b.resetWithControl(BlockARMNE, cmp)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(SUB x y)) yes no)
@@ -21552,10 +21309,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMP, types.TypeFlags)
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(MULS x y a)) yes no)
@@ -21576,12 +21332,11 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMP, types.TypeFlags)
 			v1 := b.NewValue0(v_0.Pos, OpARMMUL, x.Type)
 			v1.AddArg2(x, y)
 			v0.AddArg2(a, v1)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(SUBconst [c] x)) yes no)
@@ -21601,11 +21356,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(SUBshiftLL x y [c])) yes no)
@@ -21626,11 +21380,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(SUBshiftRL x y [c])) yes no)
@@ -21651,11 +21404,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(SUBshiftRA x y [c])) yes no)
@@ -21676,11 +21428,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(SUBshiftLLreg x y z)) yes no)
@@ -21701,10 +21452,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(SUBshiftRLreg x y z)) yes no)
@@ -21725,10 +21475,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(SUBshiftRAreg x y z)) yes no)
@@ -21749,10 +21498,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMPshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ADD x y)) yes no)
@@ -21776,10 +21524,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMNE)
 				v0 := b.NewValue0(v_0.Pos, OpARMCMN, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMNE, v0)
 				return true
 			}
 			break
@@ -21802,12 +21549,11 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMN, types.TypeFlags)
 			v1 := b.NewValue0(v_0.Pos, OpARMMUL, x.Type)
 			v1.AddArg2(x, y)
 			v0.AddArg2(a, v1)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ADDconst [c] x)) yes no)
@@ -21827,11 +21573,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ADDshiftLL x y [c])) yes no)
@@ -21852,11 +21597,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ADDshiftRL x y [c])) yes no)
@@ -21877,11 +21621,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ADDshiftRA x y [c])) yes no)
@@ -21902,11 +21645,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ADDshiftLLreg x y z)) yes no)
@@ -21927,10 +21669,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ADDshiftRLreg x y z)) yes no)
@@ -21951,10 +21692,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ADDshiftRAreg x y z)) yes no)
@@ -21975,10 +21715,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMCMNshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(AND x y)) yes no)
@@ -22002,10 +21741,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMNE)
 				v0 := b.NewValue0(v_0.Pos, OpARMTST, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMNE, v0)
 				return true
 			}
 			break
@@ -22027,11 +21765,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ANDshiftLL x y [c])) yes no)
@@ -22052,11 +21789,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ANDshiftRL x y [c])) yes no)
@@ -22077,11 +21813,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ANDshiftRA x y [c])) yes no)
@@ -22102,11 +21837,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ANDshiftLLreg x y z)) yes no)
@@ -22127,10 +21861,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ANDshiftRLreg x y z)) yes no)
@@ -22151,10 +21884,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(ANDshiftRAreg x y z)) yes no)
@@ -22175,10 +21907,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTSTshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(XOR x y)) yes no)
@@ -22202,10 +21933,9 @@ func rewriteBlockARM(b *Block) bool {
 				if !(l.Uses == 1) {
 					continue
 				}
-				b.Reset(BlockARMNE)
 				v0 := b.NewValue0(v_0.Pos, OpARMTEQ, types.TypeFlags)
 				v0.AddArg2(x, y)
-				b.AddControl(v0)
+				b.resetWithControl(BlockARMNE, v0)
 				return true
 			}
 			break
@@ -22227,11 +21957,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQconst, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg(x)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(XORshiftLL x y [c])) yes no)
@@ -22252,11 +21981,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftLL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(XORshiftRL x y [c])) yes no)
@@ -22277,11 +22005,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRL, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(XORshiftRA x y [c])) yes no)
@@ -22302,11 +22029,10 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRA, types.TypeFlags)
 			v0.AuxInt = c
 			v0.AddArg2(x, y)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(XORshiftLLreg x y z)) yes no)
@@ -22327,10 +22053,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftLLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(XORshiftRLreg x y z)) yes no)
@@ -22351,10 +22076,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRLreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 		// match: (NE (CMPconst [0] l:(XORshiftRAreg x y z)) yes no)
@@ -22375,10 +22099,9 @@ func rewriteBlockARM(b *Block) bool {
 			if !(l.Uses == 1) {
 				break
 			}
-			b.Reset(BlockARMNE)
 			v0 := b.NewValue0(v_0.Pos, OpARMTEQshiftRAreg, types.TypeFlags)
 			v0.AddArg3(x, y, z)
-			b.AddControl(v0)
+			b.resetWithControl(BlockARMNE, v0)
 			return true
 		}
 	case BlockARMUGE:
@@ -22419,8 +22142,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMInvertFlags {
 			v_0 := b.Controls[0]
 			cmp := v_0.Args[0]
-			b.Reset(BlockARMULE)
-			b.AddControl(cmp)
+			b.resetWithControl(BlockARMULE, cmp)
 			return true
 		}
 	case BlockARMUGT:
@@ -22462,8 +22184,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMInvertFlags {
 			v_0 := b.Controls[0]
 			cmp := v_0.Args[0]
-			b.Reset(BlockARMULT)
-			b.AddControl(cmp)
+			b.resetWithControl(BlockARMULT, cmp)
 			return true
 		}
 	case BlockARMULE:
@@ -22504,8 +22225,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMInvertFlags {
 			v_0 := b.Controls[0]
 			cmp := v_0.Args[0]
-			b.Reset(BlockARMUGE)
-			b.AddControl(cmp)
+			b.resetWithControl(BlockARMUGE, cmp)
 			return true
 		}
 	case BlockARMULT:
@@ -22547,8 +22267,7 @@ func rewriteBlockARM(b *Block) bool {
 		for b.Controls[0].Op == OpARMInvertFlags {
 			v_0 := b.Controls[0]
 			cmp := v_0.Args[0]
-			b.Reset(BlockARMUGT)
-			b.AddControl(cmp)
+			b.resetWithControl(BlockARMUGT, cmp)
 			return true
 		}
 	}
