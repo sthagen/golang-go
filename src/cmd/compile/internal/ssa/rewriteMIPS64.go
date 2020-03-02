@@ -2327,9 +2327,7 @@ func rewriteValueMIPS64_OpMIPS64ADDVconst(v *Value) bool {
 			break
 		}
 		x := v_0
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
+		v.copyOf(x)
 		return true
 	}
 	// match: (ADDVconst [c] (MOVVconst [d]))
@@ -2412,9 +2410,7 @@ func rewriteValueMIPS64_OpMIPS64AND(v *Value) bool {
 		if x != v_1 {
 			break
 		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
+		v.copyOf(x)
 		return true
 	}
 	return false
@@ -2438,9 +2434,7 @@ func rewriteValueMIPS64_OpMIPS64ANDconst(v *Value) bool {
 			break
 		}
 		x := v_0
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
+		v.copyOf(x)
 		return true
 	}
 	// match: (ANDconst [c] (MOVVconst [d]))
@@ -4290,9 +4284,7 @@ func rewriteValueMIPS64_OpMIPS64OR(v *Value) bool {
 		if x != v_1 {
 			break
 		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
+		v.copyOf(x)
 		return true
 	}
 	return false
@@ -4306,9 +4298,7 @@ func rewriteValueMIPS64_OpMIPS64ORconst(v *Value) bool {
 			break
 		}
 		x := v_0
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
+		v.copyOf(x)
 		return true
 	}
 	// match: (ORconst [-1] _)
@@ -4867,9 +4857,7 @@ func rewriteValueMIPS64_OpMIPS64SUBVconst(v *Value) bool {
 			break
 		}
 		x := v_0
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
+		v.copyOf(x)
 		return true
 	}
 	// match: (SUBVconst [c] (MOVVconst [d]))
@@ -4967,9 +4955,7 @@ func rewriteValueMIPS64_OpMIPS64XORconst(v *Value) bool {
 			break
 		}
 		x := v_0
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
+		v.copyOf(x)
 		return true
 	}
 	// match: (XORconst [-1] x)
@@ -5190,9 +5176,7 @@ func rewriteValueMIPS64_OpMove(v *Value) bool {
 			break
 		}
 		mem := v_2
-		v.reset(OpCopy)
-		v.Type = mem.Type
-		v.AddArg(mem)
+		v.copyOf(mem)
 		return true
 	}
 	// match: (Move [1] dst src mem)
@@ -6927,6 +6911,24 @@ func rewriteValueMIPS64_OpRsh8x8(v *Value) bool {
 }
 func rewriteValueMIPS64_OpSelect0(v *Value) bool {
 	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (Select0 (Mul64uover x y))
+	// result: (Select1 <typ.UInt64> (MULVU x y))
+	for {
+		if v_0.Op != OpMul64uover {
+			break
+		}
+		y := v_0.Args[1]
+		x := v_0.Args[0]
+		v.reset(OpSelect1)
+		v.Type = typ.UInt64
+		v0 := b.NewValue0(v.Pos, OpMIPS64MULVU, types.NewTuple(typ.UInt64, typ.UInt64))
+		v0.AddArg(x)
+		v0.AddArg(y)
+		v.AddArg(v0)
+		return true
+	}
 	// match: (Select0 (DIVVU _ (MOVVconst [1])))
 	// result: (MOVVconst [0])
 	for {
@@ -7010,6 +7012,29 @@ func rewriteValueMIPS64_OpSelect0(v *Value) bool {
 }
 func rewriteValueMIPS64_OpSelect1(v *Value) bool {
 	v_0 := v.Args[0]
+	b := v.Block
+	typ := &b.Func.Config.Types
+	// match: (Select1 (Mul64uover x y))
+	// result: (SGTU <typ.Bool> (Select0 <typ.UInt64> (MULVU x y)) (MOVVconst <typ.UInt64> [0]))
+	for {
+		if v_0.Op != OpMul64uover {
+			break
+		}
+		y := v_0.Args[1]
+		x := v_0.Args[0]
+		v.reset(OpMIPS64SGTU)
+		v.Type = typ.Bool
+		v0 := b.NewValue0(v.Pos, OpSelect0, typ.UInt64)
+		v1 := b.NewValue0(v.Pos, OpMIPS64MULVU, types.NewTuple(typ.UInt64, typ.UInt64))
+		v1.AddArg(x)
+		v1.AddArg(y)
+		v0.AddArg(v1)
+		v.AddArg(v0)
+		v2 := b.NewValue0(v.Pos, OpMIPS64MOVVconst, typ.UInt64)
+		v2.AuxInt = 0
+		v.AddArg(v2)
+		return true
+	}
 	// match: (Select1 (MULVU x (MOVVconst [-1])))
 	// result: (NEGV x)
 	for {
@@ -7063,9 +7088,7 @@ func rewriteValueMIPS64_OpSelect1(v *Value) bool {
 			if v_0_1.Op != OpMIPS64MOVVconst || v_0_1.AuxInt != 1 {
 				continue
 			}
-			v.reset(OpCopy)
-			v.Type = x.Type
-			v.AddArg(x)
+			v.copyOf(x)
 			return true
 		}
 		break
@@ -7108,9 +7131,7 @@ func rewriteValueMIPS64_OpSelect1(v *Value) bool {
 		if v_0_1.Op != OpMIPS64MOVVconst || v_0_1.AuxInt != 1 {
 			break
 		}
-		v.reset(OpCopy)
-		v.Type = x.Type
-		v.AddArg(x)
+		v.copyOf(x)
 		return true
 	}
 	// match: (Select1 (DIVVU x (MOVVconst [c])))
@@ -7328,9 +7349,7 @@ func rewriteValueMIPS64_OpZero(v *Value) bool {
 			break
 		}
 		mem := v_1
-		v.reset(OpCopy)
-		v.Type = mem.Type
-		v.AddArg(mem)
+		v.copyOf(mem)
 		return true
 	}
 	// match: (Zero [1] ptr mem)
