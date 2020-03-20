@@ -402,7 +402,7 @@ func (fd *FD) Init(net string, pollable bool) (string, error) {
 		// We do not use events, so we can skip them always.
 		flags := uint8(syscall.FILE_SKIP_SET_EVENT_ON_HANDLE)
 		// It's not safe to skip completion notifications for UDP:
-		// https://blogs.technet.com/b/winserverperformance/archive/2008/06/26/designing-applications-for-high-performance-part-iii.aspx
+		// https://docs.microsoft.com/en-us/archive/blogs/winserverperformance/designing-applications-for-high-performance-part-iii
 		if net == "tcp" {
 			flags |= syscall.FILE_SKIP_COMPLETION_PORT_ON_SUCCESS
 		}
@@ -474,15 +474,6 @@ func (fd *FD) Close() error {
 	// reference, it is already closed.
 	runtime_Semacquire(&fd.csema)
 	return err
-}
-
-// Shutdown wraps the shutdown network call.
-func (fd *FD) Shutdown(how int) error {
-	if err := fd.incref(); err != nil {
-		return err
-	}
-	defer fd.decref()
-	return syscall.Shutdown(fd.Sysfd, how)
 }
 
 // Windows ReadFile and WSARecv use DWORD (uint32) parameter to pass buffer length.
@@ -997,17 +988,6 @@ func (fd *FD) GetFileInformationByHandle(data *syscall.ByHandleFileInformation) 
 	}
 	defer fd.decref()
 	return syscall.GetFileInformationByHandle(fd.Sysfd, data)
-}
-
-// RawControl invokes the user-defined function f for a non-IO
-// operation.
-func (fd *FD) RawControl(f func(uintptr)) error {
-	if err := fd.incref(); err != nil {
-		return err
-	}
-	defer fd.decref()
-	f(uintptr(fd.Sysfd))
-	return nil
 }
 
 // RawRead invokes the user-defined function f for a read operation.
