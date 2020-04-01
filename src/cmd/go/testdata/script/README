@@ -29,10 +29,12 @@ Scripts also have access to these other environment variables:
 	GOARCH=<target GOARCH>
 	GOCACHE=<actual GOCACHE being used outside the test>
 	GOEXE=<executable file suffix: .exe on Windows, empty on other systems>
+	GOEXPSTRING=<value of objabi.Expstring(), from GOEXPERIMENT when toolchain built>
 	GOOS=<target GOOS>
 	GOPATH=$WORK/gopath
 	GOPROXY=<local module proxy serving from cmd/go/testdata/mod>
 	GOROOT=<actual GOROOT>
+	TESTGO_GOROOT=<GOROOT used to build cmd/go, for use in tests that may change GOROOT>
 	HOME=/no-home
 	PATH=<actual PATH>
 	TMPDIR=$WORK/tmp

@@ -199,6 +199,7 @@ func TestMain(m *testing.M) {
 			return strings.TrimSpace(string(out))
 		}
 		testGOROOT = goEnv("GOROOT")
+		os.Setenv("TESTGO_GOROOT", testGOROOT)
 
 		// The whole GOROOT/pkg tree was installed using the GOHOSTOS/GOHOSTARCH
 		// toolchain (installed in GOROOT/pkg/tool/GOHOSTOS_GOHOSTARCH).
@@ -2661,7 +2662,7 @@ func TestBadCommandLines(t *testing.T) {
 	tg.tempFile("src/-x/x.go", "package x\n")
 	tg.setenv("GOPATH", tg.path("."))
 	tg.runFail("build", "--", "-x")
-	tg.grepStderr("invalid input directory name \"-x\"", "did not reject -x directory")
+	tg.grepStderr("invalid import path \"-x\"", "did not reject -x import path")
 
 	tg.tempFile("src/-x/y/y.go", "package y\n")
 	tg.setenv("GOPATH", tg.path("."))
