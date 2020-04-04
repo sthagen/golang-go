@@ -280,7 +280,7 @@ func Main(archInit func(*Arch)) {
 	flag.StringVar(&benchfile, "bench", "", "append benchmark times to `file`")
 	flag.BoolVar(&smallFrames, "smallframes", false, "reduce the size limit for stack allocated objects")
 	flag.BoolVar(&Ctxt.UseBASEntries, "dwarfbasentries", Ctxt.UseBASEntries, "use base address selection entries in DWARF")
-	flag.BoolVar(&Ctxt.Flag_newobj, "newobj", false, "use new object file format")
+	flag.BoolVar(&Ctxt.Flag_go115newobj, "go115newobj", true, "use new object file format")
 	flag.StringVar(&jsonLogOpt, "json", "", "version,destination for JSON compiler/optimizer logging")
 
 	objabi.Flagparse(usage)
@@ -314,7 +314,7 @@ func Main(archInit func(*Arch)) {
 	// Record flags that affect the build result. (And don't
 	// record flags that don't, since that would cause spurious
 	// changes in the binary.)
-	recordFlags("B", "N", "l", "msan", "race", "shared", "dynlink", "dwarflocationlists", "dwarfbasentries", "smallframes", "spectre", "newobj")
+	recordFlags("B", "N", "l", "msan", "race", "shared", "dynlink", "dwarflocationlists", "dwarfbasentries", "smallframes", "spectre", "go115newobj")
 
 	if smallFrames {
 		maxStackVarSize = 128 * 1024
@@ -679,8 +679,12 @@ func Main(archInit func(*Arch)) {
 	if Debug['l'] != 0 {
 		// Find functions that can be inlined and clone them before walk expands them.
 		visitBottomUp(xtop, func(list []*Node, recursive bool) {
+			numfns := numNonClosures(list)
 			for _, n := range list {
-				if !recursive {
+				if !recursive || numfns > 1 {
+					// We allow inlining if there is no
+					// recursion, or the recursion cycle is
+					// across more than one function.
 					caninl(n)
 				} else {
 					if Debug['m'] > 1 {
@@ -822,6 +826,17 @@ func Main(archInit func(*Arch)) {
 			log.Fatalf("cannot write benchmark data: %v", err)
 		}
 	}
+}
+
+// numNonClosures returns the number of functions in list which are not closures.
+func numNonClosures(list []*Node) int {
+	count := 0
+	for _, n := range list {
+		if n.Func.Closure == nil {
+			count++
+		}
+	}
+	return count
 }
 
 func writebench(filename string) error {
