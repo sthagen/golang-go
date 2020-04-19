@@ -5,7 +5,6 @@
 package ld
 
 import (
-	"cmd/internal/objabi"
 	"cmd/link/internal/sym"
 )
 
@@ -23,7 +22,8 @@ import (
 //
 //	1. direct call
 //	2. through a reachable interface type
-//	3. reflect.Value.Call, .Method, or reflect.Method.Func
+//	3. reflect.Value.Method (or MethodByName), or reflect.Type.Method
+//	   (or MethodByName)
 //
 // The first case is handled by the flood fill, a directly called method
 // is marked as reachable.
@@ -34,9 +34,9 @@ import (
 // as reachable. This is extremely conservative, but easy and correct.
 //
 // The third case is handled by looking to see if any of:
-//	- reflect.Value.Call is reachable
-//	- reflect.Value.Method is reachable
-// 	- reflect.Type.Method or MethodByName is called.
+//	- reflect.Value.Method or MethodByName is reachable
+// 	- reflect.Type.Method or MethodByName is called (through the
+// 	  REFLECTMETHOD attribute marked by the compiler).
 // If any of these happen, all bets are off and all exported methods
 // of reachable types are marked reachable.
 //
@@ -46,11 +46,9 @@ func deadcode(ctxt *Link) {
 }
 
 // addToTextp populates the context Textp slice (needed in various places
-// in the linker) and also the unit Textp slices (needed by the "old"
-// phase 2 DWARF generation).
+// in the linker).
 func addToTextp(ctxt *Link) {
-
-	// First set up ctxt.Textp, based on ctxt.Textp2.
+	// Set up ctxt.Textp, based on ctxt.Textp2.
 	textp := make([]*sym.Symbol, 0, len(ctxt.Textp2))
 	haveshlibs := len(ctxt.Shlibs) > 0
 	for _, tsym := range ctxt.Textp2 {
@@ -64,37 +62,4 @@ func addToTextp(ctxt *Link) {
 		textp = append(textp, sp)
 	}
 	ctxt.Textp = textp
-
-	// Dupok symbols may be defined in multiple packages; the
-	// associated package for a dupok sym is chosen sort of
-	// arbitrarily (the first containing package that the linker
-	// loads). The loop below canonicalizes the File to the package
-	// with which it will be laid down in text. Assumes that
-	// ctxt.Library is already in postorder.
-	for _, doInternal := range [2]bool{true, false} {
-		for _, lib := range ctxt.Library {
-			if isRuntimeDepPkg(lib.Pkg) != doInternal {
-				continue
-			}
-			for _, dsym := range lib.DupTextSyms2 {
-				tsp := ctxt.loader.Syms[dsym]
-				if !tsp.Attr.OnList() {
-					tsp.Attr |= sym.AttrOnList
-					tsp.File = objabi.PathToPrefix(lib.Pkg)
-				}
-			}
-		}
-	}
-
-	// Finally, set up compilation unit Textp slices. Can be removed
-	// once loader-Sym DWARF-gen phase 2 is always enabled.
-	for _, lib := range ctxt.Library {
-		for _, unit := range lib.Units {
-			for _, usym := range unit.Textp2 {
-				usp := ctxt.loader.Syms[usym]
-				usp.Attr |= sym.AttrOnList
-				unit.Textp = append(unit.Textp, usp)
-			}
-		}
-	}
 }

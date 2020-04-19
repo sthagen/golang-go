@@ -54,7 +54,8 @@ type ctxt9 struct {
 // Instruction layout.
 
 const (
-	funcAlign = 16
+	funcAlign     = 16
+	funcAlignMask = funcAlign - 1
 )
 
 const (
@@ -619,18 +620,41 @@ var oprange [ALAST & obj.AMask][]Optab
 var xcmp [C_NCLASS][C_NCLASS]bool
 
 // padding bytes to add to align code as requested
-func addpad(pc, a int64, ctxt *obj.Link) int {
+func addpad(pc, a int64, ctxt *obj.Link, cursym *obj.LSym) int {
+	// For 16 and 32 byte alignment, there is a tradeoff
+	// between aligning the code and adding too many NOPs.
 	switch a {
 	case 8:
-		if pc%8 != 0 {
+		if pc&7 != 0 {
 			return 4
 		}
 	case 16:
-		switch pc % 16 {
+		// Align to 16 bytes if possible but add at
+		// most 2 NOPs.
+		switch pc & 15 {
 		case 4, 12:
 			return 4
 		case 8:
 			return 8
+		}
+	case 32:
+		// Align to 32 bytes if possible but add at
+		// most 3 NOPs.
+		switch pc & 31 {
+		case 4, 20:
+			return 12
+		case 8, 24:
+			return 8
+		case 12, 28:
+			return 4
+		}
+		// When 32 byte alignment is requested on Linux,
+		// promote the function's alignment to 32. On AIX
+		// the function alignment is not changed which might
+		// result in 16 byte alignment but that is still fine.
+		// TODO: alignment on AIX
+		if ctxt.Headtype != objabi.Haix && cursym.Func.Align < 32 {
+			cursym.Func.Align = 32
 		}
 	default:
 		ctxt.Diag("Unexpected alignment: %d for PCALIGN directive\n", a)
@@ -662,7 +686,7 @@ func span9(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 		if m == 0 {
 			if p.As == obj.APCALIGN {
 				a := c.vregoff(&p.From)
-				m = addpad(pc, a, ctxt)
+				m = addpad(pc, a, ctxt, cursym)
 			} else {
 				if p.As != obj.ANOP && p.As != obj.AFUNCDATA && p.As != obj.APCDATA {
 					ctxt.Diag("zero-width instruction\n%v", p)
@@ -720,7 +744,7 @@ func span9(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 			if m == 0 {
 				if p.As == obj.APCALIGN {
 					a := c.vregoff(&p.From)
-					m = addpad(pc, a, ctxt)
+					m = addpad(pc, a, ctxt, cursym)
 				} else {
 					if p.As != obj.ANOP && p.As != obj.AFUNCDATA && p.As != obj.APCDATA {
 						ctxt.Diag("zero-width instruction\n%v", p)
@@ -735,8 +759,8 @@ func span9(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 		c.cursym.Size = pc
 	}
 
-	if pc%funcAlign != 0 {
-		pc += funcAlign - (pc % funcAlign)
+	if r := pc & funcAlignMask; r != 0 {
+		pc += funcAlign - r
 	}
 
 	c.cursym.Size = pc
@@ -760,7 +784,7 @@ func span9(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 		if o.type_ == 0 && p.As == obj.APCALIGN {
 			pad := LOP_RRR(OP_OR, REGZERO, REGZERO, REGZERO)
 			aln := c.vregoff(&p.From)
-			v := addpad(p.Pc, aln, c.ctxt)
+			v := addpad(p.Pc, aln, c.ctxt, c.cursym)
 			if v > 0 {
 				// Same padding instruction for all
 				for i = 0; i < int32(v/4); i++ {
