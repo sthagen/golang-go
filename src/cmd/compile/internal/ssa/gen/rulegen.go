@@ -865,12 +865,14 @@ func genBlockRewrite(rule Rule, arch arch, data blockData) *RuleRewrite {
 	controls := s[:data.controls]
 	pos := make([]string, data.controls)
 	for i, arg := range controls {
+		cname := fmt.Sprintf("b.Controls[%v]", i)
 		if strings.Contains(arg, "(") {
-			// TODO: allow custom names?
-			cname := fmt.Sprintf("b.Controls[%v]", i)
-			vname := fmt.Sprintf("v_%v", i)
+			vname, expr := splitNameExpr(arg)
+			if vname == "" {
+				vname = fmt.Sprintf("v_%v", i)
+			}
 			rr.add(declf(vname, cname))
-			p, op := genMatch0(rr, arch, arg, vname, nil, false) // TODO: pass non-nil cnt?
+			p, op := genMatch0(rr, arch, expr, vname, nil, false) // TODO: pass non-nil cnt?
 			if op != "" {
 				check := fmt.Sprintf("%s.Op == %s", cname, op)
 				if rr.Check == "" {
@@ -884,7 +886,7 @@ func genBlockRewrite(rule Rule, arch arch, data blockData) *RuleRewrite {
 			}
 			pos[i] = p
 		} else {
-			rr.add(declf(arg, "b.Controls[%v]", i))
+			rr.add(declf(arg, cname))
 			pos[i] = arg + ".Pos"
 		}
 	}
@@ -1192,6 +1194,8 @@ func genResult(rr *RuleRewrite, arch arch, result, pos string) {
 }
 
 func genResult0(rr *RuleRewrite, arch arch, result string, top, move bool, pos string) string {
+	resname, expr := splitNameExpr(result)
+	result = expr
 	// TODO: when generating a constant result, use f.constVal to avoid
 	// introducing copies just to clean them up again.
 	if result[0] != '(' {
@@ -1223,7 +1227,11 @@ func genResult0(rr *RuleRewrite, arch arch, result string, top, move bool, pos s
 		if typ == "" {
 			log.Fatalf("sub-expression %s (op=Op%s%s) at %s must have a type", result, oparch, op.name, rr.Loc)
 		}
-		v = fmt.Sprintf("v%d", rr.Alloc)
+		if resname == "" {
+			v = fmt.Sprintf("v%d", rr.Alloc)
+		} else {
+			v = resname
+		}
 		rr.Alloc++
 		rr.add(declf(v, "b.NewValue0(%s, Op%s%s, %s)", pos, oparch, op.name, typ))
 		if move && top {
