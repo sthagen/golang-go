@@ -31,6 +31,24 @@ TODO
 
 <h2 id="ports">Ports</h2>
 
+<h3 id="darwin">Darwin</h3>
+
+<p> <!-- golang.org/issue/37610, golang.org/issue/37611 -->
+  As <a href="/doc/go1.14#darwin">announced</a> in the Go 1.14 release
+  notes, Go 1.15 drops support for 32-bit binaries on macOS, iOS,
+  iPadOS, watchOS, and tvOS (the <code>darwin/386</code>
+  and <code>darwin/arm</code> ports). Go continues to support the
+  64-bit <code>darwin/amd64</code> and <code>darwin/arm64</code> ports.
+</p>
+
+<h3 id="windows">Windows</h3>
+
+<p> <!-- CL 214397 and CL 230217 -->
+  Go 1.15 now generates Windows ASLR executables when -buildmode=pie
+  cmd/link flag is provided. Go command uses -buildmode=pie by default
+  on Windows.
+</p>
+
 <p>
 TODO
 </p>
@@ -76,6 +94,26 @@ TODO
   the <code>-outputdir</code> flag now interprets relative paths relative to the
   working directory of the <code>go</code> command (rather than the working
   directory of each individual test).
+</p>
+
+<h4 id="module-cache">Module cache</h4>
+
+<p><!-- https://golang.org/cl/219538 -->
+  The location of the module cache may now be set with
+  the <code>GOMODCACHE</code> environment variable. The default value of
+  <code>GOMODCACHE</code> is <code>GOPATH[0]/pkg/mod</code>, the location of the
+  module cache before this change.
+</p>
+
+<p><!-- https://golang.org/cl/221157 -->
+  A workaround is now available for Windows "Access is denied" errors in
+  <code>go</code> commands that access the module cache, caused by external
+  programs concurrently scanning the file system (see
+  <a href="https://golang.org/issue/36568">issue #36568</a>). The workaround is
+  not enabled by default because it is not safe to use when Go versions lower
+  than 1.14.2 and 1.13.10 are running concurrently with the same module cache.
+  It can be enabled by explictly setting the environment variable
+  <code>GODEBUG=modcacheunzipinplace=1</code>.
 </p>
 
 <h2 id="runtime">Runtime</h2>
@@ -174,7 +212,7 @@ TODO
 
 <dl id="net"><dt><a href="/pkg/net/">net</a></dt>
   <dd>
-    <p><!-- CL -->
+    <p><!-- CL 228645 -->
       If an I/O operation exceeds a deadline set by
       the <a href="/pkg/net/#Conn"><code>Conn.SetDeadline</code></a>,
       <code>Conn.SetReadDeadline</code>,
@@ -188,15 +226,31 @@ TODO
       which <code>Timeout</code> returns <code>true</code> although a
       deadline has not been exceeded.
     </p>
+
+    <p><!-- CL 228641 -->
+      The new <a href="/pkg/net/#Resolver.LookupIP"><code>Resolver.LookupIP</code></a>
+      method supports IP lookups that are both network-specific and accept a context.
+    </p>
+  </dd>
+</dl>
+
+<dl id="net/http/httputil"><dt><a href="/pkg/net/http/httputil/">net/http/httputil</a></dt>
+  <dd>
+    <p><!-- CL 230937 -->
+      <a href="/pkg/net/http/httputil/#ReverseProxy"><code>ReverseProxy</code></a>
+      now supports not modifying the <code>X-Forwarded-For</code>
+      header when the incoming <code>Request.Header</code> map entry
+      for that field is <code>nil</code>.
+    </p>
   </dd>
 </dl>
 
 <dl id="net/http/pprof"><dt><a href="/pkg/net/http/pprof/">net/http/pprof</a></dt>
   <dd>
-    <p><!-- CL 147598, 229537 -->
-      All profile endpoints now support a "seconds" parameter. When present,
+    <p><!-- CL 147598, CL 229537 -->
+      All profile endpoints now support a "<code>seconds</code>" parameter. When present,
       the endpoint profiles for the specified number of seconds and reports the difference.
-      The meaning of the "seconds" parameter in the <code>cpu</code> profile and
+      The meaning of the "<code>seconds</code>" parameter in the <code>cpu</code> profile and
       the trace endpoints is unchanged.
     </p>
   </dd>
@@ -296,6 +350,28 @@ TODO
       is more efficient.
     </p>
 </dl><!-- sync -->
+
+<dl id="syscall"><dt><a href="/pkg/syscall/">syscall</a></dt>
+  <dd>
+    <p><!-- CL 231638 -->
+      On Unix systems, functions that use
+      <a href="/pkg/syscall/#SysProcAttr"><code>SysProcAttr</code></a>
+      will now reject attempts to set both the <code>Setctty</code>
+      and <code>Foreground</code> fields, as they both use
+      the <code>Ctty</code> field but do so in incompatible ways.
+      We expect that few existing programs set both fields.
+    </p>
+    <p>
+      Setting the <code>Setctty</code> field now requires that the
+      <code>Ctty</code> field be set to a file descriptor number in the
+      child process, as determined by the <code>ProcAttr.Files</code> field.
+      Using a child descriptor always worked, but there were certain
+      cases where using a parent file descriptor also happened to work.
+      Some programs that set <code>Setctty</code> will need to change
+      the value of <code>Ctty</code> to use a child descriptor number.
+    </p>
+  </dd>
+</dl>
 
 <dl id="testing"><dt><a href="/pkg/testing/">testing</a></dt>
   <dd>
