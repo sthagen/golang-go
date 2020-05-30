@@ -533,6 +533,7 @@ func cpuinit() {
 // The new G calls runtime·main.
 func schedinit() {
 	lockInit(&sched.lock, lockRankSched)
+	lockInit(&sched.sysmonlock, lockRankSysmon)
 	lockInit(&sched.deferlock, lockRankDefer)
 	lockInit(&sched.sudoglock, lockRankSudog)
 	lockInit(&deadlock, lockRankDeadlock)
@@ -1819,10 +1820,16 @@ func startTemplateThread() {
 	if GOARCH == "wasm" { // no threads on wasm yet
 		return
 	}
+
+	// Disable preemption to guarantee that the template thread will be
+	// created before a park once haveTemplateThread is set.
+	mp := acquirem()
 	if !atomic.Cas(&newmHandoff.haveTemplateThread, 0, 1) {
+		releasem(mp)
 		return
 	}
 	newm(templateThread, nil)
+	releasem(mp)
 }
 
 // templateThread is a thread in a known-good state that exists solely
@@ -4613,6 +4620,18 @@ func sysmon() {
 			}
 			unlock(&sched.lock)
 		}
+		lock(&sched.sysmonlock)
+		{
+			// If we spent a long time blocked on sysmonlock
+			// then we want to update now and next since it's
+			// likely stale.
+			now1 := nanotime()
+			if now1-now > 50*1000 /* 50µs */ {
+				next, _ = timeSleepUntil()
+			}
+			now = now1
+		}
+
 		// trigger libc interceptors if needed
 		if *cgo_yield != nil {
 			asmcgocall(*cgo_yield, nil)
@@ -4665,6 +4684,7 @@ func sysmon() {
 			lasttrace = now
 			schedtrace(debug.scheddetail > 0)
 		}
+		unlock(&sched.sysmonlock)
 	}
 }
 

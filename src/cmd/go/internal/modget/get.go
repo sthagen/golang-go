@@ -6,8 +6,10 @@
 package modget
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -350,11 +352,15 @@ func runGet(cmd *base.Command, args []string) {
 			// package in the main module. If the path contains wildcards but
 			// matches no packages, we'll warn after package loading.
 			if !strings.Contains(path, "...") {
-				var pkgs []string
+				m := search.NewMatch(path)
 				if pkgPath := modload.DirImportPath(path); pkgPath != "." {
-					pkgs = modload.TargetPackages(pkgPath)
+					m = modload.TargetPackages(pkgPath)
 				}
-				if len(pkgs) == 0 {
+				if len(m.Pkgs) == 0 {
+					for _, err := range m.Errs {
+						base.Errorf("go get %s: %v", arg, err)
+					}
+
 					abs, err := filepath.Abs(path)
 					if err != nil {
 						abs = path
@@ -394,7 +400,7 @@ func runGet(cmd *base.Command, args []string) {
 		default:
 			// The argument is a package or module path.
 			if modload.HasModRoot() {
-				if pkgs := modload.TargetPackages(path); len(pkgs) != 0 {
+				if m := modload.TargetPackages(path); len(m.Pkgs) != 0 {
 					// The path is in the main module. Nothing to query.
 					if vers != "upgrade" && vers != "patch" {
 						base.Errorf("go get %s: can't request explicit version of path in main module", arg)
@@ -697,6 +703,12 @@ func runGet(cmd *base.Command, args []string) {
 	// Everything succeeded. Update go.mod.
 	modload.AllowWriteGoMod()
 	modload.WriteGoMod()
+
+	// Print the changes we made.
+	// TODO(golang.org/issue/33284): include more information about changes to
+	// relevant module versions due to MVS upgrades and downgrades. For now,
+	// the log only contains messages for versions resolved with getQuery.
+	writeUpdateLog()
 
 	// If -d was specified, we're done after the module work.
 	// We've already downloaded modules by loading packages above.
@@ -1030,11 +1042,28 @@ func (r *lostUpgradeReqs) Required(mod module.Version) ([]module.Version, error)
 	return r.Reqs.Required(mod)
 }
 
-var loggedLines sync.Map
+var updateLog struct {
+	mu     sync.Mutex
+	buf    bytes.Buffer
+	logged map[string]bool
+}
 
 func logOncef(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
-	if _, dup := loggedLines.LoadOrStore(msg, true); !dup {
-		fmt.Fprintln(os.Stderr, msg)
+	updateLog.mu.Lock()
+	defer updateLog.mu.Unlock()
+	if updateLog.logged == nil {
+		updateLog.logged = make(map[string]bool)
 	}
+	if updateLog.logged[msg] {
+		return
+	}
+	updateLog.logged[msg] = true
+	fmt.Fprintln(&updateLog.buf, msg)
+}
+
+func writeUpdateLog() {
+	updateLog.mu.Lock()
+	defer updateLog.mu.Unlock()
+	io.Copy(os.Stderr, &updateLog.buf)
 }
