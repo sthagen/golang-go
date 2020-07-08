@@ -34,9 +34,9 @@ Do not send CLs removing the interior tags from such phrases.
 <h3 id="darwin">Darwin</h3>
 
 <p>
-  As <a href="go1.14#darwin">announced</a> in the Go 1.14 release notes,
-  Go 1.15 now requires macOS 10.12 Sierra or later;
-  support for previous versions has been discontinued.
+  As <a href="go1.14#darwin">announced</a> in the Go 1.14 release
+  notes, Go 1.15 requires macOS 10.12 Sierra or later; support for
+  previous versions has been discontinued.
 </p>
 
 <p> <!-- golang.org/issue/37610, golang.org/issue/37611, CL 227582, and CL 227198  -->
@@ -50,9 +50,9 @@ Do not send CLs removing the interior tags from such phrases.
 <h3 id="windows">Windows</h3>
 
 <p> <!-- CL 214397 and CL 230217 -->
-  Go 1.15 now generates Windows ASLR executables when <code>-buildmode=pie</code>
-  cmd/link flag is provided. Go command uses <code>-buildmode=pie</code> by default
-  on Windows.
+  Go now generates Windows ASLR executables when <code>-buildmode=pie</code>
+  cmd/link flag is provided. Go command uses <code>-buildmode=pie</code>
+  by default on Windows.
 </p>
 
 <p><!-- CL 227003 -->
@@ -177,7 +177,8 @@ Do not send CLs removing the interior tags from such phrases.
 </p>
 
 <p>
-  This new vet check is enabled by default when using <code>go test</code>.
+  This new vet check is enabled by default when
+  using <code>go</code> <code>test</code>.
 </p>
 
 <p>
@@ -205,7 +206,8 @@ Do not send CLs removing the interior tags from such phrases.
 </p>
 
 <p>
-  This new vet check is enabled by default when using <code>go test</code>.
+  This new vet check is enabled by default when
+  using <code>go</code> <code>test</code>.
 </p>
 
 <p>
@@ -331,6 +333,11 @@ Do not send CLs removing the interior tags from such phrases.
   to <a href="https://golang.org/s/better-linker">modernize the Go
   linker</a>, meaning that there will be additional linker
   improvements expected in future releases.
+</p>
+
+<p><!-- CL 207877 -->
+  TODO: <a href="https://golang.org/cl/207877">https://golang.org/cl/207877</a>: Revert -buildmode=pie to internal linking.
+  The linker defaults to internal linking mode for PIE on linux/amd64 and linux/arm64, which does require a C linker.
 </p>
 
 <h2 id="objdump">Objdump</h2>
@@ -546,11 +553,11 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="crypto/x509/pkix"><dt><a href="/pkg/crypto/x509/pkix/">crypto/x509/pkix</a></dt>
   <dd>
-    <p><!-- CL 229864 -->
+    <p><!-- CL 229864, CL 240543 -->
       <a href="/pkg/crypto/x509/pkix/#Name.String"><code>Name.String</code></a>
       now prints non-standard attributes from
       <a href="/pkg/crypto/x509/pkix/#Name.Names"><code>Names</code></a> if
-      <a href="/pkg/crypto/x509/pkix/#Name.ExtraNames"><code>ExtraNames</code></a> is empty.
+      <a href="/pkg/crypto/x509/pkix/#Name.ExtraNames"><code>ExtraNames</code></a> is nil.
     </p>
   </dd>
 </dl><!-- crypto/x509/pkix -->
@@ -658,6 +665,17 @@ Do not send CLs removing the interior tags from such phrases.
       printing the output.
   </dd>
 </dl><!-- go/printer -->
+
+<dl id="html/template"><dt><a href="/pkg/html/template/">html/template</a></dt>
+  <dd>
+    <p><!-- CL 226097 -->
+      The package now uses Unicode escapes (<code>\uNNNN</code>) in all
+      JavaScript and JSON contexts. This fixes escaping errors in
+      <code>application/ld+json</code> and <code>application/json</code>
+      contexts.
+    </p>
+  </dd>
+</dl><!-- html/template -->
 
 <dl id="io/ioutil"><dt><a href="/pkg/io/ioutil/">io/ioutil</a></dt>
   <dd>
@@ -936,8 +954,22 @@ Do not send CLs removing the interior tags from such phrases.
        return temporary directories that are automatically cleaned up
        at the end of the test.
     </p>
+
+    <p><!-- CL 229085 -->
+      TODO: <a href="https://golang.org/cl/229085">https://golang.org/cl/229085</a>: reformat test chatty output
+    </p>
   </dd>
 </dl><!-- testing -->
+
+<dl id="text/template"><dt><a href="/pkg/text/template/">text/template</a></dt>
+  <dd>
+    <p><!-- CL 226097 -->
+      <a href="/pkg/text/template/#JSEscape"><code>JSEscape</code></a> now
+      consistently uses Unicode escapes (<code>\u00XX</code>), which are
+      compatible with JSON.
+    </p>
+  </dd>
+</dl><!-- text/template -->
 
 <dl id="time"><dt><a href="/pkg/time/">time</a></dt>
   <dd>
