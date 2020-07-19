@@ -336,8 +336,10 @@ Do not send CLs removing the interior tags from such phrases.
 </p>
 
 <p><!-- CL 207877 -->
-  TODO: <a href="https://golang.org/cl/207877">https://golang.org/cl/207877</a>: Revert -buildmode=pie to internal linking.
-  The linker defaults to internal linking mode for PIE on linux/amd64 and linux/arm64, which does require a C linker.
+  The linker now defaults to internal linking mode
+  for <code>-buildmode=pie</code> on
+  <code>linux/amd64</code> and <code>linux/arm64</code>, so these
+  configurations no longer require a C linker.
 </p>
 
 <h2 id="objdump">Objdump</h2>
@@ -656,15 +658,18 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- fmt -->
 
-<dl id="go/printer"><dt><a href="/pkg/go/printer/">go/printer</a></dt>
+<dl id="go/format"><dt><a href="/pkg/go/format/">go/format</a></dt>
   <dd>
-    <p><!-- CL 231461 -->
-      The new <a href="/pkg/go/printer/#Mode"><code>Mode</code></a>
-      value <a href="/pkg/go/printer/#StdFormat"><code>StdFormat</code></a>
-      directs the printer to apply standard formatting changes while
-      printing the output.
+    <p><!-- golang.org/issue/37476, CL 231461, CL 240683 -->
+      The <a href="/pkg/go/format/#Source"><code>Source</code></a> and
+      <a href="/pkg/go/format/#Node"><code>Node</code></a> functions
+      now canonicalize number literal prefixes and exponents as part
+      of formatting Go source code. This matches the behavior of the
+      <a href="/pkg/cmd/gofmt/"><code>gofmt</code></a> command as it
+      was implemented <a href="/doc/go1.13#gofmt">since Go 1.13</a>.
+    </p>
   </dd>
-</dl><!-- go/printer -->
+</dl><!-- go/format -->
 
 <dl id="html/template"><dt><a href="/pkg/html/template/">html/template</a></dt>
   <dd>
@@ -697,6 +702,16 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
   </dd>
 </dl><!-- math/big -->
+
+<dl id="math/cmplx"><dt><a href="/pkg/math/cmplx/">math/cmplx</a></dt>
+  <dd>
+    <p><!-- CL 220689 -->
+      The functions in this package were updated to conform to the C99 standard
+      (Annex G IEC 60559-compatible complex arithmetic) with respect to handling
+      of special arguments such as infinity, NaN and signed zero.
+    </p>
+  </dd>
+</dl><!-- math/cmplx-->
 
 <dl id="net"><dt><a href="/pkg/net/">net</a></dt>
   <dd>
@@ -956,7 +971,8 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
 
     <p><!-- CL 229085 -->
-      TODO: <a href="https://golang.org/cl/229085">https://golang.org/cl/229085</a>: reformat test chatty output
+      <code>go</code> <code>test</code> <code>-v</code> now groups output by
+      test name, rather than printing the test name on each line.
     </p>
   </dd>
 </dl><!-- testing -->
