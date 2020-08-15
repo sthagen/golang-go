@@ -142,6 +142,7 @@ func (c *ctxt9) rewriteToUseTOC(p *obj.Prog) {
 		symtoc := c.ctxt.LookupInit("TOC."+sym.Name, func(s *obj.LSym) {
 			s.Type = objabi.SDATA
 			s.Set(obj.AttrDuplicateOK, true)
+			s.Set(obj.AttrStatic, true)
 			c.ctxt.Data = append(c.ctxt.Data, s)
 			s.WriteAddr(c.ctxt, 0, 8, sym, 0)
 		})
@@ -223,6 +224,7 @@ func (c *ctxt9) rewriteToUseTOC(p *obj.Prog) {
 	symtoc := c.ctxt.LookupInit("TOC."+source.Sym.Name, func(s *obj.LSym) {
 		s.Type = objabi.SDATA
 		s.Set(obj.AttrDuplicateOK, true)
+		s.Set(obj.AttrStatic, true)
 		c.ctxt.Data = append(c.ctxt.Data, s)
 		s.WriteAddr(c.ctxt, 0, 8, source.Sym, 0)
 	})
@@ -427,7 +429,6 @@ func preprocess(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 
 	/*
 	 * find leaf subroutines
-	 * strip NOPs
 	 * expand RET
 	 * expand BECOME pseudo
 	 */
@@ -557,10 +558,7 @@ func preprocess(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 			q = p
 			q1 = p.Pcond
 			if q1 != nil {
-				for q1.As == obj.ANOP {
-					q1 = q1.Link
-					p.Pcond = q1
-				}
+				// NOPs are not removed due to #40689.
 
 				if q1.Mark&LEAF == 0 {
 					q1.Mark |= LABEL
@@ -587,9 +585,8 @@ func preprocess(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 			continue
 
 		case obj.ANOP:
-			q1 = p.Link
-			q.Link = q1 /* q is non-nop */
-			q1.Mark |= p.Mark
+			// NOPs are not removed due to
+			// #40689
 			continue
 
 		default:

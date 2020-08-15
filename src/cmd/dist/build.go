@@ -824,6 +824,7 @@ func runInstall(pkg string, ch chan struct{}) {
 		"-D", "GOOS_" + goos,
 		"-D", "GOARCH_" + goarch,
 		"-D", "GOOS_GOARCH_" + goos + "_" + goarch,
+		"-p", pkg,
 	}
 	if goarch == "mips" || goarch == "mipsle" {
 		// Define GOMIPS_value from gomips.
@@ -1208,7 +1209,7 @@ func timelog(op, name string) {
 		}
 		i := strings.Index(s, " start")
 		if i < 0 {
-			log.Fatalf("time log %s does not begin with start line", os.Getenv("GOBULDTIMELOGFILE"))
+			log.Fatalf("time log %s does not begin with start line", os.Getenv("GOBUILDTIMELOGFILE"))
 		}
 		t, err := time.Parse(time.UnixDate, s[:i])
 		if err != nil {

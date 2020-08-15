@@ -8,6 +8,7 @@ package list
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -309,7 +310,7 @@ var (
 
 var nl = []byte{'\n'}
 
-func runList(cmd *base.Command, args []string) {
+func runList(ctx context.Context, cmd *base.Command, args []string) {
 	modload.LoadTests = *listTest
 	work.BuildInit()
 	out := newTrackingWriter(os.Stdout)
@@ -448,9 +449,9 @@ func runList(cmd *base.Command, args []string) {
 	load.IgnoreImports = *listFind
 	var pkgs []*load.Package
 	if *listE {
-		pkgs = load.PackagesAndErrors(args)
+		pkgs = load.PackagesAndErrors(ctx, args)
 	} else {
-		pkgs = load.Packages(args)
+		pkgs = load.Packages(ctx, args)
 		base.ExitIfErrors()
 	}
 
@@ -538,7 +539,7 @@ func runList(cmd *base.Command, args []string) {
 				a.Deps = append(a.Deps, b.AutoAction(work.ModeInstall, work.ModeInstall, p))
 			}
 		}
-		b.Do(a)
+		b.Do(ctx, a)
 	}
 
 	for _, p := range pkgs {

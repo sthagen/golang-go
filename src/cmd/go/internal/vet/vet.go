@@ -10,6 +10,7 @@ import (
 	"cmd/go/internal/load"
 	"cmd/go/internal/modload"
 	"cmd/go/internal/work"
+	"context"
 	"path/filepath"
 )
 
@@ -48,7 +49,7 @@ See also: go fmt, go fix.
 	`,
 }
 
-func runVet(cmd *base.Command, args []string) {
+func runVet(ctx context.Context, cmd *base.Command, args []string) {
 	modload.LoadTests = true
 
 	vetFlags, pkgArgs := vetFlags(args)
@@ -66,7 +67,7 @@ func runVet(cmd *base.Command, args []string) {
 		}
 	}
 
-	pkgs := load.PackagesForBuild(pkgArgs)
+	pkgs := load.PackagesForBuild(ctx, pkgArgs)
 	if len(pkgs) == 0 {
 		base.Fatalf("no packages to vet")
 	}
@@ -92,5 +93,5 @@ func runVet(cmd *base.Command, args []string) {
 			root.Deps = append(root.Deps, b.VetAction(work.ModeBuild, work.ModeBuild, pxtest))
 		}
 	}
-	b.Do(root)
+	b.Do(ctx, root)
 }

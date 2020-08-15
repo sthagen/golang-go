@@ -6,6 +6,7 @@
 package modget
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -259,7 +260,7 @@ type query struct {
 	m module.Version
 }
 
-func runGet(cmd *base.Command, args []string) {
+func runGet(ctx context.Context, cmd *base.Command, args []string) {
 	switch getU {
 	case "", "upgrade", "patch":
 		// ok
@@ -714,8 +715,8 @@ func runGet(cmd *base.Command, args []string) {
 		return
 	}
 	work.BuildInit()
-	pkgs := load.PackagesForBuild(pkgPatterns)
-	work.InstallPackages(pkgPatterns, pkgs)
+	pkgs := load.PackagesForBuild(ctx, pkgPatterns)
+	work.InstallPackages(ctx, pkgPatterns, pkgs)
 }
 
 // runQueries looks up modules at target versions in parallel. Results will be

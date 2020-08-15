@@ -6,6 +6,7 @@
 package get
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -112,7 +113,7 @@ func init() {
 	CmdGet.Flag.BoolVar(&Insecure, "insecure", Insecure, "")
 }
 
-func runGet(cmd *base.Command, args []string) {
+func runGet(ctx context.Context, cmd *base.Command, args []string) {
 	if cfg.ModulesEnabled {
 		// Should not happen: main.go should install the separate module-enabled get code.
 		base.Fatalf("go get: modules not implemented")
@@ -171,7 +172,7 @@ func runGet(cmd *base.Command, args []string) {
 	// everything.
 	load.ClearPackageCache()
 
-	pkgs := load.PackagesForBuild(args)
+	pkgs := load.PackagesForBuild(ctx, args)
 
 	// Phase 3. Install.
 	if *getD {
@@ -181,7 +182,7 @@ func runGet(cmd *base.Command, args []string) {
 		return
 	}
 
-	work.InstallPackages(args, pkgs)
+	work.InstallPackages(ctx, args, pkgs)
 }
 
 // downloadPaths prepares the list of paths to pass to download.

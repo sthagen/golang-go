@@ -6,6 +6,7 @@
 package run
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path"
@@ -57,7 +58,7 @@ func printStderr(args ...interface{}) (int, error) {
 	return fmt.Fprint(os.Stderr, args...)
 }
 
-func runRun(cmd *base.Command, args []string) {
+func runRun(ctx context.Context, cmd *base.Command, args []string) {
 	work.BuildInit()
 	var b work.Builder
 	b.Init()
@@ -78,7 +79,7 @@ func runRun(cmd *base.Command, args []string) {
 		}
 		p = load.GoFilesPackage(files)
 	} else if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		pkgs := load.PackagesAndErrors(args[:1])
+		pkgs := load.PackagesAndErrors(ctx, args[:1])
 		if len(pkgs) == 0 {
 			base.Fatalf("go run: no packages loaded from %s", args[0])
 		}
@@ -140,7 +141,7 @@ func runRun(cmd *base.Command, args []string) {
 	}
 	a1 := b.LinkAction(work.ModeBuild, work.ModeBuild, p)
 	a := &work.Action{Mode: "go run", Func: buildRunProgram, Args: cmdArgs, Deps: []*work.Action{a1}}
-	b.Do(a)
+	b.Do(ctx, a)
 }
 
 // buildRunProgram is the action for running a binary that has already
