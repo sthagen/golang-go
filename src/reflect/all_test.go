@@ -1725,6 +1725,14 @@ func TestSelectMaxCases(t *testing.T) {
 	_, _, _ = Select(sCases)
 }
 
+func TestSelectNop(t *testing.T) {
+	// "select { default: }" should always return the default case.
+	chosen, _, _ := Select([]SelectCase{{Dir: SelectDefault}})
+	if chosen != 0 {
+		t.Fatalf("expected Select to return 0, but got %#v", chosen)
+	}
+}
+
 func BenchmarkSelect(b *testing.B) {
 	channel := make(chan int)
 	close(channel)
@@ -6467,11 +6475,8 @@ func verifyGCBitsSlice(t *testing.T, typ Type, cap int, bits []byte) {
 	// Repeat the bitmap for the slice size, trimming scalars in
 	// the last element.
 	bits = rep(cap, bits)
-	for len(bits) > 2 && bits[len(bits)-1] == 0 {
+	for len(bits) > 0 && bits[len(bits)-1] == 0 {
 		bits = bits[:len(bits)-1]
-	}
-	if len(bits) == 2 && bits[0] == 0 && bits[1] == 0 {
-		bits = bits[:0]
 	}
 	if !bytes.Equal(heapBits, bits) {
 		t.Errorf("heapBits incorrect for make(%v, 0, %v)\nhave %v\nwant %v", typ, cap, heapBits, bits)

@@ -115,13 +115,24 @@ func (b *Builder) Do(ctx context.Context, root *Action) {
 
 	// Handle runs a single action and takes care of triggering
 	// any actions that are runnable as a result.
-	handle := func(a *Action) {
+	handle := func(ctx context.Context, a *Action) {
 		if a.json != nil {
 			a.json.TimeStart = time.Now()
 		}
 		var err error
 		if a.Func != nil && (!a.Failed || a.IgnoreFail) {
-			err = a.Func(b, a)
+			// TODO(matloob): Better action descriptions
+			desc := "Executing action "
+			if a.Package != nil {
+				desc += "(" + a.Mode + " " + a.Package.Desc() + ")"
+			}
+			ctx, span := trace.StartSpan(ctx, desc)
+			a.traceSpan = span
+			for _, d := range a.Deps {
+				trace.Flow(ctx, d.traceSpan, a.traceSpan)
+			}
+			err = a.Func(b, ctx, a)
+			span.Done()
 		}
 		if a.json != nil {
 			a.json.TimeDone = time.Now()
@@ -169,6 +180,7 @@ func (b *Builder) Do(ctx context.Context, root *Action) {
 	for i := 0; i < par; i++ {
 		wg.Add(1)
 		go func() {
+			ctx := trace.StartGoroutine(ctx)
 			defer wg.Done()
 			for {
 				select {
@@ -181,7 +193,7 @@ func (b *Builder) Do(ctx context.Context, root *Action) {
 					b.exec.Lock()
 					a := b.ready.pop()
 					b.exec.Unlock()
-					handle(a)
+					handle(ctx, a)
 				case <-base.Interrupted:
 					base.SetExitStatus(1)
 					return
@@ -391,7 +403,7 @@ const (
 
 // build is the action for building a single package.
 // Note that any new influence on this logic must be reported in b.buildActionID above as well.
-func (b *Builder) build(a *Action) (err error) {
+func (b *Builder) build(ctx context.Context, a *Action) (err error) {
 	p := a.Package
 
 	bit := func(x uint32, b bool) uint32 {
@@ -996,7 +1008,7 @@ var VetFlags []string
 // VetExplicit records whether the vet flags were set explicitly on the command line.
 var VetExplicit bool
 
-func (b *Builder) vet(a *Action) error {
+func (b *Builder) vet(ctx context.Context, a *Action) error {
 	// a.Deps[0] is the build of the package being vetted.
 	// a.Deps[1] is the build of the "fmt" package.
 
@@ -1187,7 +1199,7 @@ func (b *Builder) printLinkerConfig(h io.Writer, p *load.Package) {
 
 // link is the action for linking a single command.
 // Note that any new influence on this logic must be reported in b.linkActionID above as well.
-func (b *Builder) link(a *Action) (err error) {
+func (b *Builder) link(ctx context.Context, a *Action) (err error) {
 	if b.useCache(a, b.linkActionID(a), a.Package.Target) || b.IsCmdList {
 		return nil
 	}
@@ -1379,7 +1391,7 @@ func (b *Builder) getPkgConfigFlags(p *load.Package) (cflags, ldflags []string, 
 	return
 }
 
-func (b *Builder) installShlibname(a *Action) error {
+func (b *Builder) installShlibname(ctx context.Context, a *Action) error {
 	if err := allowInstall(a); err != nil {
 		return err
 	}
@@ -1428,7 +1440,7 @@ func (b *Builder) linkSharedActionID(a *Action) cache.ActionID {
 	return h.Sum()
 }
 
-func (b *Builder) linkShared(a *Action) (err error) {
+func (b *Builder) linkShared(ctx context.Context, a *Action) (err error) {
 	if b.useCache(a, b.linkSharedActionID(a), a.Target) || b.IsCmdList {
 		return nil
 	}
@@ -1454,7 +1466,7 @@ func (b *Builder) linkShared(a *Action) (err error) {
 }
 
 // BuildInstallFunc is the action for installing a single package or executable.
-func BuildInstallFunc(b *Builder, a *Action) (err error) {
+func BuildInstallFunc(b *Builder, ctx context.Context, a *Action) (err error) {
 	defer func() {
 		if err != nil && err != errPrintedOutput {
 			// a.Package == nil is possible for the go install -buildmode=shared
@@ -1707,7 +1719,7 @@ func (b *Builder) writeFile(file string, text []byte) error {
 }
 
 // Install the cgo export header file, if there is one.
-func (b *Builder) installHeader(a *Action) error {
+func (b *Builder) installHeader(ctx context.Context, a *Action) error {
 	src := a.Objdir + "_cgo_install.h"
 	if _, err := os.Stat(src); os.IsNotExist(err) {
 		// If the file does not exist, there are no exported

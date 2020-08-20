@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -21,7 +22,6 @@ import (
 	"cmd/go/internal/load"
 	"cmd/go/internal/modload"
 	"cmd/go/internal/mvs"
-	"cmd/go/internal/par"
 	"cmd/go/internal/search"
 	"cmd/go/internal/work"
 
@@ -278,7 +278,7 @@ func runGet(ctx context.Context, cmd *base.Command, args []string) {
 	}
 	modload.LoadTests = *getT
 
-	buildList := modload.LoadBuildList()
+	buildList := modload.LoadBuildList(ctx)
 	buildList = buildList[:len(buildList):len(buildList)] // copy on append
 	versionByPath := make(map[string]string)
 	for _, m := range buildList {
@@ -444,7 +444,7 @@ func runGet(ctx context.Context, cmd *base.Command, args []string) {
 	// packages in unknown modules can't be expanded. This also avoids looking
 	// up new modules while loading packages, only to downgrade later.
 	queryCache := make(map[querySpec]*query)
-	byPath := runQueries(queryCache, queries, nil)
+	byPath := runQueries(ctx, queryCache, queries, nil)
 
 	// Add missing modules to the build list.
 	// We call SetBuildList here and elsewhere, since newUpgrader,
@@ -586,7 +586,7 @@ func runGet(ctx context.Context, cmd *base.Command, args []string) {
 
 		// Query target versions for modules providing packages matched by
 		// command line arguments.
-		byPath = runQueries(queryCache, queries, modOnly)
+		byPath = runQueries(ctx, queryCache, queries, modOnly)
 
 		// Handle upgrades. This is needed for arguments that didn't match
 		// modules or matched different modules from a previous iteration. It
@@ -724,19 +724,9 @@ func runGet(ctx context.Context, cmd *base.Command, args []string) {
 // versions (including earlier queries in the modOnly map), an error will be
 // reported. A map from module paths to queries is returned, which includes
 // queries and modOnly.
-func runQueries(cache map[querySpec]*query, queries []*query, modOnly map[string]*query) map[string]*query {
-	var lookup par.Work
-	for _, q := range queries {
-		if cached := cache[q.querySpec]; cached != nil {
-			*q = *cached
-		} else {
-			cache[q.querySpec] = q
-			lookup.Add(q)
-		}
-	}
+func runQueries(ctx context.Context, cache map[querySpec]*query, queries []*query, modOnly map[string]*query) map[string]*query {
 
-	lookup.Do(10, func(item interface{}) {
-		q := item.(*query)
+	runQuery := func(q *query) {
 		if q.vers == "none" {
 			// Wait for downgrade step.
 			q.m = module.Version{Path: q.path, Version: "none"}
@@ -747,7 +737,32 @@ func runQueries(cache map[querySpec]*query, queries []*query, modOnly map[string
 			base.Errorf("go get %s: %v", q.arg, err)
 		}
 		q.m = m
-	})
+	}
+
+	type token struct{}
+	sem := make(chan token, runtime.GOMAXPROCS(0))
+	for _, q := range queries {
+		if cached := cache[q.querySpec]; cached != nil {
+			*q = *cached
+		} else {
+			sem <- token{}
+			go func(q *query) {
+				runQuery(q)
+				<-sem
+			}(q)
+		}
+	}
+
+	// Fill semaphore channel to wait for goroutines to finish.
+	for n := cap(sem); n > 0; n-- {
+		sem <- token{}
+	}
+
+	// Add to cache after concurrent section to avoid races...
+	for _, q := range queries {
+		cache[q.querySpec] = q
+	}
+
 	base.ExitIfErrors()
 
 	byPath := make(map[string]*query)
