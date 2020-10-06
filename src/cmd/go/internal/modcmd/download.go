@@ -12,9 +12,8 @@ import (
 
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
-	"cmd/go/internal/modload"
 	"cmd/go/internal/modfetch"
-	"cmd/go/internal/work"
+	"cmd/go/internal/modload"
 
 	"golang.org/x/mod/module"
 )
@@ -64,7 +63,7 @@ func init() {
 
 	// TODO(jayconrod): https://golang.org/issue/35849 Apply -x to other 'go mod' commands.
 	cmdDownload.Flag.BoolVar(&cfg.BuildX, "x", false, "")
-	work.AddModCommonFlags(cmdDownload)
+	base.AddModCommonFlags(&cmdDownload.Flag)
 }
 
 type moduleJSON struct {
@@ -81,16 +80,14 @@ type moduleJSON struct {
 
 func runDownload(ctx context.Context, cmd *base.Command, args []string) {
 	// Check whether modules are enabled and whether we're in a module.
-	if cfg.Getenv("GO111MODULE") == "off" {
-		base.Fatalf("go: modules disabled by GO111MODULE=off; see 'go help modules'")
-	}
+	modload.ForceUseModules = true
 	if !modload.HasModRoot() && len(args) == 0 {
 		base.Fatalf("go mod download: no modules specified (see 'go help mod download')")
 	}
 	if len(args) == 0 {
 		args = []string{"all"}
 	} else if modload.HasModRoot() {
-		modload.InitMod() // to fill Target
+		modload.InitMod(ctx) // to fill Target
 		targetAtLatest := modload.Target.Path + "@latest"
 		targetAtUpgrade := modload.Target.Path + "@upgrade"
 		targetAtPatch := modload.Target.Path + "@patch"
@@ -120,13 +117,13 @@ func runDownload(ctx context.Context, cmd *base.Command, args []string) {
 			return
 		}
 		mod := module.Version{Path: m.Path, Version: m.Version}
-		m.Zip, err = modfetch.DownloadZip(mod)
+		m.Zip, err = modfetch.DownloadZip(ctx, mod)
 		if err != nil {
 			m.Error = err.Error()
 			return
 		}
 		m.Sum = modfetch.Sum(mod)
-		m.Dir, err = modfetch.Download(mod)
+		m.Dir, err = modfetch.Download(ctx, mod)
 		if err != nil {
 			m.Error = err.Error()
 			return
@@ -136,9 +133,10 @@ func runDownload(ctx context.Context, cmd *base.Command, args []string) {
 	var mods []*moduleJSON
 	listU := false
 	listVersions := false
+	listRetractions := false
 	type token struct{}
 	sem := make(chan token, runtime.GOMAXPROCS(0))
-	for _, info := range modload.ListModules(ctx, args, listU, listVersions) {
+	for _, info := range modload.ListModules(ctx, args, listU, listVersions, listRetractions) {
 		if info.Replace != nil {
 			info = info.Replace
 		}
@@ -187,4 +185,7 @@ func runDownload(ctx context.Context, cmd *base.Command, args []string) {
 		}
 		base.ExitIfErrors()
 	}
+
+	// Update go.mod and especially go.sum if needed.
+	modload.WriteGoMod()
 }

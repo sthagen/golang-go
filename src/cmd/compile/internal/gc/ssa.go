@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"html"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"bufio"
@@ -26,6 +27,7 @@ var ssaConfig *ssa.Config
 var ssaCaches []ssa.Cache
 
 var ssaDump string     // early copy of $GOSSAFUNC; the func name to dump output for
+var ssaDir string      // optional destination for ssa dump file
 var ssaDumpStdout bool // whether to dump to stdout
 var ssaDumpCFG string  // generate CFGs for these phases
 const ssaDumpFile = "ssa.html"
@@ -60,9 +62,6 @@ func initssaconfig() {
 	_ = types.NewPtr(types.Errortype)                                 // *error
 	types.NewPtrCacheEnabled = false
 	ssaConfig = ssa.NewConfig(thearch.LinkArch.Name, *types_, Ctxt, Debug['N'] == 0)
-	if thearch.LinkArch.Name == "386" {
-		ssaConfig.Set387(thearch.Use387)
-	}
 	ssaConfig.SoftFloat = thearch.SoftFloat
 	ssaConfig.Race = flag_race
 	ssaCaches = make([]ssa.Cache, nBackendWorkers)
@@ -172,10 +171,6 @@ func initssaconfig() {
 		ExtendCheckFunc[ssa.BoundsSlice3C] = sysvar("panicExtendSlice3C")
 		ExtendCheckFunc[ssa.BoundsSlice3CU] = sysvar("panicExtendSlice3CU")
 	}
-
-	// GO386=387 runtime definitions
-	ControlWord64trunc = sysvar("controlWord64trunc") // uint16
-	ControlWord32 = sysvar("controlWord32")           // uint16
 
 	// Wasm (all asm funcs with special ABIs)
 	WasmMove = sysvar("wasmMove")
@@ -295,7 +290,10 @@ func (s *state) emitOpenDeferInfo() {
 // worker indicates which of the backend workers is doing the processing.
 func buildssa(fn *Node, worker int) *ssa.Func {
 	name := fn.funcname()
-	printssa := name == ssaDump
+	printssa := false
+	if ssaDump != "" { // match either a simple name e.g. "(*Reader).Reset", or a package.name e.g. "compress/gzip.(*Reader).Reset"
+		printssa = name == ssaDump || myimportpath+"."+name == ssaDump
+	}
 	var astBuf *bytes.Buffer
 	if printssa {
 		astBuf = &bytes.Buffer{}
@@ -329,8 +327,8 @@ func buildssa(fn *Node, worker int) *ssa.Func {
 	s.f.Config = ssaConfig
 	s.f.Cache = &ssaCaches[worker]
 	s.f.Cache.Reset()
-	s.f.DebugTest = s.f.DebugHashMatch("GOSSAHASH", name)
 	s.f.Name = name
+	s.f.DebugTest = s.f.DebugHashMatch("GOSSAHASH")
 	s.f.PrintOrHtmlSSA = printssa
 	if fn.Func.Pragma&Nosplit != 0 {
 		s.f.NoSplit = true
@@ -338,15 +336,22 @@ func buildssa(fn *Node, worker int) *ssa.Func {
 	s.panics = map[funcLine]*ssa.Block{}
 	s.softFloat = s.config.SoftFloat
 
+	// Allocate starting block
+	s.f.Entry = s.f.NewBlock(ssa.BlockPlain)
+	s.f.Entry.Pos = fn.Pos
+
 	if printssa {
-		s.f.HTMLWriter = ssa.NewHTMLWriter(ssaDumpFile, s.f, ssaDumpCFG)
+		ssaDF := ssaDumpFile
+		if ssaDir != "" {
+			ssaDF = filepath.Join(ssaDir, myimportpath+"."+name+".html")
+			ssaD := filepath.Dir(ssaDF)
+			os.MkdirAll(ssaD, 0755)
+		}
+		s.f.HTMLWriter = ssa.NewHTMLWriter(ssaDF, s.f, ssaDumpCFG)
 		// TODO: generate and print a mapping from nodes to values and blocks
 		dumpSourcesColumn(s.f.HTMLWriter, fn)
 		s.f.HTMLWriter.WriteAST("AST", astBuf)
 	}
-
-	// Allocate starting block
-	s.f.Entry = s.f.NewBlock(ssa.BlockPlain)
 
 	// Allocate starting values
 	s.labels = map[string]*ssaLabel{}
@@ -647,6 +652,8 @@ type state struct {
 	lastDeferExit       *ssa.Block // Entry block of last defer exit code we generated
 	lastDeferFinalBlock *ssa.Block // Final block of last defer exit code we generated
 	lastDeferCount      int        // Number of defers encountered at that point
+
+	prevCall *ssa.Value // the previous call; use this to tie results to the call op.
 }
 
 type funcLine struct {
@@ -799,6 +806,11 @@ func (s *state) newValue1I(op ssa.Op, t *types.Type, aux int64, arg *ssa.Value) 
 // newValue2 adds a new value with two arguments to the current block.
 func (s *state) newValue2(op ssa.Op, t *types.Type, arg0, arg1 *ssa.Value) *ssa.Value {
 	return s.curBlock.NewValue2(s.peekPos(), op, t, arg0, arg1)
+}
+
+// newValue2A adds a new value with two arguments and an aux value to the current block.
+func (s *state) newValue2A(op ssa.Op, t *types.Type, aux interface{}, arg0, arg1 *ssa.Value) *ssa.Value {
+	return s.curBlock.NewValue2A(s.peekPos(), op, t, aux, arg0, arg1)
 }
 
 // newValue2Apos adds a new value with two arguments and an aux value to the current block.
@@ -1067,7 +1079,7 @@ func (s *state) stmt(n *Node) {
 		fallthrough
 
 	case OCALLMETH, OCALLINTER:
-		s.call(n, callNormal)
+		s.callResult(n, callNormal)
 		if n.Op == OCALLFUNC && n.Left.Op == ONAME && n.Left.Class() == PFUNC {
 			if fn := n.Left.Sym.Name; compiling_runtime && fn == "throw" ||
 				n.Left.Sym.Pkg == Runtimepkg && (fn == "throwinit" || fn == "gopanic" || fn == "panicwrap" || fn == "block" || fn == "panicmakeslicelen" || fn == "panicmakeslicecap") {
@@ -1099,10 +1111,10 @@ func (s *state) stmt(n *Node) {
 			if n.Esc == EscNever {
 				d = callDeferStack
 			}
-			s.call(n.Left, d)
+			s.callResult(n.Left, d)
 		}
 	case OGO:
-		s.call(n.Left, callGo)
+		s.callResult(n.Left, callGo)
 
 	case OAS2DOTTYPE:
 		res, resok := s.dottype(n.Right, true)
@@ -2109,7 +2121,7 @@ func (s *state) expr(n *Node) *ssa.Value {
 		}
 
 		// unsafe.Pointer <--> *T
-		if to.Etype == TUNSAFEPTR && from.IsPtrShaped() || from.Etype == TUNSAFEPTR && to.IsPtrShaped() {
+		if to.IsUnsafePtr() && from.IsPtrShaped() || from.IsUnsafePtr() && to.IsPtrShaped() {
 			return v
 		}
 
@@ -2545,8 +2557,23 @@ func (s *state) expr(n *Node) *ssa.Value {
 		return s.addr(n.Left)
 
 	case ORESULT:
-		addr := s.constOffPtrSP(types.NewPtr(n.Type), n.Xoffset)
-		return s.load(n.Type, addr)
+		if s.prevCall == nil || s.prevCall.Op != ssa.OpStaticLECall && s.prevCall.Op != ssa.OpInterLECall && s.prevCall.Op != ssa.OpClosureLECall {
+			// Do the old thing
+			addr := s.constOffPtrSP(types.NewPtr(n.Type), n.Xoffset)
+			return s.rawLoad(n.Type, addr)
+		}
+		which := s.prevCall.Aux.(*ssa.AuxCall).ResultForOffset(n.Xoffset)
+		if which == -1 {
+			// Do the old thing // TODO: Panic instead.
+			addr := s.constOffPtrSP(types.NewPtr(n.Type), n.Xoffset)
+			return s.rawLoad(n.Type, addr)
+		}
+		if canSSAType(n.Type) {
+			return s.newValue1I(ssa.OpSelectN, n.Type, which, s.prevCall)
+		} else {
+			addr := s.newValue1I(ssa.OpSelectNAddr, types.NewPtr(n.Type), which, s.prevCall)
+			return s.rawLoad(n.Type, addr)
+		}
 
 	case ODEREF:
 		p := s.exprPtr(n.Left, n.Bounded(), n.Pos)
@@ -2706,8 +2733,7 @@ func (s *state) expr(n *Node) *ssa.Value {
 		fallthrough
 
 	case OCALLINTER, OCALLMETH:
-		a := s.call(n, callNormal)
-		return s.load(n.Type, a)
+		return s.callResult(n, callNormal)
 
 	case OGETG:
 		return s.newValue1(ssa.OpGetG, n.Type, s.mem())
@@ -3580,8 +3606,7 @@ func init() {
 	addF("math", "FMA",
 		func(s *state, n *Node, args []*ssa.Value) *ssa.Value {
 			if !s.config.UseFMA {
-				a := s.call(n, callNormal)
-				s.vars[n] = s.load(types.Types[TFLOAT64], a)
+				s.vars[n] = s.callResult(n, callNormal) // types.Types[TFLOAT64]
 				return s.variable(n, types.Types[TFLOAT64])
 			}
 			v := s.entryNewValue0A(ssa.OpHasCPUFeature, types.Types[TBOOL], x86HasFMA)
@@ -3602,8 +3627,7 @@ func init() {
 
 			// Call the pure Go version.
 			s.startBlock(bFalse)
-			a := s.call(n, callNormal)
-			s.vars[n] = s.load(types.Types[TFLOAT64], a)
+			s.vars[n] = s.callResult(n, callNormal) // types.Types[TFLOAT64]
 			s.endBlock().AddEdgeTo(bEnd)
 
 			// Merge results.
@@ -3614,8 +3638,7 @@ func init() {
 	addF("math", "FMA",
 		func(s *state, n *Node, args []*ssa.Value) *ssa.Value {
 			if !s.config.UseFMA {
-				a := s.call(n, callNormal)
-				s.vars[n] = s.load(types.Types[TFLOAT64], a)
+				s.vars[n] = s.callResult(n, callNormal) // types.Types[TFLOAT64]
 				return s.variable(n, types.Types[TFLOAT64])
 			}
 			addr := s.entryNewValue1A(ssa.OpAddr, types.Types[TBOOL].PtrTo(), armHasVFPv4, s.sb)
@@ -3637,8 +3660,7 @@ func init() {
 
 			// Call the pure Go version.
 			s.startBlock(bFalse)
-			a := s.call(n, callNormal)
-			s.vars[n] = s.load(types.Types[TFLOAT64], a)
+			s.vars[n] = s.callResult(n, callNormal) // types.Types[TFLOAT64]
 			s.endBlock().AddEdgeTo(bEnd)
 
 			// Merge results.
@@ -3667,8 +3689,7 @@ func init() {
 
 			// Call the pure Go version.
 			s.startBlock(bFalse)
-			a := s.call(n, callNormal)
-			s.vars[n] = s.load(types.Types[TFLOAT64], a)
+			s.vars[n] = s.callResult(n, callNormal) // types.Types[TFLOAT64]
 			s.endBlock().AddEdgeTo(bEnd)
 
 			// Merge results.
@@ -3878,8 +3899,7 @@ func init() {
 
 			// Call the pure Go version.
 			s.startBlock(bFalse)
-			a := s.call(n, callNormal)
-			s.vars[n] = s.load(types.Types[TINT], a)
+			s.vars[n] = s.callResult(n, callNormal) // types.Types[TINT]
 			s.endBlock().AddEdgeTo(bEnd)
 
 			// Merge results.
@@ -4002,11 +4022,6 @@ func init() {
 			return s.newValue2(ssa.OpMul64uhilo, types.NewTuple(types.Types[TUINT64], types.Types[TUINT64]), args[0], args[1])
 		},
 		sys.ArchAMD64, sys.ArchARM64, sys.ArchPPC64LE, sys.ArchPPC64, sys.ArchS390X)
-	add("math/big", "divWW",
-		func(s *state, n *Node, args []*ssa.Value) *ssa.Value {
-			return s.newValue3(ssa.OpDiv128u, types.NewTuple(types.Types[TUINT64], types.Types[TUINT64]), args[0], args[1], args[2])
-		},
-		sys.ArchAMD64)
 }
 
 // findIntrinsic returns a function which builds the SSA equivalent of the
@@ -4206,7 +4221,7 @@ func (s *state) openDeferSave(n *Node, t *types.Type, val *ssa.Value) *ssa.Value
 		s.vars[&memVar] = s.newValue1Apos(ssa.OpVarLive, types.TypeMem, argTemp, s.mem(), false)
 		addrArgTemp = s.newValue2Apos(ssa.OpLocalAddr, types.NewPtr(argTemp.Type), argTemp, s.sp, s.mem(), false)
 	}
-	if types.Haspointers(t) {
+	if t.HasPointers() {
 		// Since we may use this argTemp during exit depending on the
 		// deferBits, we must define it unconditionally on entry.
 		// Therefore, we must make sure it is zeroed out in the entry
@@ -4271,16 +4286,20 @@ func (s *state) openDeferExit() {
 		argStart := Ctxt.FixedFrameSize()
 		fn := r.n.Left
 		stksize := fn.Type.ArgWidth()
+		var ACArgs []ssa.Param
+		var ACResults []ssa.Param
 		if r.rcvr != nil {
 			// rcvr in case of OCALLINTER
 			v := s.load(r.rcvr.Type.Elem(), r.rcvr)
 			addr := s.constOffPtrSP(s.f.Config.Types.UintptrPtr, argStart)
+			ACArgs = append(ACArgs, ssa.Param{Type: types.Types[TUINTPTR], Offset: int32(argStart)})
 			s.store(types.Types[TUINTPTR], addr, v)
 		}
 		for j, argAddrVal := range r.argVals {
 			f := getParam(r.n, j)
 			pt := types.NewPtr(f.Type)
 			addr := s.constOffPtrSP(pt, argStart+f.Offset)
+			ACArgs = append(ACArgs, ssa.Param{Type: types.Types[TUINTPTR], Offset: int32(argStart + f.Offset)})
 			if !canSSAType(f.Type) {
 				s.move(f.Type, addr, argAddrVal)
 			} else {
@@ -4293,10 +4312,10 @@ func (s *state) openDeferExit() {
 			v := s.load(r.closure.Type.Elem(), r.closure)
 			s.maybeNilCheckClosure(v, callDefer)
 			codeptr := s.rawLoad(types.Types[TUINTPTR], v)
-			call = s.newValue3(ssa.OpClosureCall, types.TypeMem, codeptr, v, s.mem())
+			call = s.newValue3A(ssa.OpClosureCall, types.TypeMem, ssa.ClosureAuxCall(ACArgs, ACResults), codeptr, v, s.mem())
 		} else {
 			// Do a static call if the original call was a static function or method
-			call = s.newValue1A(ssa.OpStaticCall, types.TypeMem, fn.Sym.Linksym(), s.mem())
+			call = s.newValue1A(ssa.OpStaticCall, types.TypeMem, ssa.StaticAuxCall(fn.Sym.Linksym(), ACArgs, ACResults), s.mem())
 		}
 		call.AuxInt = stksize
 		s.vars[&memVar] = call
@@ -4308,12 +4327,12 @@ func (s *state) openDeferExit() {
 			s.vars[&memVar] = s.newValue1Apos(ssa.OpVarLive, types.TypeMem, r.closureNode, s.mem(), false)
 		}
 		if r.rcvrNode != nil {
-			if types.Haspointers(r.rcvrNode.Type) {
+			if r.rcvrNode.Type.HasPointers() {
 				s.vars[&memVar] = s.newValue1Apos(ssa.OpVarLive, types.TypeMem, r.rcvrNode, s.mem(), false)
 			}
 		}
 		for _, argNode := range r.argNodes {
-			if types.Haspointers(argNode.Type) {
+			if argNode.Type.HasPointers() {
 				s.vars[&memVar] = s.newValue1Apos(ssa.OpVarLive, types.TypeMem, argNode, s.mem(), false)
 			}
 		}
@@ -4323,16 +4342,42 @@ func (s *state) openDeferExit() {
 	}
 }
 
+func (s *state) callResult(n *Node, k callKind) *ssa.Value {
+	return s.call(n, k, false)
+}
+
+func (s *state) callAddr(n *Node, k callKind) *ssa.Value {
+	return s.call(n, k, true)
+}
+
 // Calls the function n using the specified call type.
 // Returns the address of the return value (or nil if none).
-func (s *state) call(n *Node, k callKind) *ssa.Value {
+func (s *state) call(n *Node, k callKind, returnResultAddr bool) *ssa.Value {
+	s.prevCall = nil
 	var sym *types.Sym     // target symbol (if static)
 	var closure *ssa.Value // ptr to closure to run (if dynamic)
 	var codeptr *ssa.Value // ptr to target code (if dynamic)
 	var rcvr *ssa.Value    // receiver to set
 	fn := n.Left
+	var ACArgs []ssa.Param
+	var ACResults []ssa.Param
+	var callArgs []*ssa.Value
+	res := n.Left.Type.Results()
+	if k == callNormal {
+		nf := res.NumFields()
+		for i := 0; i < nf; i++ {
+			fp := res.Field(i)
+			ACResults = append(ACResults, ssa.Param{Type: fp.Type, Offset: int32(fp.Offset + Ctxt.FixedFrameSize())})
+		}
+	}
+
+	testLateExpansion := false
+
 	switch n.Op {
 	case OCALLFUNC:
+		if k != callDeferStack && ssa.LateCallExpansionEnabledWithin(s.f) {
+			testLateExpansion = true
+		}
 		if k == callNormal && fn.Op == ONAME && fn.Class() == PFUNC {
 			sym = fn.Sym
 			break
@@ -4347,6 +4392,9 @@ func (s *state) call(n *Node, k callKind) *ssa.Value {
 		if fn.Op != ODOTMETH {
 			s.Fatalf("OCALLMETH: n.Left not an ODOTMETH: %v", fn)
 		}
+		if k != callDeferStack && ssa.LateCallExpansionEnabledWithin(s.f) {
+			testLateExpansion = true
+		}
 		if k == callNormal {
 			sym = fn.Sym
 			break
@@ -4357,6 +4405,9 @@ func (s *state) call(n *Node, k callKind) *ssa.Value {
 	case OCALLINTER:
 		if fn.Op != ODOTINTER {
 			s.Fatalf("OCALLINTER: n.Left not an ODOTINTER: %v", fn.Op)
+		}
+		if k != callDeferStack && ssa.LateCallExpansionEnabledWithin(s.f) {
+			testLateExpansion = true
 		}
 		var iclosure *ssa.Value
 		iclosure, rcvr = s.getClosureAndRcvr(fn)
@@ -4428,10 +4479,12 @@ func (s *state) call(n *Node, k callKind) *ssa.Value {
 		// Call runtime.deferprocStack with pointer to _defer record.
 		arg0 := s.constOffPtrSP(types.Types[TUINTPTR], Ctxt.FixedFrameSize())
 		s.store(types.Types[TUINTPTR], arg0, addr)
-		call = s.newValue1A(ssa.OpStaticCall, types.TypeMem, deferprocStack, s.mem())
+		ACArgs = append(ACArgs, ssa.Param{Type: types.Types[TUINTPTR], Offset: int32(Ctxt.FixedFrameSize())})
+		call = s.newValue1A(ssa.OpStaticCall, types.TypeMem, ssa.StaticAuxCall(deferprocStack, ACArgs, ACResults), s.mem())
 		if stksize < int64(Widthptr) {
 			// We need room for both the call to deferprocStack and the call to
 			// the deferred function.
+			// TODO Revisit this if/when we pass args in registers.
 			stksize = int64(Widthptr)
 		}
 		call.AuxInt = stksize
@@ -4443,10 +4496,20 @@ func (s *state) call(n *Node, k callKind) *ssa.Value {
 		if k != callNormal {
 			// Write argsize and closure (args to newproc/deferproc).
 			argsize := s.constInt32(types.Types[TUINT32], int32(stksize))
-			addr := s.constOffPtrSP(s.f.Config.Types.UInt32Ptr, argStart)
-			s.store(types.Types[TUINT32], addr, argsize)
-			addr = s.constOffPtrSP(s.f.Config.Types.UintptrPtr, argStart+int64(Widthptr))
-			s.store(types.Types[TUINTPTR], addr, closure)
+			ACArgs = append(ACArgs, ssa.Param{Type: types.Types[TUINT32], Offset: int32(argStart)})
+			if testLateExpansion {
+				callArgs = append(callArgs, argsize)
+			} else {
+				addr := s.constOffPtrSP(s.f.Config.Types.UInt32Ptr, argStart)
+				s.store(types.Types[TUINT32], addr, argsize)
+			}
+			ACArgs = append(ACArgs, ssa.Param{Type: types.Types[TUINTPTR], Offset: int32(argStart) + int32(Widthptr)})
+			if testLateExpansion {
+				callArgs = append(callArgs, closure)
+			} else {
+				addr := s.constOffPtrSP(s.f.Config.Types.UintptrPtr, argStart+int64(Widthptr))
+				s.store(types.Types[TUINTPTR], addr, closure)
+			}
 			stksize += 2 * int64(Widthptr)
 			argStart += 2 * int64(Widthptr)
 		}
@@ -4454,7 +4517,12 @@ func (s *state) call(n *Node, k callKind) *ssa.Value {
 		// Set receiver (for interface calls).
 		if rcvr != nil {
 			addr := s.constOffPtrSP(s.f.Config.Types.UintptrPtr, argStart)
-			s.store(types.Types[TUINTPTR], addr, rcvr)
+			ACArgs = append(ACArgs, ssa.Param{Type: types.Types[TUINTPTR], Offset: int32(argStart)})
+			if testLateExpansion {
+				callArgs = append(callArgs, rcvr)
+			} else {
+				s.store(types.Types[TUINTPTR], addr, rcvr)
+			}
 		}
 
 		// Write args.
@@ -4462,20 +4530,38 @@ func (s *state) call(n *Node, k callKind) *ssa.Value {
 		args := n.Rlist.Slice()
 		if n.Op == OCALLMETH {
 			f := t.Recv()
-			s.storeArg(args[0], f.Type, argStart+f.Offset)
+			ACArg, arg := s.putArg(args[0], f.Type, argStart+f.Offset, testLateExpansion)
+			ACArgs = append(ACArgs, ACArg)
+			callArgs = append(callArgs, arg)
 			args = args[1:]
 		}
 		for i, n := range args {
 			f := t.Params().Field(i)
-			s.storeArg(n, f.Type, argStart+f.Offset)
+			ACArg, arg := s.putArg(n, f.Type, argStart+f.Offset, testLateExpansion)
+			ACArgs = append(ACArgs, ACArg)
+			callArgs = append(callArgs, arg)
 		}
+
+		callArgs = append(callArgs, s.mem())
 
 		// call target
 		switch {
 		case k == callDefer:
-			call = s.newValue1A(ssa.OpStaticCall, types.TypeMem, deferproc, s.mem())
+			aux := ssa.StaticAuxCall(deferproc, ACArgs, ACResults)
+			if testLateExpansion {
+				call = s.newValue0A(ssa.OpStaticLECall, aux.LateExpansionResultType(), aux)
+				call.AddArgs(callArgs...)
+			} else {
+				call = s.newValue1A(ssa.OpStaticCall, types.TypeMem, aux, s.mem())
+			}
 		case k == callGo:
-			call = s.newValue1A(ssa.OpStaticCall, types.TypeMem, newproc, s.mem())
+			aux := ssa.StaticAuxCall(newproc, ACArgs, ACResults)
+			if testLateExpansion {
+				call = s.newValue0A(ssa.OpStaticLECall, aux.LateExpansionResultType(), aux)
+				call.AddArgs(callArgs...)
+			} else {
+				call = s.newValue1A(ssa.OpStaticCall, types.TypeMem, aux, s.mem())
+			}
 		case closure != nil:
 			// rawLoad because loading the code pointer from a
 			// closure is always safe, but IsSanitizerSafeAddr
@@ -4483,17 +4569,42 @@ func (s *state) call(n *Node, k callKind) *ssa.Value {
 			// critical that we not clobber any arguments already
 			// stored onto the stack.
 			codeptr = s.rawLoad(types.Types[TUINTPTR], closure)
-			call = s.newValue3(ssa.OpClosureCall, types.TypeMem, codeptr, closure, s.mem())
+			if testLateExpansion {
+				aux := ssa.ClosureAuxCall(ACArgs, ACResults)
+				call = s.newValue2A(ssa.OpClosureLECall, aux.LateExpansionResultType(), aux, codeptr, closure)
+				call.AddArgs(callArgs...)
+			} else {
+				call = s.newValue3A(ssa.OpClosureCall, types.TypeMem, ssa.ClosureAuxCall(ACArgs, ACResults), codeptr, closure, s.mem())
+			}
 		case codeptr != nil:
-			call = s.newValue2(ssa.OpInterCall, types.TypeMem, codeptr, s.mem())
+			if testLateExpansion {
+				aux := ssa.InterfaceAuxCall(ACArgs, ACResults)
+				call = s.newValue1A(ssa.OpInterLECall, aux.LateExpansionResultType(), aux, codeptr)
+				call.AddArgs(callArgs...)
+			} else {
+				call = s.newValue2A(ssa.OpInterCall, types.TypeMem, ssa.InterfaceAuxCall(ACArgs, ACResults), codeptr, s.mem())
+			}
 		case sym != nil:
-			call = s.newValue1A(ssa.OpStaticCall, types.TypeMem, sym.Linksym(), s.mem())
+			if testLateExpansion {
+				aux := ssa.StaticAuxCall(sym.Linksym(), ACArgs, ACResults)
+				call = s.newValue0A(ssa.OpStaticLECall, aux.LateExpansionResultType(), aux)
+				call.AddArgs(callArgs...)
+			} else {
+				call = s.newValue1A(ssa.OpStaticCall, types.TypeMem, ssa.StaticAuxCall(sym.Linksym(), ACArgs, ACResults), s.mem())
+			}
 		default:
 			s.Fatalf("bad call type %v %v", n.Op, n)
 		}
 		call.AuxInt = stksize // Call operations carry the argsize of the callee along with them
 	}
-	s.vars[&memVar] = call
+	if testLateExpansion {
+		s.prevCall = call
+		s.vars[&memVar] = s.newValue1I(ssa.OpSelectN, types.TypeMem, int64(len(ACResults)), call)
+	} else {
+		s.vars[&memVar] = call
+	}
+	// Insert OVARLIVE nodes
+	s.stmtList(n.Nbody)
 
 	// Finish block for defers
 	if k == callDefer || k == callDeferStack {
@@ -4511,13 +4622,23 @@ func (s *state) call(n *Node, k callKind) *ssa.Value {
 		s.startBlock(bNext)
 	}
 
-	res := n.Left.Type.Results()
 	if res.NumFields() == 0 || k != callNormal {
 		// call has no return value. Continue with the next statement.
 		return nil
 	}
 	fp := res.Field(0)
-	return s.constOffPtrSP(types.NewPtr(fp.Type), fp.Offset+Ctxt.FixedFrameSize())
+	if returnResultAddr {
+		pt := types.NewPtr(fp.Type)
+		if testLateExpansion {
+			return s.newValue1I(ssa.OpSelectNAddr, pt, 0, call)
+		}
+		return s.constOffPtrSP(pt, fp.Offset+Ctxt.FixedFrameSize())
+	}
+
+	if testLateExpansion {
+		return s.newValue1I(ssa.OpSelectN, fp.Type, 0, call)
+	}
+	return s.load(n.Type, s.constOffPtrSP(types.NewPtr(fp.Type), fp.Offset+Ctxt.FixedFrameSize()))
 }
 
 // maybeNilCheckClosure checks if a nil check of a closure is needed in some
@@ -4615,7 +4736,17 @@ func (s *state) addr(n *Node) *ssa.Value {
 		}
 	case ORESULT:
 		// load return from callee
-		return s.constOffPtrSP(t, n.Xoffset)
+		if s.prevCall == nil || s.prevCall.Op != ssa.OpStaticLECall && s.prevCall.Op != ssa.OpInterLECall && s.prevCall.Op != ssa.OpClosureLECall {
+			return s.constOffPtrSP(t, n.Xoffset)
+		}
+		which := s.prevCall.Aux.(*ssa.AuxCall).ResultForOffset(n.Xoffset)
+		if which == -1 {
+			// Do the old thing // TODO: Panic instead.
+			return s.constOffPtrSP(t, n.Xoffset)
+		}
+		x := s.newValue1I(ssa.OpSelectNAddr, t, which, s.prevCall)
+		return x
+
 	case OINDEX:
 		if n.Left.Type.IsSlice() {
 			a := s.expr(n.Left)
@@ -4646,7 +4777,7 @@ func (s *state) addr(n *Node) *ssa.Value {
 		addr := s.addr(n.Left)
 		return s.newValue1(ssa.OpCopy, t, addr) // ensure that addr has the right type
 	case OCALLFUNC, OCALLINTER, OCALLMETH:
-		return s.call(n, callNormal)
+		return s.callAddr(n, callNormal)
 	case ODOTTYPE:
 		v, _ := s.dottype(n, false)
 		if v.Op != ssa.OpLoad {
@@ -4905,20 +5036,32 @@ func (s *state) intDivide(n *Node, a, b *ssa.Value) *ssa.Value {
 // The call is added to the end of the current block.
 // If returns is false, the block is marked as an exit block.
 func (s *state) rtcall(fn *obj.LSym, returns bool, results []*types.Type, args ...*ssa.Value) []*ssa.Value {
+	s.prevCall = nil
 	// Write args to the stack
 	off := Ctxt.FixedFrameSize()
+	var ACArgs []ssa.Param
+	var ACResults []ssa.Param
 	for _, arg := range args {
 		t := arg.Type
 		off = Rnd(off, t.Alignment())
 		ptr := s.constOffPtrSP(t.PtrTo(), off)
 		size := t.Size()
+		ACArgs = append(ACArgs, ssa.Param{Type: t, Offset: int32(off)})
 		s.store(t, ptr, arg)
 		off += size
 	}
 	off = Rnd(off, int64(Widthreg))
 
+	// Accumulate results types and offsets
+	offR := off
+	for _, t := range results {
+		offR = Rnd(offR, t.Alignment())
+		ACResults = append(ACResults, ssa.Param{Type: t, Offset: int32(offR)})
+		offR += t.Size()
+	}
+
 	// Issue call
-	call := s.newValue1A(ssa.OpStaticCall, types.TypeMem, fn, s.mem())
+	call := s.newValue1A(ssa.OpStaticCall, types.TypeMem, ssa.StaticAuxCall(fn, ACArgs, ACResults), s.mem())
 	s.vars[&memVar] = call
 
 	if !returns {
@@ -4953,7 +5096,7 @@ func (s *state) rtcall(fn *obj.LSym, returns bool, results []*types.Type, args .
 func (s *state) storeType(t *types.Type, left, right *ssa.Value, skip skipMask, leftIsStmt bool) {
 	s.instrument(t, left, true)
 
-	if skip == 0 && (!types.Haspointers(t) || ssa.IsStackAddr(left)) {
+	if skip == 0 && (!t.HasPointers() || ssa.IsStackAddr(left)) {
 		// Known to not have write barrier. Store the whole type.
 		s.vars[&memVar] = s.newValue3Apos(ssa.OpStore, types.TypeMem, t, left, right, s.mem(), leftIsStmt)
 		return
@@ -4965,7 +5108,7 @@ func (s *state) storeType(t *types.Type, left, right *ssa.Value, skip skipMask, 
 	// TODO: if the writebarrier pass knows how to reorder stores,
 	// we can do a single store here as long as skip==0.
 	s.storeTypeScalars(t, left, right, skip)
-	if skip&skipPtr == 0 && types.Haspointers(t) {
+	if skip&skipPtr == 0 && t.HasPointers() {
 		s.storeTypePtrs(t, left, right)
 	}
 }
@@ -5037,7 +5180,7 @@ func (s *state) storeTypePtrs(t *types.Type, left, right *ssa.Value) {
 		n := t.NumFields()
 		for i := 0; i < n; i++ {
 			ft := t.FieldType(i)
-			if !types.Haspointers(ft) {
+			if !ft.HasPointers() {
 				continue
 			}
 			addr := s.newValue1I(ssa.OpOffPtr, ft.PtrTo(), t.FieldOff(i), left)
@@ -5053,8 +5196,21 @@ func (s *state) storeTypePtrs(t *types.Type, left, right *ssa.Value) {
 	}
 }
 
-func (s *state) storeArg(n *Node, t *types.Type, off int64) {
-	s.storeArgWithBase(n, t, s.sp, off)
+// putArg evaluates n for the purpose of passing it as an argument to a function and returns the corresponding Param for the call.
+// If forLateExpandedCall is true, it returns the argument value to pass to the call operation.
+// If forLateExpandedCall is false, then the value is stored at the specified stack offset, and the returned value is nil.
+func (s *state) putArg(n *Node, t *types.Type, off int64, forLateExpandedCall bool) (ssa.Param, *ssa.Value) {
+	var a *ssa.Value
+	if forLateExpandedCall {
+		if !canSSAType(t) {
+			a = s.newValue2(ssa.OpDereference, t, s.addr(n), s.mem())
+		} else {
+			a = s.expr(n)
+		}
+	} else {
+		s.storeArgWithBase(n, t, s.sp, off)
+	}
+	return ssa.Param{Type: t, Offset: int32(off)}, a
 }
 
 func (s *state) storeArgWithBase(n *Node, t *types.Type, base *ssa.Value, off int64) {
@@ -5783,9 +5939,7 @@ type SSAGenState struct {
 	// bstart remembers where each block starts (indexed by block ID)
 	bstart []*obj.Prog
 
-	// 387 port: maps from SSE registers (REG_X?) to 387 registers (REG_F?)
-	SSEto387 map[int16]int16
-	// Some architectures require a 64-bit temporary for FP-related register shuffling. Examples include x86-387, PPC, and Sparc V8.
+	// Some architectures require a 64-bit temporary for FP-related register shuffling. Examples include PPC and Sparc V8.
 	ScratchFpMem *Node
 
 	maxarg int64 // largest frame size for arguments to calls made by the function
@@ -5950,10 +6104,6 @@ func genssa(f *ssa.Func, pp *Progs) {
 		progToBlock = make(map[*obj.Prog]*ssa.Block, f.NumBlocks())
 		f.Logf("genssa %s\n", f.Name)
 		progToBlock[s.pp.next] = f.Blocks[0]
-	}
-
-	if thearch.Use387 {
-		s.SSEto387 = map[int16]int16{}
 	}
 
 	s.ScratchFpMem = e.scratchFpMem
@@ -6178,7 +6328,7 @@ func genssa(f *ssa.Func, pp *Progs) {
 
 	// Resolve branches, and relax DefaultStmt into NotStmt
 	for _, br := range s.Branches {
-		br.P.To.Val = s.bstart[br.B.ID]
+		br.P.To.SetTarget(s.bstart[br.B.ID])
 		if br.P.Pos.IsStmt() != src.PosIsStmt {
 			br.P.Pos = br.P.Pos.WithNotStmt()
 		} else if v0 := br.B.FirstPossibleStmtValue(); v0 != nil && v0.Pos.Line() == br.P.Pos.Line() && v0.Pos.IsStmt() == src.PosIsStmt {
@@ -6349,6 +6499,9 @@ func AddAux2(a *obj.Addr, v *ssa.Value, offset int64) {
 	}
 	// Add symbol's offset from its base register.
 	switch n := v.Aux.(type) {
+	case *ssa.AuxCall:
+		a.Name = obj.NAME_EXTERN
+		a.Sym = n.Fn
 	case *obj.LSym:
 		a.Name = obj.NAME_EXTERN
 		a.Sym = n
@@ -6535,10 +6688,10 @@ func (s *SSAGenState) Call(v *ssa.Value) *obj.Prog {
 	} else {
 		p.Pos = v.Pos.WithNotStmt()
 	}
-	if sym, ok := v.Aux.(*obj.LSym); ok {
+	if sym, ok := v.Aux.(*ssa.AuxCall); ok && sym.Fn != nil {
 		p.To.Type = obj.TYPE_MEM
 		p.To.Name = obj.NAME_EXTERN
-		p.To.Sym = sym
+		p.To.Sym = sym.Fn
 	} else {
 		// TODO(mdempsky): Can these differences be eliminated?
 		switch thearch.LinkArch.Family {
@@ -6561,12 +6714,14 @@ func (s *SSAGenState) PrepareCall(v *ssa.Value) {
 	idx := s.livenessMap.Get(v)
 	if !idx.StackMapValid() {
 		// See Liveness.hasStackMap.
-		if sym, _ := v.Aux.(*obj.LSym); !(sym == typedmemclr || sym == typedmemmove) {
+		if sym, ok := v.Aux.(*ssa.AuxCall); !ok || !(sym.Fn == typedmemclr || sym.Fn == typedmemmove) {
 			Fatalf("missing stack map index for %v", v.LongString())
 		}
 	}
 
-	if sym, _ := v.Aux.(*obj.LSym); sym == Deferreturn {
+	call, ok := v.Aux.(*ssa.AuxCall)
+
+	if ok && call.Fn == Deferreturn {
 		// Deferred calls will appear to be returning to
 		// the CALL deferreturn(SB) that we are about to emit.
 		// However, the stack trace code will show the line
@@ -6578,11 +6733,11 @@ func (s *SSAGenState) PrepareCall(v *ssa.Value) {
 		thearch.Ginsnopdefer(s.pp)
 	}
 
-	if sym, ok := v.Aux.(*obj.LSym); ok {
+	if ok {
 		// Record call graph information for nowritebarrierrec
 		// analysis.
 		if nowritebarrierrecCheck != nil {
-			nowritebarrierrecCheck.recordCall(s.pp.curfn, sym, v.Pos)
+			nowritebarrierrecCheck.recordCall(s.pp.curfn, call.Fn, v.Pos)
 		}
 	}
 
@@ -6860,6 +7015,10 @@ func (e *ssafn) Syslook(name string) *obj.LSym {
 
 func (e *ssafn) SetWBPos(pos src.XPos) {
 	e.curfn.Func.setWBPos(pos)
+}
+
+func (e *ssafn) MyImportPath() string {
+	return myimportpath
 }
 
 func (n *Node) Typ() *types.Type {

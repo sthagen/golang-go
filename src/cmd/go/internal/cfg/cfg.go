@@ -27,7 +27,8 @@ var (
 	BuildBuildmode         string // -buildmode flag
 	BuildContext           = defaultContext()
 	BuildMod               string             // -mod flag
-	BuildModReason         string             // reason -mod flag is set, if set by default
+	BuildModExplicit       bool               // whether -mod was set explicitly
+	BuildModReason         string             // reason -mod was set, if set by default
 	BuildI                 bool               // -i flag
 	BuildLinkshared        bool               // -linkshared flag
 	BuildMSan              bool               // -msan flag
@@ -47,6 +48,8 @@ var (
 
 	ModCacheRW bool   // -modcacherw flag
 	ModFile    string // -modfile flag
+
+	Insecure bool // -insecure flag
 
 	CmdName string // "build", "install", "list", "mod tidy", etc.
 
@@ -241,7 +244,6 @@ var (
 
 	// Used in envcmd.MkEnv and build ID computations.
 	GOARM    = envOr("GOARM", fmt.Sprint(objabi.GOARM))
-	GO386    = envOr("GO386", objabi.GO386)
 	GOMIPS   = envOr("GOMIPS", objabi.GOMIPS)
 	GOMIPS64 = envOr("GOMIPS64", objabi.GOMIPS64)
 	GOPPC64  = envOr("GOPPC64", fmt.Sprintf("%s%d", "power", objabi.GOPPC64))
@@ -265,8 +267,6 @@ func GetArchEnv() (key, val string) {
 	switch Goarch {
 	case "arm":
 		return "GOARM", GOARM
-	case "386":
-		return "GO386", GO386
 	case "mips", "mipsle":
 		return "GOMIPS", GOMIPS
 	case "mips64", "mips64le":

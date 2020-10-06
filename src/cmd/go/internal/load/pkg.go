@@ -28,25 +28,11 @@ import (
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/modinfo"
+	"cmd/go/internal/modload"
 	"cmd/go/internal/par"
 	"cmd/go/internal/search"
 	"cmd/go/internal/str"
 	"cmd/go/internal/trace"
-)
-
-var (
-	// module initialization hook; never nil, no-op if module use is disabled
-	ModInit func()
-
-	// module hooks; nil if module use is disabled
-	ModBinDir            func() string                                                                            // return effective bin directory
-	ModLookup            func(parentPath string, parentIsStd bool, path string) (dir, realPath string, err error) // lookup effective meaning of import
-	ModPackageModuleInfo func(path string) *modinfo.ModulePublic                                                  // return module info for Package struct
-	ModImportPaths       func(args []string) []*search.Match                                                      // expand import paths
-	ModPackageBuildInfo  func(main string, deps []string) string                                                  // return module info to embed in binary
-	ModInfoProg          func(info string, isgccgo bool) []byte                                                   // wrap module info in .go code for binary
-	ModImportFromFiles   func([]string)                                                                           // update go.mod to add modules for imports in these files
-	ModDirImportPath     func(string) string                                                                      // return effective import path for directory
 )
 
 var IgnoreImports bool // control whether we ignore imports in packages
@@ -434,12 +420,15 @@ type ImportPathError interface {
 	ImportPath() string
 }
 
+var (
+	_ ImportPathError = (*importError)(nil)
+	_ ImportPathError = (*modload.ImportMissingError)(nil)
+)
+
 type importError struct {
 	importPath string
 	err        error // created with fmt.Errorf
 }
-
-var _ ImportPathError = (*importError)(nil)
 
 func ImportErrorf(path, format string, args ...interface{}) ImportPathError {
 	err := &importError{importPath: path, err: fmt.Errorf(format, args...)}
@@ -553,7 +542,7 @@ func ReloadPackageNoFlags(arg string, stk *ImportStack) *Package {
 		})
 		packageDataCache.Delete(p.ImportPath)
 	}
-	return LoadImport(arg, base.Cwd, nil, stk, nil, 0)
+	return LoadImport(context.TODO(), arg, base.Cwd, nil, stk, nil, 0)
 }
 
 // dirToImportPath returns the pseudo-import path we use for a package
@@ -605,11 +594,11 @@ const (
 // LoadImport does not set tool flags and should only be used by
 // this package, as part of a bigger load operation, and by GOPATH-based "go get".
 // TODO(rsc): When GOPATH-based "go get" is removed, unexport this function.
-func LoadImport(path, srcDir string, parent *Package, stk *ImportStack, importPos []token.Position, mode int) *Package {
-	return loadImport(nil, path, srcDir, parent, stk, importPos, mode)
+func LoadImport(ctx context.Context, path, srcDir string, parent *Package, stk *ImportStack, importPos []token.Position, mode int) *Package {
+	return loadImport(ctx, nil, path, srcDir, parent, stk, importPos, mode)
 }
 
-func loadImport(pre *preload, path, srcDir string, parent *Package, stk *ImportStack, importPos []token.Position, mode int) *Package {
+func loadImport(ctx context.Context, pre *preload, path, srcDir string, parent *Package, stk *ImportStack, importPos []token.Position, mode int) *Package {
 	if path == "" {
 		panic("LoadImport called with empty package path")
 	}
@@ -657,7 +646,7 @@ func loadImport(pre *preload, path, srcDir string, parent *Package, stk *ImportS
 		// Load package.
 		// loadPackageData may return bp != nil even if an error occurs,
 		// in order to return partial information.
-		p.load(path, stk, importPos, bp, err)
+		p.load(ctx, path, stk, importPos, bp, err)
 
 		if !cfg.ModulesEnabled && path != cleanImport(path) {
 			p.Error = &PackageError{
@@ -753,7 +742,7 @@ func loadPackageData(path, parentPath, parentDir, parentRoot string, parentIsStd
 	// For vendored imports, it is the expanded form.
 	//
 	// Note that when modules are enabled, local import paths are normally
-	// canonicalized by modload.ImportPaths before now. However, if there's an
+	// canonicalized by modload.LoadPackages before now. However, if there's an
 	// error resolving a local path, it will be returned untransformed
 	// so that 'go list -e' reports something useful.
 	importKey := importSpec{
@@ -770,7 +759,7 @@ func loadPackageData(path, parentPath, parentDir, parentRoot string, parentIsStd
 			r.dir = filepath.Join(parentDir, path)
 			r.path = dirToImportPath(r.dir)
 		} else if cfg.ModulesEnabled {
-			r.dir, r.path, r.err = ModLookup(parentPath, parentIsStd, path)
+			r.dir, r.path, r.err = modload.Lookup(parentPath, parentIsStd, path)
 		} else if mode&ResolveImport != 0 {
 			// We do our own path resolution, because we want to
 			// find out the key to use in packageCache without the
@@ -801,7 +790,7 @@ func loadPackageData(path, parentPath, parentDir, parentRoot string, parentIsStd
 			}
 			data.p, data.err = cfg.BuildContext.ImportDir(r.dir, buildMode)
 			if data.p.Root == "" && cfg.ModulesEnabled {
-				if info := ModPackageModuleInfo(path); info != nil {
+				if info := modload.PackageModuleInfo(path); info != nil {
 					data.p.Root = info.Dir
 				}
 			}
@@ -827,7 +816,7 @@ func loadPackageData(path, parentPath, parentDir, parentRoot string, parentIsStd
 			if cfg.GOBIN != "" {
 				data.p.BinDir = cfg.GOBIN
 			} else if cfg.ModulesEnabled {
-				data.p.BinDir = ModBinDir()
+				data.p.BinDir = modload.BinDir()
 			}
 		}
 
@@ -895,8 +884,8 @@ var preloadWorkerCount = runtime.GOMAXPROCS(0)
 // to ensure preload goroutines are no longer active. This is necessary
 // because of global mutable state that cannot safely be read and written
 // concurrently. In particular, packageDataCache may be cleared by "go get"
-// in GOPATH mode, and modload.loaded (accessed via ModLookup) may be
-// modified by modload.ImportPaths (ModImportPaths).
+// in GOPATH mode, and modload.loaded (accessed via modload.Lookup) may be
+// modified by modload.LoadPackages.
 type preload struct {
 	cancel chan struct{}
 	sema   chan struct{}
@@ -1006,7 +995,7 @@ func ResolveImportPath(parent *Package, path string) (found string) {
 
 func resolveImportPath(path, parentPath, parentDir, parentRoot string, parentIsStd bool) (found string) {
 	if cfg.ModulesEnabled {
-		if _, p, e := ModLookup(parentPath, parentIsStd, path); e == nil {
+		if _, p, e := modload.Lookup(parentPath, parentIsStd, path); e == nil {
 			return p
 		}
 		return path
@@ -1369,7 +1358,7 @@ func disallowInternal(srcDir string, importer *Package, importerPath string, p *
 			// directory containing them.
 			// If the directory is outside the main module, this will resolve to ".",
 			// which is not a prefix of any valid module.
-			importerPath = ModDirImportPath(importer.Dir)
+			importerPath = modload.DirImportPath(importer.Dir)
 		}
 		parentOfInternal := p.ImportPath[:i]
 		if str.HasPathPrefix(importerPath, parentOfInternal) {
@@ -1591,7 +1580,7 @@ func (p *Package) DefaultExecName() string {
 // load populates p using information from bp, err, which should
 // be the result of calling build.Context.Import.
 // stk contains the import stack, not including path itself.
-func (p *Package) load(path string, stk *ImportStack, importPos []token.Position, bp *build.Package, err error) {
+func (p *Package) load(ctx context.Context, path string, stk *ImportStack, importPos []token.Position, bp *build.Package, err error) {
 	p.copyBuild(bp)
 
 	// The localPrefix is the path we interpret ./ imports relative to.
@@ -1652,7 +1641,7 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 			elem = full
 		}
 		if p.Internal.Build.BinDir == "" && cfg.ModulesEnabled {
-			p.Internal.Build.BinDir = ModBinDir()
+			p.Internal.Build.BinDir = modload.BinDir()
 		}
 		if p.Internal.Build.BinDir != "" {
 			// Install to GOBIN or bin of GOPATH entry.
@@ -1800,7 +1789,7 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 		if path == "C" {
 			continue
 		}
-		p1 := LoadImport(path, p.Dir, p, stk, p.Internal.Build.ImportPos[path], ResolveImport)
+		p1 := LoadImport(ctx, path, p.Dir, p, stk, p.Internal.Build.ImportPos[path], ResolveImport)
 
 		path = p1.ImportPath
 		importPaths[i] = path
@@ -1861,9 +1850,9 @@ func (p *Package) load(path string, stk *ImportStack, importPos []token.Position
 		if p.Internal.CmdlineFiles {
 			mainPath = "command-line-arguments"
 		}
-		p.Module = ModPackageModuleInfo(mainPath)
+		p.Module = modload.PackageModuleInfo(mainPath)
 		if p.Name == "main" && len(p.DepsErrors) == 0 {
-			p.Internal.BuildInfo = ModPackageBuildInfo(mainPath, p.Deps)
+			p.Internal.BuildInfo = modload.PackageBuildInfo(mainPath, p.Deps)
 		}
 	}
 }
@@ -1961,7 +1950,7 @@ func externalLinkingForced(p *Package) bool {
 		if cfg.BuildContext.GOARCH != "arm64" {
 			return true
 		}
-	case "darwin":
+	case "darwin", "ios":
 		if cfg.BuildContext.GOARCH == "arm64" {
 			return true
 		}
@@ -2073,7 +2062,7 @@ func PackageList(roots []*Package) []*Package {
 // TestPackageList returns the list of packages in the dag rooted at roots
 // as visited in a depth-first post-order traversal, including the test
 // imports of the roots. This ignores errors in test packages.
-func TestPackageList(roots []*Package) []*Package {
+func TestPackageList(ctx context.Context, roots []*Package) []*Package {
 	seen := map[*Package]bool{}
 	all := []*Package{}
 	var walk func(*Package)
@@ -2089,7 +2078,7 @@ func TestPackageList(roots []*Package) []*Package {
 	}
 	walkTest := func(root *Package, path string) {
 		var stk ImportStack
-		p1 := LoadImport(path, root.Dir, root, &stk, root.Internal.Build.TestImportPos[path], ResolveImport)
+		p1 := LoadImport(ctx, path, root.Dir, root, &stk, root.Internal.Build.TestImportPos[path], ResolveImport)
 		if p1.Error == nil {
 			walk(p1)
 		}
@@ -2112,10 +2101,22 @@ func TestPackageList(roots []*Package) []*Package {
 // TODO(jayconrod): delete this function and set flags automatically
 // in LoadImport instead.
 func LoadImportWithFlags(path, srcDir string, parent *Package, stk *ImportStack, importPos []token.Position, mode int) *Package {
-	p := LoadImport(path, srcDir, parent, stk, importPos, mode)
+	p := LoadImport(context.TODO(), path, srcDir, parent, stk, importPos, mode)
 	setToolFlags(p)
 	return p
 }
+
+// ModResolveTests indicates whether calls to the module loader should also
+// resolve test dependencies of the requested packages.
+//
+// If ModResolveTests is true, then the module loader needs to resolve test
+// dependencies at the same time as packages; otherwise, the test dependencies
+// of those packages could be missing, and resolving those missing dependencies
+// could change the selected versions of modules that provide other packages.
+//
+// TODO(#40775): Change this from a global variable to an explicit function
+// argument where needed.
+var ModResolveTests bool
 
 // Packages returns the packages named by the
 // command line arguments 'args'. If a named package
@@ -2153,12 +2154,23 @@ func PackagesAndErrors(ctx context.Context, patterns []string) []*Package {
 			// We need to test whether the path is an actual Go file and not a
 			// package path or pattern ending in '.go' (see golang.org/issue/34653).
 			if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
-				return []*Package{GoFilesPackage(patterns)}
+				return []*Package{GoFilesPackage(ctx, patterns)}
 			}
 		}
 	}
 
-	matches := ImportPaths(patterns)
+	var matches []*search.Match
+	if modload.Init(); cfg.ModulesEnabled {
+		loadOpts := modload.PackageOpts{
+			ResolveMissingImports: true,
+			LoadTests:             ModResolveTests,
+			SilenceErrors:         true,
+		}
+		matches, _ = modload.LoadPackages(ctx, loadOpts, patterns...)
+	} else {
+		matches = search.ImportPaths(patterns)
+	}
+
 	var (
 		pkgs    []*Package
 		stk     ImportStack
@@ -2174,7 +2186,7 @@ func PackagesAndErrors(ctx context.Context, patterns []string) []*Package {
 			if pkg == "" {
 				panic(fmt.Sprintf("ImportPaths returned empty package for pattern %s", m.Pattern()))
 			}
-			p := loadImport(pre, pkg, base.Cwd, nil, &stk, nil, 0)
+			p := loadImport(ctx, pre, pkg, base.Cwd, nil, &stk, nil, 0)
 			p.Match = append(p.Match, m.Pattern())
 			p.Internal.CmdlinePkg = true
 			if m.IsLiteral() {
@@ -2228,13 +2240,6 @@ func setToolFlags(pkgs ...*Package) {
 	}
 }
 
-func ImportPaths(args []string) []*search.Match {
-	if ModInit(); cfg.ModulesEnabled {
-		return ModImportPaths(args)
-	}
-	return search.ImportPaths(args)
-}
-
 // PackagesForBuild is like Packages but exits
 // if any of the packages or their dependencies have errors
 // (cannot be built).
@@ -2281,8 +2286,8 @@ func PackagesForBuild(ctx context.Context, args []string) []*Package {
 // GoFilesPackage creates a package for building a collection of Go files
 // (typically named on the command line). The target is named p.a for
 // package p or named after the first Go file for package main.
-func GoFilesPackage(gofiles []string) *Package {
-	ModInit()
+func GoFilesPackage(ctx context.Context, gofiles []string) *Package {
+	modload.Init()
 
 	for _, f := range gofiles {
 		if !strings.HasSuffix(f, ".go") {
@@ -2329,7 +2334,7 @@ func GoFilesPackage(gofiles []string) *Package {
 	ctxt.ReadDir = func(string) ([]os.FileInfo, error) { return dirent, nil }
 
 	if cfg.ModulesEnabled {
-		ModImportFromFiles(gofiles)
+		modload.ImportFromFiles(ctx, gofiles)
 	}
 
 	var err error
@@ -2345,7 +2350,7 @@ func GoFilesPackage(gofiles []string) *Package {
 	pkg := new(Package)
 	pkg.Internal.Local = true
 	pkg.Internal.CmdlineFiles = true
-	pkg.load("command-line-arguments", &stk, nil, bp, err)
+	pkg.load(ctx, "command-line-arguments", &stk, nil, bp, err)
 	pkg.Internal.LocalPrefix = dirToImportPath(dir)
 	pkg.ImportPath = "command-line-arguments"
 	pkg.Target = ""
@@ -2357,7 +2362,7 @@ func GoFilesPackage(gofiles []string) *Package {
 		if cfg.GOBIN != "" {
 			pkg.Target = filepath.Join(cfg.GOBIN, exe)
 		} else if cfg.ModulesEnabled {
-			pkg.Target = filepath.Join(ModBinDir(), exe)
+			pkg.Target = filepath.Join(modload.BinDir(), exe)
 		}
 	}
 

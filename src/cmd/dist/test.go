@@ -464,7 +464,7 @@ func (t *tester) registerTests() {
 	}
 
 	// Test the ios build tag on darwin/amd64 for the iOS simulator.
-	if goos == "darwin" && !t.iOS() {
+	if goos == "darwin" && goarch == "amd64" {
 		t.tests = append(t.tests, distTest{
 			name:    "amd64ios",
 			heading: "ios tag on darwin/amd64",
@@ -903,7 +903,7 @@ func (t *tester) addCmd(dt *distTest, dir string, cmdline ...interface{}) *exec.
 }
 
 func (t *tester) iOS() bool {
-	return goos == "darwin" && goarch == "arm64"
+	return (goos == "darwin" || goos == "ios") && goarch == "arm64"
 }
 
 func (t *tester) out(v string) {
@@ -943,7 +943,10 @@ func (t *tester) internalLink() bool {
 	if goos == "android" {
 		return false
 	}
-	if t.iOS() {
+	if goos == "ios" {
+		return false
+	}
+	if goos == "darwin" && goarch == "arm64" {
 		return false
 	}
 	// Internally linking cgo is incomplete on some architectures.
@@ -979,7 +982,7 @@ func (t *tester) supportedBuildmode(mode string) bool {
 		}
 		switch pair {
 		case "aix-ppc64",
-			"darwin-amd64", "darwin-arm64",
+			"darwin-amd64", "darwin-arm64", "ios-arm64",
 			"linux-amd64", "linux-386", "linux-ppc64le", "linux-s390x",
 			"freebsd-amd64",
 			"windows-amd64", "windows-386":
@@ -1106,8 +1109,9 @@ func (t *tester) cgoTest(dt *distTest) error {
 
 		cmd := t.addCmd(dt, "misc/cgo/test", t.goTest())
 		cmd.Env = append(os.Environ(), "GOFLAGS=-ldflags=-linkmode=external")
-		// A -g argument in CGO_CFLAGS should not affect how the test runs.
-		cmd.Env = append(cmd.Env, "CGO_CFLAGS=-g0")
+		// cgo should be able to cope with both -g arguments and colored
+		// diagnostics.
+		cmd.Env = append(cmd.Env, "CGO_CFLAGS=-g0 -fdiagnostics-color")
 
 		t.addCmd(dt, "misc/cgo/testtls", t.goTest(), "-ldflags", "-linkmode=auto")
 		t.addCmd(dt, "misc/cgo/testtls", t.goTest(), "-ldflags", "-linkmode=external")

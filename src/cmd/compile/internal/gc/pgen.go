@@ -80,8 +80,8 @@ func cmpstackvarlt(a, b *Node) bool {
 		return a.Name.Used()
 	}
 
-	ap := types.Haspointers(a.Type)
-	bp := types.Haspointers(b.Type)
+	ap := a.Type.HasPointers()
+	bp := b.Type.HasPointers()
 	if ap != bp {
 		return ap
 	}
@@ -176,7 +176,7 @@ func (s *ssafn) AllocFrame(f *ssa.Func) {
 		}
 		s.stksize += w
 		s.stksize = Rnd(s.stksize, int64(n.Type.Align))
-		if types.Haspointers(n.Type) {
+		if n.Type.HasPointers() {
 			s.stkptrsize = s.stksize
 			lastHasPtr = true
 		} else {
@@ -231,6 +231,11 @@ func compile(fn *Node) {
 		return
 	}
 
+	// Set up the function's LSym early to avoid data races with the assemblers.
+	// Do this before walk, as walk needs the LSym to set attributes/relocations
+	// (e.g. in markTypeUsedInInterface).
+	fn.Func.initLSym(true)
+
 	walk(fn)
 	if nerrors != 0 {
 		return
@@ -249,9 +254,6 @@ func compile(fn *Node) {
 		// See issue 29870.
 		return
 	}
-
-	// Set up the function's LSym early to avoid data races with the assemblers.
-	fn.Func.initLSym(true)
 
 	// Make sure type syms are declared for all types that might
 	// be types of stack objects. We need to do this here
@@ -507,7 +509,7 @@ func createSimpleVar(fnsym *obj.LSym, n *Node) *dwarf.Var {
 		if Ctxt.FixedFrameSize() == 0 {
 			offs -= int64(Widthptr)
 		}
-		if objabi.Framepointer_enabled(objabi.GOOS, objabi.GOARCH) || objabi.GOARCH == "arm64" {
+		if objabi.Framepointer_enabled || objabi.GOARCH == "arm64" {
 			// There is a word space for FP on ARM64 even if the frame pointer is disabled
 			offs -= int64(Widthptr)
 		}
@@ -703,7 +705,7 @@ func stackOffset(slot ssa.LocalSlot) int32 {
 		if Ctxt.FixedFrameSize() == 0 {
 			base -= int64(Widthptr)
 		}
-		if objabi.Framepointer_enabled(objabi.GOOS, objabi.GOARCH) || objabi.GOARCH == "arm64" {
+		if objabi.Framepointer_enabled || objabi.GOARCH == "arm64" {
 			// There is a word space for FP on ARM64 even if the frame pointer is disabled
 			base -= int64(Widthptr)
 		}

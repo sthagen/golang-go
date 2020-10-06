@@ -565,6 +565,42 @@ func ssaGenValue(s *gc.SSAGenState, v *ssa.Value) {
 		p = s.Prog(obj.ANOP)
 		gc.Patch(pbover, p)
 
+	case ssa.OpPPC64CLRLSLWI:
+		r := v.Reg()
+		r1 := v.Args[0].Reg()
+		shifts := v.AuxInt
+		p := s.Prog(v.Op.Asm())
+		// clrlslwi ra,rs,mb,sh will become rlwinm ra,rs,sh,mb-sh,31-sh as described in ISA
+		p.From = obj.Addr{Type: obj.TYPE_CONST, Offset: ssa.GetPPC64Shiftmb(shifts)}
+		p.SetFrom3(obj.Addr{Type: obj.TYPE_CONST, Offset: ssa.GetPPC64Shiftsh(shifts)})
+		p.Reg = r1
+		p.To.Type = obj.TYPE_REG
+		p.To.Reg = r
+
+	case ssa.OpPPC64CLRLSLDI:
+		r := v.Reg()
+		r1 := v.Args[0].Reg()
+		shifts := v.AuxInt
+		p := s.Prog(v.Op.Asm())
+		// clrlsldi ra,rs,mb,sh will become rldic ra,rs,sh,mb-sh
+		p.From = obj.Addr{Type: obj.TYPE_CONST, Offset: ssa.GetPPC64Shiftmb(shifts)}
+		p.SetFrom3(obj.Addr{Type: obj.TYPE_CONST, Offset: ssa.GetPPC64Shiftsh(shifts)})
+		p.Reg = r1
+		p.To.Type = obj.TYPE_REG
+		p.To.Reg = r
+
+		// Mask has been set as sh
+	case ssa.OpPPC64RLDICL:
+		r := v.Reg()
+		r1 := v.Args[0].Reg()
+		shifts := v.AuxInt
+		p := s.Prog(v.Op.Asm())
+		p.From = obj.Addr{Type: obj.TYPE_CONST, Offset: ssa.GetPPC64Shiftsh(shifts)}
+		p.SetFrom3(obj.Addr{Type: obj.TYPE_CONST, Offset: ssa.GetPPC64Shiftmb(shifts)})
+		p.Reg = r1
+		p.To.Type = obj.TYPE_REG
+		p.To.Reg = r
+
 	case ssa.OpPPC64ADD, ssa.OpPPC64FADD, ssa.OpPPC64FADDS, ssa.OpPPC64SUB, ssa.OpPPC64FSUB, ssa.OpPPC64FSUBS,
 		ssa.OpPPC64MULLD, ssa.OpPPC64MULLW, ssa.OpPPC64DIVDU, ssa.OpPPC64DIVWU,
 		ssa.OpPPC64SRAD, ssa.OpPPC64SRAW, ssa.OpPPC64SRD, ssa.OpPPC64SRW, ssa.OpPPC64SLD, ssa.OpPPC64SLW,
@@ -629,23 +665,6 @@ func ssaGenValue(s *gc.SSAGenState, v *ssa.Value) {
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = r
 
-	case ssa.OpPPC64MaskIfNotCarry:
-		r := v.Reg()
-		p := s.Prog(v.Op.Asm())
-		p.From.Type = obj.TYPE_REG
-		p.From.Reg = ppc64.REGZERO
-		p.To.Type = obj.TYPE_REG
-		p.To.Reg = r
-
-	case ssa.OpPPC64ADDconstForCarry:
-		r1 := v.Args[0].Reg()
-		p := s.Prog(v.Op.Asm())
-		p.Reg = r1
-		p.From.Type = obj.TYPE_CONST
-		p.From.Offset = v.AuxInt
-		p.To.Type = obj.TYPE_REG
-		p.To.Reg = ppc64.REGTMP // Ignored; this is for the carry effect.
-
 	case ssa.OpPPC64NEG, ssa.OpPPC64FNEG, ssa.OpPPC64FSQRT, ssa.OpPPC64FSQRTS, ssa.OpPPC64FFLOOR, ssa.OpPPC64FTRUNC, ssa.OpPPC64FCEIL,
 		ssa.OpPPC64FCTIDZ, ssa.OpPPC64FCTIWZ, ssa.OpPPC64FCFID, ssa.OpPPC64FCFIDS, ssa.OpPPC64FRSP, ssa.OpPPC64CNTLZD, ssa.OpPPC64CNTLZW,
 		ssa.OpPPC64POPCNTD, ssa.OpPPC64POPCNTW, ssa.OpPPC64POPCNTB, ssa.OpPPC64MFVSRD, ssa.OpPPC64MTVSRD, ssa.OpPPC64FABS, ssa.OpPPC64FNABS,
@@ -658,11 +677,19 @@ func ssaGenValue(s *gc.SSAGenState, v *ssa.Value) {
 		p.From.Reg = v.Args[0].Reg()
 
 	case ssa.OpPPC64ADDconst, ssa.OpPPC64ANDconst, ssa.OpPPC64ORconst, ssa.OpPPC64XORconst,
-		ssa.OpPPC64SRADconst, ssa.OpPPC64SRAWconst, ssa.OpPPC64SRDconst, ssa.OpPPC64SRWconst, ssa.OpPPC64SLDconst, ssa.OpPPC64SLWconst:
+		ssa.OpPPC64SRADconst, ssa.OpPPC64SRAWconst, ssa.OpPPC64SRDconst, ssa.OpPPC64SRWconst, ssa.OpPPC64SLDconst, ssa.OpPPC64SLWconst, ssa.OpPPC64EXTSWSLconst:
 		p := s.Prog(v.Op.Asm())
 		p.Reg = v.Args[0].Reg()
 		p.From.Type = obj.TYPE_CONST
 		p.From.Offset = v.AuxInt
+		p.To.Type = obj.TYPE_REG
+		p.To.Reg = v.Reg()
+
+	case ssa.OpPPC64SUBFCconst:
+		p := s.Prog(v.Op.Asm())
+		p.SetFrom3(obj.Addr{Type: obj.TYPE_CONST, Offset: v.AuxInt})
+		p.From.Type = obj.TYPE_REG
+		p.From.Reg = v.Args[0].Reg()
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg()
 
@@ -1802,7 +1829,7 @@ func ssaGenValue(s *gc.SSAGenState, v *ssa.Value) {
 		v.Fatalf("Pseudo-op should not make it to codegen: %s ###\n", v.LongString())
 	case ssa.OpPPC64InvertFlags:
 		v.Fatalf("InvertFlags should never make it to codegen %v", v.LongString())
-	case ssa.OpPPC64FlagEQ, ssa.OpPPC64FlagLT, ssa.OpPPC64FlagGT, ssa.OpPPC64FlagCarrySet, ssa.OpPPC64FlagCarryClear:
+	case ssa.OpPPC64FlagEQ, ssa.OpPPC64FlagLT, ssa.OpPPC64FlagGT:
 		v.Fatalf("Flag* ops should never make it to codegen %v", v.LongString())
 	case ssa.OpClobber:
 		// TODO: implement for clobberdead experiment. Nop is ok for now.

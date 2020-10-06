@@ -2,7 +2,19 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Go new object file format, reading and writing.
+// This package defines the Go object file format, and provide "low-level" functions
+// for reading and writing object files.
+
+// The object file is understood by the compiler, assembler, linker, and tools. They
+// have "high level" code that operates on object files, handling application-specific
+// logics, and use this package for the actual reading and writing. Specifically, the
+// code below:
+//
+// - cmd/internal/obj/objfile.go (used by cmd/asm and cmd/compile)
+// - cmd/internal/objfile/goobj.go (used cmd/nm, cmd/objdump)
+// - cmd/link/internal/loader package (used by cmd/link)
+//
+// If the object file format changes, they may (or may not) need to change.
 
 package goobj
 
@@ -421,8 +433,11 @@ const (
 	AuxDwarfLoc
 	AuxDwarfRanges
 	AuxDwarfLines
-
-	// TODO: more. Pcdata?
+	AuxPcsp
+	AuxPcfile
+	AuxPcline
+	AuxPcinline
+	AuxPcdata
 )
 
 func (a *Aux) Type() uint8 { return a[0] }
@@ -825,11 +840,6 @@ func (r *Reader) Data(i uint32) []byte {
 	off := r.uint32At(dataIdxOff)
 	end := r.uint32At(dataIdxOff + 4)
 	return r.BytesAt(base+off, int(end-off))
-}
-
-// AuxDataBase returns the base offset of the aux data block.
-func (r *Reader) PcdataBase() uint32 {
-	return r.h.Offsets[BlkPcdata]
 }
 
 // NRefName returns the number of referenced symbol names.

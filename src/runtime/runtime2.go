@@ -329,7 +329,7 @@ type gobuf struct {
 	ctxt unsafe.Pointer
 	ret  sys.Uintreg
 	lr   uintptr
-	bp   uintptr // for GOEXPERIMENT=framepointer
+	bp   uintptr // for framepointer-enabled architectures
 }
 
 // sudog represents a g in a wait list, such as for sending/receiving
@@ -453,6 +453,10 @@ type g struct {
 	// copying needs to acquire channel locks to protect these
 	// areas of the stack.
 	activeStackChans bool
+	// parkingOnChan indicates that the goroutine is about to
+	// park on a chansend or chanrecv. Used to signal an unsafe point
+	// for stack shrinking. It's a boolean value, but is updated atomically.
+	parkingOnChan uint8
 
 	raceignore     int8     // ignore race detection events
 	sysblocktraced bool     // StartTrace has emitted EvGoInSyscall about this goroutine
@@ -806,13 +810,14 @@ type _func struct {
 	args        int32  // in/out args size
 	deferreturn uint32 // offset of start of a deferreturn call instruction from entry, if any.
 
-	pcsp      int32
-	pcfile    int32
-	pcln      int32
-	npcdata   int32
-	cuIndex   uint16 // TODO(jfaller): 16 bits is never enough, make this larger.
-	funcID    funcID // set for certain special runtime functions
-	nfuncdata uint8  // must be last
+	pcsp      uint32
+	pcfile    uint32
+	pcln      uint32
+	npcdata   uint32
+	cuOffset  uint32  // runtime.cutab offset of this function's CU
+	funcID    funcID  // set for certain special runtime functions
+	_         [2]byte // pad
+	nfuncdata uint8   // must be last
 }
 
 // Pseudo-Func that is returned for PCs that occur in inlined code.
@@ -909,15 +914,12 @@ type _defer struct {
 
 // A _panic holds information about an active panic.
 //
-// This is marked go:notinheap because _panic values must only ever
-// live on the stack.
+// A _panic value must only ever live on the stack.
 //
 // The argp and link fields are stack pointers, but don't need special
 // handling during stack growth: because they are pointer-typed and
 // _panic values only live on the stack, regular stack pointer
 // adjustment takes care of them.
-//
-//go:notinheap
 type _panic struct {
 	argp      unsafe.Pointer // pointer to arguments of deferred call run during panic; cannot move - known to liblink
 	arg       interface{}    // argument to panic
@@ -1049,8 +1051,7 @@ var (
 	isIntel              bool
 	lfenceBeforeRdtsc    bool
 
-	goarm                uint8 // set by cmd/link on arm systems
-	framepointer_enabled bool  // set by cmd/link
+	goarm uint8 // set by cmd/link on arm systems
 )
 
 // Set by the linker so the runtime can determine the buildmode.
@@ -1058,3 +1059,6 @@ var (
 	islibrary bool // -buildmode=c-shared
 	isarchive bool // -buildmode=c-archive
 )
+
+// Must agree with cmd/internal/objabi.Framepointer_enabled.
+const framepointer_enabled = GOARCH == "amd64" || GOARCH == "arm64" && (GOOS == "linux" || GOOS == "darwin" || GOOS == "ios")

@@ -63,6 +63,7 @@ type Reloc struct {
 func (rel Reloc) Type() objabi.RelocType { return objabi.RelocType(rel.Reloc.Type()) + rel.typ }
 func (rel Reloc) Sym() Sym               { return rel.l.resolve(rel.r, rel.Reloc.Sym()) }
 func (rel Reloc) SetSym(s Sym)           { rel.Reloc.SetSym(goobj.SymRef{PkgIdx: 0, SymIdx: uint32(s)}) }
+func (rel Reloc) IsMarker() bool         { return rel.Siz() == 0 }
 
 func (rel Reloc) SetType(t objabi.RelocType) {
 	if t != objabi.RelocType(uint8(t)) {
@@ -93,11 +94,12 @@ type oReader struct {
 	version      int    // version of static symbol
 	flags        uint32 // read from object file
 	pkgprefix    string
-	syms         []Sym  // Sym's global index, indexed by local index
-	ndef         int    // cache goobj.Reader.NSym()
-	nhashed64def int    // cache goobj.Reader.NHashed64Def()
-	nhasheddef   int    // cache goobj.Reader.NHashedDef()
-	objidx       uint32 // index of this reader in the objs slice
+	syms         []Sym    // Sym's global index, indexed by local index
+	pkg          []uint32 // indices of referenced package by PkgIdx (index into loader.objs array)
+	ndef         int      // cache goobj.Reader.NSym()
+	nhashed64def int      // cache goobj.Reader.NHashed64Def()
+	nhasheddef   int      // cache goobj.Reader.NHashedDef()
+	objidx       uint32   // index of this reader in the objs slice
 }
 
 // Total number of defined symbols (package symbols, hashed symbols, and
@@ -219,7 +221,7 @@ type Loader struct {
 
 	deferReturnTramp map[Sym]bool // whether the symbol is a trampoline of a deferreturn call
 
-	objByPkg map[string]*oReader // map package path to its Go object reader
+	objByPkg map[string]uint32 // map package path to the index of its Go object reader
 
 	anonVersion int // most recently assigned ext static sym pseudo-version
 
@@ -328,10 +330,10 @@ func NewLoader(flags uint32, elfsetstring elfsetstringFunc, reporter *ErrorRepor
 	ldr := &Loader{
 		start:                make(map[*oReader]Sym),
 		objs:                 []objIdx{{}, {extReader, 0}}, // reserve index 0 for nil symbol, 1 for external symbols
-		objSyms:              make([]objSym, 1, 100000),    // reserve index 0 for nil symbol
+		objSyms:              make([]objSym, 1, 1),         // This will get overwritten later.
 		extReader:            extReader,
 		symsByName:           [2]map[string]Sym{make(map[string]Sym, 80000), make(map[string]Sym, 50000)}, // preallocate ~2MB for ABI0 and ~1MB for ABI1 symbols
-		objByPkg:             make(map[string]*oReader),
+		objByPkg:             make(map[string]uint32),
 		outer:                make(map[Sym]Sym),
 		sub:                  make(map[Sym]Sym),
 		dynimplib:            make(map[Sym]string),
@@ -370,7 +372,7 @@ func (l *Loader) addObj(pkg string, r *oReader) Sym {
 	}
 	pkg = objabi.PathToPrefix(pkg) // the object file contains escaped package path
 	if _, ok := l.objByPkg[pkg]; !ok {
-		l.objByPkg[pkg] = r
+		l.objByPkg[pkg] = r.objidx
 	}
 	i := Sym(len(l.objSyms))
 	l.start[r] = i
@@ -635,12 +637,7 @@ func (l *Loader) resolve(r *oReader, s goobj.SymRef) Sym {
 	case goobj.PkgIdxSelf:
 		rr = r
 	default:
-		pkg := r.Pkg(int(p))
-		var ok bool
-		rr, ok = l.objByPkg[pkg]
-		if !ok {
-			log.Fatalf("reference of nonexisted package %s, from %v", pkg, r.unit.Lib)
-		}
+		rr = l.objs[r.pkg[p]].r
 	}
 	return l.toGlobal(rr, s.SymIdx)
 }
@@ -1878,19 +1875,24 @@ func (fi *FuncInfo) FuncID() objabi.FuncID {
 	return objabi.FuncID((*goobj.FuncInfo)(nil).ReadFuncID(fi.data))
 }
 
-func (fi *FuncInfo) Pcsp() []byte {
-	pcsp, end := (*goobj.FuncInfo)(nil).ReadPcsp(fi.data)
-	return fi.r.BytesAt(fi.r.PcdataBase()+pcsp, int(end-pcsp))
+func (fi *FuncInfo) Pcsp() Sym {
+	sym := (*goobj.FuncInfo)(nil).ReadPcsp(fi.data)
+	return fi.l.resolve(fi.r, sym)
 }
 
-func (fi *FuncInfo) Pcfile() []byte {
-	pcf, end := (*goobj.FuncInfo)(nil).ReadPcfile(fi.data)
-	return fi.r.BytesAt(fi.r.PcdataBase()+pcf, int(end-pcf))
+func (fi *FuncInfo) Pcfile() Sym {
+	sym := (*goobj.FuncInfo)(nil).ReadPcfile(fi.data)
+	return fi.l.resolve(fi.r, sym)
 }
 
-func (fi *FuncInfo) Pcline() []byte {
-	pcln, end := (*goobj.FuncInfo)(nil).ReadPcline(fi.data)
-	return fi.r.BytesAt(fi.r.PcdataBase()+pcln, int(end-pcln))
+func (fi *FuncInfo) Pcline() Sym {
+	sym := (*goobj.FuncInfo)(nil).ReadPcline(fi.data)
+	return fi.l.resolve(fi.r, sym)
+}
+
+func (fi *FuncInfo) Pcinline() Sym {
+	sym := (*goobj.FuncInfo)(nil).ReadPcinline(fi.data)
+	return fi.l.resolve(fi.r, sym)
 }
 
 // Preload has to be called prior to invoking the various methods
@@ -1899,27 +1901,16 @@ func (fi *FuncInfo) Preload() {
 	fi.lengths = (*goobj.FuncInfo)(nil).ReadFuncInfoLengths(fi.data)
 }
 
-func (fi *FuncInfo) Pcinline() []byte {
+func (fi *FuncInfo) Pcdata() []Sym {
 	if !fi.lengths.Initialized {
 		panic("need to call Preload first")
 	}
-	pcinl, end := (*goobj.FuncInfo)(nil).ReadPcinline(fi.data, fi.lengths.PcdataOff)
-	return fi.r.BytesAt(fi.r.PcdataBase()+pcinl, int(end-pcinl))
-}
-
-func (fi *FuncInfo) NumPcdata() uint32 {
-	if !fi.lengths.Initialized {
-		panic("need to call Preload first")
+	syms := (*goobj.FuncInfo)(nil).ReadPcdata(fi.data)
+	ret := make([]Sym, len(syms))
+	for i := range ret {
+		ret[i] = fi.l.resolve(fi.r, syms[i])
 	}
-	return fi.lengths.NumPcdata
-}
-
-func (fi *FuncInfo) Pcdata(k int) []byte {
-	if !fi.lengths.Initialized {
-		panic("need to call Preload first")
-	}
-	pcdat, end := (*goobj.FuncInfo)(nil).ReadPcdata(fi.data, fi.lengths.PcdataOff, uint32(k))
-	return fi.r.BytesAt(fi.r.PcdataBase()+pcdat, int(end-pcdat))
+	return ret
 }
 
 func (fi *FuncInfo) NumFuncdataoff() uint32 {
@@ -2022,8 +2013,9 @@ func (l *Loader) FuncInfo(i Sym) FuncInfo {
 	return FuncInfo{}
 }
 
-// Preload a package: add autolibs, add defined package symbols to the symbol table.
-// Does not add non-package symbols yet, which will be done in LoadNonpkgSyms.
+// Preload a package: adds autolib.
+// Does not add defined package or non-packaged symbols to the symbol table.
+// These are done in LoadSyms.
 // Does not read symbol data.
 // Returns the fingerprint of the object.
 func (l *Loader) Preload(localSymVersion int, f *bio.Reader, lib *sym.Library, unit *sym.CompilationUnit, length int64) goobj.FingerprintType {
@@ -2066,8 +2058,6 @@ func (l *Loader) Preload(localSymVersion int, f *bio.Reader, lib *sym.Library, u
 	}
 
 	l.addObj(lib.Pkg, or)
-	st := loadState{l: l}
-	st.preloadSyms(or, pkgDef)
 
 	// The caller expects us consuming all the data
 	f.MustSeek(length, os.SEEK_CUR)
@@ -2150,17 +2140,30 @@ func (st *loadState) preloadSyms(r *oReader, kind int) {
 	}
 }
 
-// Add hashed (content-addressable) symbols, non-package symbols, and
+// Add syms, hashed (content-addressable) symbols, non-package symbols, and
 // references to external symbols (which are always named).
-func (l *Loader) LoadNonpkgSyms(arch *sys.Arch) {
+func (l *Loader) LoadSyms(arch *sys.Arch) {
+	// Allocate space for symbols, making a guess as to how much space we need.
+	// This function was determined empirically by looking at the cmd/compile on
+	// Darwin, and picking factors for hashed and hashed64 syms.
+	var symSize, hashedSize, hashed64Size int
+	for _, o := range l.objs[goObjStart:] {
+		symSize += o.r.ndef + o.r.nhasheddef/2 + o.r.nhashed64def/2 + o.r.NNonpkgdef()
+		hashedSize += o.r.nhasheddef / 2
+		hashed64Size += o.r.nhashed64def / 2
+	}
+	// Index 0 is invalid for symbols.
+	l.objSyms = make([]objSym, 1, symSize)
+
 	l.npkgsyms = l.NSym()
-	// Preallocate some space (a few hundreds KB) for some symbols.
-	// As of Go 1.15, linking cmd/compile has ~8000 hashed64 symbols and
-	// ~13000 hashed symbols.
 	st := loadState{
 		l:            l,
-		hashed64Syms: make(map[uint64]symAndSize, 10000),
-		hashedSyms:   make(map[goobj.HashType]symAndSize, 15000),
+		hashed64Syms: make(map[uint64]symAndSize, hashed64Size),
+		hashedSyms:   make(map[goobj.HashType]symAndSize, hashedSize),
+	}
+
+	for _, o := range l.objs[goObjStart:] {
+		st.preloadSyms(o.r, pkgDef)
 	}
 	for _, o := range l.objs[goObjStart:] {
 		st.preloadSyms(o.r, hashed64Def)
@@ -2193,6 +2196,18 @@ func loadObjRefs(l *Loader, r *oReader, arch *sys.Arch) {
 		if osym.UsedInIface() {
 			l.SetAttrUsedInIface(gi, true)
 		}
+	}
+
+	// referenced packages
+	npkg := r.NPkg()
+	r.pkg = make([]uint32, npkg)
+	for i := 1; i < npkg; i++ { // PkgIdx 0 is a dummy invalid package
+		pkg := r.Pkg(i)
+		objidx, ok := l.objByPkg[pkg]
+		if !ok {
+			log.Fatalf("reference of nonexisted package %s, from %v", pkg, r.unit.Lib)
+		}
+		r.pkg[i] = objidx
 	}
 
 	// load flags of package refs

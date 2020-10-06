@@ -29,7 +29,6 @@ import (
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/load"
 	"cmd/go/internal/lockedfile"
-	"cmd/go/internal/modload"
 	"cmd/go/internal/str"
 	"cmd/go/internal/trace"
 	"cmd/go/internal/work"
@@ -568,7 +567,7 @@ var defaultVetFlags = []string{
 }
 
 func runTest(ctx context.Context, cmd *base.Command, args []string) {
-	modload.LoadTests = true
+	load.ModResolveTests = true
 
 	pkgArgs, testArgs = testFlags(args)
 
@@ -702,7 +701,7 @@ func runTest(ctx context.Context, cmd *base.Command, args []string) {
 		}
 
 		// Select for coverage all dependencies matching the testCoverPaths patterns.
-		for _, p := range load.TestPackageList(pkgs) {
+		for _, p := range load.TestPackageList(ctx, pkgs) {
 			haveMatch := false
 			for i := range testCoverPaths {
 				if match[i](p) {
@@ -1164,7 +1163,8 @@ func (c *runCache) builderRunTest(b *work.Builder, ctx context.Context, a *work.
 	if !c.disableCache && len(execCmd) == 0 {
 		testlogArg = []string{"-test.testlogfile=" + a.Objdir + "testlog.txt"}
 	}
-	args := str.StringList(execCmd, a.Deps[0].BuiltTarget(), testlogArg, testArgs)
+	panicArg := "-test.paniconexit0"
+	args := str.StringList(execCmd, a.Deps[0].BuiltTarget(), testlogArg, panicArg, testArgs)
 
 	if testCoverProfile != "" {
 		// Write coverage to temporary profile, for merging later.

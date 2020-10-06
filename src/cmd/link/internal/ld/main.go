@@ -36,12 +36,14 @@ import (
 	"cmd/internal/objabi"
 	"cmd/internal/sys"
 	"cmd/link/internal/benchmark"
+	"cmd/link/internal/loader"
 	"flag"
 	"log"
 	"os"
 	"runtime"
 	"runtime/pprof"
 	"strings"
+	"sync"
 )
 
 var (
@@ -65,6 +67,7 @@ var (
 	flagDumpDep       = flag.Bool("dumpdep", false, "dump symbol dependency graph")
 	flagRace          = flag.Bool("race", false, "enable race detector")
 	flagMsan          = flag.Bool("msan", false, "enable MSan interface")
+	flagAslr          = flag.Bool("aslr", true, "enable ASLR for buildmode=c-shared on windows")
 
 	flagFieldTrack = flag.String("k", "", "set field tracking `symbol`")
 	flagLibGCC     = flag.String("libgcc", "", "compiler support lib for internal linking; use \"none\" to disable")
@@ -155,6 +158,11 @@ func Main(arch *sys.Arch, theArch Arch) {
 	}
 	if ctxt.HeadType == objabi.Hunknown {
 		ctxt.HeadType.Set(objabi.GOOS)
+	}
+
+	if !*flagAslr && ctxt.BuildMode != BuildModeCShared {
+		Errorf(nil, "-aslr=false is only allowed for -buildmode=c-shared")
+		usage()
 	}
 
 	checkStrictDups = *FlagStrictDups
@@ -324,9 +332,15 @@ func Main(arch *sys.Arch, theArch Arch) {
 	bench.Start("Asmb")
 	asmb(ctxt)
 	// Generate large symbols.
+	var wg sync.WaitGroup
 	for s, f := range ctxt.generatorSyms {
-		f(ctxt, s)
+		wg.Add(1)
+		go func(f generatorFunc, s loader.Sym) {
+			defer wg.Done()
+			f(ctxt, s)
+		}(f, s)
 	}
+	wg.Wait()
 	bench.Start("Asmb2")
 	asmb2(ctxt)
 
