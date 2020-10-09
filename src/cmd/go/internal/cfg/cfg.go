@@ -11,12 +11,15 @@ import (
 	"fmt"
 	"go/build"
 	"internal/cfg"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
+
+	"cmd/go/internal/fsys"
 
 	"cmd/internal/objabi"
 )
@@ -102,6 +105,15 @@ func defaultContext() build.Context {
 		// So ctxt.CgoEnabled (== go/build.Default.CgoEnabled) is correct
 		// as is and can be left unmodified.
 		// Nothing to do here.
+	}
+
+	ctxt.OpenFile = func(path string) (io.ReadCloser, error) {
+		return fsys.Open(path)
+	}
+	ctxt.ReadDir = fsys.ReadDir
+	ctxt.IsDir = func(path string) bool {
+		isDir, err := fsys.IsDir(path)
+		return err == nil && isDir
 	}
 
 	return ctxt
@@ -244,6 +256,7 @@ var (
 
 	// Used in envcmd.MkEnv and build ID computations.
 	GOARM    = envOr("GOARM", fmt.Sprint(objabi.GOARM))
+	GO386    = envOr("GO386", objabi.GO386)
 	GOMIPS   = envOr("GOMIPS", objabi.GOMIPS)
 	GOMIPS64 = envOr("GOMIPS64", objabi.GOMIPS64)
 	GOPPC64  = envOr("GOPPC64", fmt.Sprintf("%s%d", "power", objabi.GOPPC64))
@@ -267,6 +280,8 @@ func GetArchEnv() (key, val string) {
 	switch Goarch {
 	case "arm":
 		return "GOARM", GOARM
+	case "386":
+		return "GO386", GO386
 	case "mips", "mipsle":
 		return "GOMIPS", GOMIPS
 	case "mips64", "mips64le":
