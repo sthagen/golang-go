@@ -138,48 +138,178 @@ func TestLocalDirectory(t *testing.T) {
 	}
 }
 
+var shouldBuildTests = []struct {
+	name        string
+	content     string
+	tags        map[string]bool
+	binaryOnly  bool
+	shouldBuild bool
+	err         error
+}{
+	{
+		name: "Yes",
+		content: "// +build yes\n\n" +
+			"package main\n",
+		tags:        map[string]bool{"yes": true},
+		shouldBuild: true,
+	},
+	{
+		name: "Or",
+		content: "// +build no yes\n\n" +
+			"package main\n",
+		tags:        map[string]bool{"yes": true, "no": true},
+		shouldBuild: true,
+	},
+	{
+		name: "And",
+		content: "// +build no,yes\n\n" +
+			"package main\n",
+		tags:        map[string]bool{"yes": true, "no": true},
+		shouldBuild: false,
+	},
+	{
+		name: "Cgo",
+		content: "// +build cgo\n\n" +
+			"// Copyright The Go Authors.\n\n" +
+			"// This package implements parsing of tags like\n" +
+			"// +build tag1\n" +
+			"package build",
+		tags:        map[string]bool{"cgo": true},
+		shouldBuild: false,
+	},
+	{
+		name: "AfterPackage",
+		content: "// Copyright The Go Authors.\n\n" +
+			"package build\n\n" +
+			"// shouldBuild checks tags given by lines of the form\n" +
+			"// +build tag\n" +
+			"func shouldBuild(content []byte)\n",
+		tags:        map[string]bool{},
+		shouldBuild: true,
+	},
+	{
+		name: "TooClose",
+		content: "// +build yes\n" +
+			"package main\n",
+		tags:        map[string]bool{},
+		shouldBuild: true,
+	},
+	{
+		name: "TooCloseNo",
+		content: "// +build no\n" +
+			"package main\n",
+		tags:        map[string]bool{},
+		shouldBuild: true,
+	},
+	{
+		name: "BinaryOnly",
+		content: "//go:binary-only-package\n" +
+			"// +build yes\n" +
+			"package main\n",
+		tags:        map[string]bool{},
+		binaryOnly:  true,
+		shouldBuild: true,
+	},
+	{
+		name: "ValidGoBuild",
+		content: "// +build yes\n\n" +
+			"//go:build no\n" +
+			"package main\n",
+		tags:        map[string]bool{"yes": true},
+		shouldBuild: true,
+	},
+	{
+		name: "MissingBuild",
+		content: "//go:build no\n" +
+			"package main\n",
+		tags:        map[string]bool{},
+		shouldBuild: false,
+		err:         errGoBuildWithoutBuild,
+	},
+	{
+		name: "MissingBuild2",
+		content: "/* */\n" +
+			"// +build yes\n\n" +
+			"//go:build no\n" +
+			"package main\n",
+		tags:        map[string]bool{},
+		shouldBuild: false,
+		err:         errGoBuildWithoutBuild,
+	},
+	{
+		name: "MissingBuild2",
+		content: "/*\n" +
+			"// +build yes\n\n" +
+			"*/\n" +
+			"//go:build no\n" +
+			"package main\n",
+		tags:        map[string]bool{},
+		shouldBuild: false,
+		err:         errGoBuildWithoutBuild,
+	},
+	{
+		name: "Comment1",
+		content: "/*\n" +
+			"//go:build no\n" +
+			"*/\n\n" +
+			"package main\n",
+		tags:        map[string]bool{},
+		shouldBuild: true,
+	},
+	{
+		name: "Comment2",
+		content: "/*\n" +
+			"text\n" +
+			"*/\n\n" +
+			"//go:build no\n" +
+			"package main\n",
+		tags:        map[string]bool{},
+		shouldBuild: false,
+		err:         errGoBuildWithoutBuild,
+	},
+	{
+		name: "Comment3",
+		content: "/*/*/ /* hi *//* \n" +
+			"text\n" +
+			"*/\n\n" +
+			"//go:build no\n" +
+			"package main\n",
+		tags:        map[string]bool{},
+		shouldBuild: false,
+		err:         errGoBuildWithoutBuild,
+	},
+	{
+		name: "Comment4",
+		content: "/**///go:build no\n" +
+			"package main\n",
+		tags:        map[string]bool{},
+		shouldBuild: true,
+	},
+	{
+		name: "Comment5",
+		content: "/**/\n" +
+			"//go:build no\n" +
+			"package main\n",
+		tags:        map[string]bool{},
+		shouldBuild: false,
+		err:         errGoBuildWithoutBuild,
+	},
+}
+
 func TestShouldBuild(t *testing.T) {
-	const file1 = "// +build tag1\n\n" +
-		"package main\n"
-	want1 := map[string]bool{"tag1": true}
-
-	const file2 = "// +build cgo\n\n" +
-		"// This package implements parsing of tags like\n" +
-		"// +build tag1\n" +
-		"package build"
-	want2 := map[string]bool{"cgo": true}
-
-	const file3 = "// Copyright The Go Authors.\n\n" +
-		"package build\n\n" +
-		"// shouldBuild checks tags given by lines of the form\n" +
-		"// +build tag\n" +
-		"func shouldBuild(content []byte)\n"
-	want3 := map[string]bool{}
-
-	ctx := &Context{BuildTags: []string{"tag1"}}
-	m := map[string]bool{}
-	if !ctx.shouldBuild([]byte(file1), m, nil) {
-		t.Errorf("shouldBuild(file1) = false, want true")
-	}
-	if !reflect.DeepEqual(m, want1) {
-		t.Errorf("shouldBuild(file1) tags = %v, want %v", m, want1)
-	}
-
-	m = map[string]bool{}
-	if ctx.shouldBuild([]byte(file2), m, nil) {
-		t.Errorf("shouldBuild(file2) = true, want false")
-	}
-	if !reflect.DeepEqual(m, want2) {
-		t.Errorf("shouldBuild(file2) tags = %v, want %v", m, want2)
-	}
-
-	m = map[string]bool{}
-	ctx = &Context{BuildTags: nil}
-	if !ctx.shouldBuild([]byte(file3), m, nil) {
-		t.Errorf("shouldBuild(file3) = false, want true")
-	}
-	if !reflect.DeepEqual(m, want3) {
-		t.Errorf("shouldBuild(file3) tags = %v, want %v", m, want3)
+	for _, tt := range shouldBuildTests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &Context{BuildTags: []string{"yes"}}
+			tags := map[string]bool{}
+			shouldBuild, binaryOnly, err := ctx.shouldBuild([]byte(tt.content), tags)
+			if shouldBuild != tt.shouldBuild || binaryOnly != tt.binaryOnly || !reflect.DeepEqual(tags, tt.tags) || err != tt.err {
+				t.Errorf("mismatch:\n"+
+					"have shouldBuild=%v, binaryOnly=%v, tags=%v, err=%v\n"+
+					"want shouldBuild=%v, binaryOnly=%v, tags=%v, err=%v",
+					shouldBuild, binaryOnly, tags, err,
+					tt.shouldBuild, tt.binaryOnly, tt.tags, tt.err)
+			}
+		})
 	}
 }
 
