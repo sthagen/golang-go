@@ -112,6 +112,7 @@ import (
 
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
+	"cmd/go/internal/fsys"
 	"cmd/go/internal/imports"
 	"cmd/go/internal/modfetch"
 	"cmd/go/internal/mvs"
@@ -168,7 +169,7 @@ type PackageOpts struct {
 // LoadPackages identifies the set of packages matching the given patterns and
 // loads the packages in the import graph rooted at that set.
 func LoadPackages(ctx context.Context, opts PackageOpts, patterns ...string) (matches []*search.Match, loadedPackages []string) {
-	InitMod(ctx)
+	LoadModFile(ctx)
 	if opts.Tags == nil {
 		opts.Tags = imports.Tags()
 	}
@@ -275,6 +276,8 @@ func LoadPackages(ctx context.Context, opts PackageOpts, patterns ...string) (ma
 			if pkg.flags.has(pkgInAll) {
 				if imErr := (*ImportMissingError)(nil); errors.As(pkg.err, &imErr) {
 					imErr.inAll = true
+				} else if sumErr := (*ImportMissingSumError)(nil); errors.As(pkg.err, &sumErr) {
+					sumErr.inAll = true
 				}
 			}
 
@@ -361,7 +364,7 @@ func resolveLocalPackage(dir string) (string, error) {
 		// If the named directory does not exist or contains no Go files,
 		// the package does not exist.
 		// Other errors may affect package loading, but not resolution.
-		if _, err := os.Stat(absDir); err != nil {
+		if _, err := fsys.Stat(absDir); err != nil {
 			if os.IsNotExist(err) {
 				// Canonicalize OS-specific errors to errDirectoryNotFound so that error
 				// messages will be easier for users to search for.
@@ -493,7 +496,7 @@ func pathInModuleCache(dir string) string {
 // ImportFromFiles adds modules to the build list as needed
 // to satisfy the imports in the named Go source files.
 func ImportFromFiles(ctx context.Context, gofiles []string) {
-	InitMod(ctx)
+	LoadModFile(ctx)
 
 	tags := imports.Tags()
 	imports, testImports, err := imports.ScanFiles(gofiles, tags)

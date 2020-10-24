@@ -1034,7 +1034,9 @@ const (
 	OpAMD64CMPXCHGLlock
 	OpAMD64CMPXCHGQlock
 	OpAMD64ANDBlock
+	OpAMD64ANDLlock
 	OpAMD64ORBlock
+	OpAMD64ORLlock
 
 	OpARMADD
 	OpARMADDconst
@@ -1586,7 +1588,9 @@ const (
 	OpARM64LoweredAtomicCas64
 	OpARM64LoweredAtomicCas32
 	OpARM64LoweredAtomicAnd8
+	OpARM64LoweredAtomicAnd32
 	OpARM64LoweredAtomicOr8
+	OpARM64LoweredAtomicOr32
 	OpARM64LoweredWB
 	OpARM64LoweredPanicBoundsA
 	OpARM64LoweredPanicBoundsB
@@ -2022,7 +2026,9 @@ const (
 	OpPPC64LoweredAtomicCas64
 	OpPPC64LoweredAtomicCas32
 	OpPPC64LoweredAtomicAnd8
+	OpPPC64LoweredAtomicAnd32
 	OpPPC64LoweredAtomicOr8
+	OpPPC64LoweredAtomicOr32
 	OpPPC64LoweredWB
 	OpPPC64LoweredPanicBoundsA
 	OpPPC64LoweredPanicBoundsB
@@ -2368,8 +2374,10 @@ const (
 	OpS390XLAAG
 	OpS390XAddTupleFirst32
 	OpS390XAddTupleFirst64
-	OpS390XLAOfloor
+	OpS390XLAN
 	OpS390XLANfloor
+	OpS390XLAO
+	OpS390XLAOfloor
 	OpS390XLoweredAtomicCas32
 	OpS390XLoweredAtomicCas64
 	OpS390XLoweredAtomicExchange32
@@ -2854,7 +2862,9 @@ const (
 	OpAtomicCompareAndSwap64
 	OpAtomicCompareAndSwapRel32
 	OpAtomicAnd8
+	OpAtomicAnd32
 	OpAtomicOr8
+	OpAtomicOr32
 	OpAtomicAdd32Variant
 	OpAtomicAdd64Variant
 	OpClobber
@@ -13576,6 +13586,22 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:           "ANDLlock",
+		auxType:        auxSymOff,
+		argLen:         3,
+		clobberFlags:   true,
+		faultOnNilArg0: true,
+		hasSideEffects: true,
+		symEffect:      SymRdWr,
+		asm:            x86.AANDL,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{1, 65535},      // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 R14 R15
+				{0, 4295032831}, // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 R14 R15 SB
+			},
+		},
+	},
+	{
 		name:           "ORBlock",
 		auxType:        auxSymOff,
 		argLen:         3,
@@ -13584,6 +13610,22 @@ var opcodeTable = [...]opInfo{
 		hasSideEffects: true,
 		symEffect:      SymRdWr,
 		asm:            x86.AORB,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{1, 65535},      // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 R14 R15
+				{0, 4295032831}, // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 R14 R15 SB
+			},
+		},
+	},
+	{
+		name:           "ORLlock",
+		auxType:        auxSymOff,
+		argLen:         3,
+		clobberFlags:   true,
+		faultOnNilArg0: true,
+		hasSideEffects: true,
+		symEffect:      SymRdWr,
+		asm:            x86.AORL,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{1, 65535},      // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 R14 R15
@@ -21061,7 +21103,43 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:            "LoweredAtomicAnd32",
+		argLen:          3,
+		resultNotInArgs: true,
+		faultOnNilArg0:  true,
+		hasSideEffects:  true,
+		unsafePoint:     true,
+		asm:             arm64.AAND,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{1, 805044223},           // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30
+				{0, 9223372038733561855}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30 SP SB
+			},
+			outputs: []outputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+		},
+	},
+	{
 		name:            "LoweredAtomicOr8",
+		argLen:          3,
+		resultNotInArgs: true,
+		faultOnNilArg0:  true,
+		hasSideEffects:  true,
+		unsafePoint:     true,
+		asm:             arm64.AORR,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{1, 805044223},           // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30
+				{0, 9223372038733561855}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30 SP SB
+			},
+			outputs: []outputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+		},
+	},
+	{
+		name:            "LoweredAtomicOr32",
 		argLen:          3,
 		resultNotInArgs: true,
 		faultOnNilArg0:  true,
@@ -26949,7 +27027,33 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:           "LoweredAtomicAnd32",
+		argLen:         3,
+		faultOnNilArg0: true,
+		hasSideEffects: true,
+		asm:            ppc64.AAND,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1073733630}, // SP SB R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
+				{1, 1073733630}, // SP SB R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
+			},
+		},
+	},
+	{
 		name:           "LoweredAtomicOr8",
+		argLen:         3,
+		faultOnNilArg0: true,
+		hasSideEffects: true,
+		asm:            ppc64.AOR,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1073733630}, // SP SB R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
+				{1, 1073733630}, // SP SB R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R14 R15 R16 R17 R18 R19 R20 R21 R22 R23 R24 R25 R26 R27 R28 R29
+			},
+		},
+	},
+	{
+		name:           "LoweredAtomicOr32",
 		argLen:         3,
 		faultOnNilArg0: true,
 		hasSideEffects: true,
@@ -31803,11 +31907,24 @@ var opcodeTable = [...]opInfo{
 		reg:    regInfo{},
 	},
 	{
-		name:           "LAOfloor",
+		name:           "LAN",
 		argLen:         3,
 		clobberFlags:   true,
 		hasSideEffects: true,
-		asm:            s390x.ALAO,
+		asm:            s390x.ALAN,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 4295023614}, // R1 R2 R3 R4 R5 R6 R7 R8 R9 R11 R12 R14 SP SB
+				{1, 56319},      // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R11 R12 R14 SP
+			},
+		},
+	},
+	{
+		name:           "LANfloor",
+		argLen:         3,
+		clobberFlags:   true,
+		hasSideEffects: true,
+		asm:            s390x.ALAN,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{0, 2},     // R1
@@ -31817,11 +31934,24 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
-		name:           "LANfloor",
+		name:           "LAO",
 		argLen:         3,
 		clobberFlags:   true,
 		hasSideEffects: true,
-		asm:            s390x.ALAN,
+		asm:            s390x.ALAO,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 4295023614}, // R1 R2 R3 R4 R5 R6 R7 R8 R9 R11 R12 R14 SP SB
+				{1, 56319},      // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R11 R12 R14 SP
+			},
+		},
+	},
+	{
+		name:           "LAOfloor",
+		argLen:         3,
+		clobberFlags:   true,
+		hasSideEffects: true,
+		asm:            s390x.ALAO,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{0, 2},     // R1
@@ -35521,7 +35651,19 @@ var opcodeTable = [...]opInfo{
 		generic:        true,
 	},
 	{
+		name:           "AtomicAnd32",
+		argLen:         3,
+		hasSideEffects: true,
+		generic:        true,
+	},
+	{
 		name:           "AtomicOr8",
+		argLen:         3,
+		hasSideEffects: true,
+		generic:        true,
+	},
+	{
+		name:           "AtomicOr32",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,

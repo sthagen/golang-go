@@ -137,6 +137,10 @@ func main() {
 	mainStarted = true
 
 	if GOARCH != "wasm" { // no threads on wasm yet, so no sysmon
+		// For runtime_syscall_doAllThreadsSyscall, we
+		// register sysmon is not ready for the world to be
+		// stopped.
+		atomic.Store(&sched.sysmonStarting, 1)
 		systemstack(func() {
 			newm(sysmon, nil, -1)
 		})
@@ -153,6 +157,7 @@ func main() {
 	if g.m != &m0 {
 		throw("runtime.main not on m0")
 	}
+	m0.doesPark = true
 
 	// Record when the world started.
 	// Must be before doInit for tracing init.
@@ -1226,6 +1231,21 @@ func mstartm0() {
 	initsig(false)
 }
 
+// mPark causes a thread to park itself - temporarily waking for
+// fixups but otherwise waiting to be fully woken. This is the
+// only way that m's should park themselves.
+//go:nosplit
+func mPark() {
+	g := getg()
+	for {
+		notesleep(&g.m.park)
+		noteclear(&g.m.park)
+		if !mDoFixup() {
+			return
+		}
+	}
+}
+
 // mexit tears down and exits the current thread.
 //
 // Don't call this directly to exit the thread, since it must run at
@@ -1257,7 +1277,7 @@ func mexit(osStack bool) {
 		sched.nmfreed++
 		checkdead()
 		unlock(&sched.lock)
-		notesleep(&m.park)
+		mPark()
 		throw("locked m0 woke up")
 	}
 
@@ -1422,6 +1442,127 @@ func forEachP(fn func(*p)) {
 	sched.safePointFn = nil
 	unlock(&sched.lock)
 	releasem(mp)
+}
+
+// syscall_runtime_doAllThreadsSyscall serializes Go execution and
+// executes a specified fn() call on all m's.
+//
+// The boolean argument to fn() indicates whether the function's
+// return value will be consulted or not. That is, fn(true) should
+// return true if fn() succeeds, and fn(true) should return false if
+// it failed. When fn(false) is called, its return status will be
+// ignored.
+//
+// syscall_runtime_doAllThreadsSyscall first invokes fn(true) on a
+// single, coordinating, m, and only if it returns true does it go on
+// to invoke fn(false) on all of the other m's known to the process.
+//
+//go:linkname syscall_runtime_doAllThreadsSyscall syscall.runtime_doAllThreadsSyscall
+func syscall_runtime_doAllThreadsSyscall(fn func(bool) bool) {
+	if iscgo {
+		panic("doAllThreadsSyscall not supported with cgo enabled")
+	}
+	if fn == nil {
+		return
+	}
+	for atomic.Load(&sched.sysmonStarting) != 0 {
+		osyield()
+	}
+	stopTheWorldGC("doAllThreadsSyscall")
+	if atomic.Load(&newmHandoff.haveTemplateThread) != 0 {
+		// Ensure that there are no in-flight thread
+		// creations: don't want to race with allm.
+		lock(&newmHandoff.lock)
+		for !newmHandoff.waiting {
+			unlock(&newmHandoff.lock)
+			osyield()
+			lock(&newmHandoff.lock)
+		}
+		unlock(&newmHandoff.lock)
+	}
+	if netpollinited() {
+		netpollBreak()
+	}
+	_g_ := getg()
+	if raceenabled {
+		// For m's running without racectx, we loan out the
+		// racectx of this call.
+		lock(&mFixupRace.lock)
+		mFixupRace.ctx = _g_.racectx
+		unlock(&mFixupRace.lock)
+	}
+	if ok := fn(true); ok {
+		tid := _g_.m.procid
+		for mp := allm; mp != nil; mp = mp.alllink {
+			if mp.procid == tid {
+				// This m has already completed fn()
+				// call.
+				continue
+			}
+			// Be wary of mp's without procid values if
+			// they are known not to park. If they are
+			// marked as parking with a zero procid, then
+			// they will be racing with this code to be
+			// allocated a procid and we will annotate
+			// them with the need to execute the fn when
+			// they acquire a procid to run it.
+			if mp.procid == 0 && !mp.doesPark {
+				// Reaching here, we are either
+				// running Windows, or cgo linked
+				// code. Neither of which are
+				// currently supported by this API.
+				throw("unsupported runtime environment")
+			}
+			// stopTheWorldGC() doesn't guarantee stopping
+			// all the threads, so we lock here to avoid
+			// the possibility of racing with mp.
+			lock(&mp.mFixup.lock)
+			mp.mFixup.fn = fn
+			if mp.doesPark {
+				// For non-service threads this will
+				// cause the wakeup to be short lived
+				// (once the mutex is unlocked). The
+				// next real wakeup will occur after
+				// startTheWorldGC() is called.
+				notewakeup(&mp.park)
+			}
+			unlock(&mp.mFixup.lock)
+		}
+		for {
+			done := true
+			for mp := allm; done && mp != nil; mp = mp.alllink {
+				if mp.procid == tid {
+					continue
+				}
+				lock(&mp.mFixup.lock)
+				done = done && (mp.mFixup.fn == nil)
+				unlock(&mp.mFixup.lock)
+			}
+			if done {
+				break
+			}
+			// if needed force sysmon and/or newmHandoff to wakeup.
+			lock(&sched.lock)
+			if atomic.Load(&sched.sysmonwait) != 0 {
+				atomic.Store(&sched.sysmonwait, 0)
+				notewakeup(&sched.sysmonnote)
+			}
+			unlock(&sched.lock)
+			lock(&newmHandoff.lock)
+			if newmHandoff.waiting {
+				newmHandoff.waiting = false
+				notewakeup(&newmHandoff.wake)
+			}
+			unlock(&newmHandoff.lock)
+			osyield()
+		}
+	}
+	if raceenabled {
+		lock(&mFixupRace.lock)
+		mFixupRace.ctx = 0
+		unlock(&mFixupRace.lock)
+	}
+	startTheWorldGC()
 }
 
 // runSafePointFn runs the safe point function, if any, for this P.
@@ -1816,6 +1957,7 @@ var newmHandoff struct {
 //go:nowritebarrierrec
 func newm(fn func(), _p_ *p, id int64) {
 	mp := allocm(_p_, fn, id)
+	mp.doesPark = (_p_ != nil)
 	mp.nextp.set(_p_)
 	mp.sigmask = initSigmask
 	if gp := getg(); gp != nil && gp.m != nil && (gp.m.lockedExt != 0 || gp.m.incgo) && GOOS != "plan9" {
@@ -1888,6 +2030,57 @@ func startTemplateThread() {
 	releasem(mp)
 }
 
+// mFixupRace is used to temporarily borrow the race context from the
+// coordinating m during a syscall_runtime_doAllThreadsSyscall and
+// loan it out to each of the m's of the runtime so they can execute a
+// mFixup.fn in that context.
+var mFixupRace struct {
+	lock mutex
+	ctx  uintptr
+}
+
+// mDoFixup runs any outstanding fixup function for the running m.
+// Returns true if a fixup was outstanding and actually executed.
+//
+//go:nosplit
+func mDoFixup() bool {
+	_g_ := getg()
+	lock(&_g_.m.mFixup.lock)
+	fn := _g_.m.mFixup.fn
+	if fn != nil {
+		if gcphase != _GCoff {
+			// We can't have a write barrier in this
+			// context since we may not have a P, but we
+			// clear fn to signal that we've executed the
+			// fixup. As long as fn is kept alive
+			// elsewhere, technically we should have no
+			// issues with the GC, but fn is likely
+			// generated in a different package altogether
+			// that may change independently. Just assert
+			// the GC is off so this lack of write barrier
+			// is more obviously safe.
+			throw("GC must be disabled to protect validity of fn value")
+		}
+		*(*uintptr)(unsafe.Pointer(&_g_.m.mFixup.fn)) = 0
+		if _g_.racectx != 0 || !raceenabled {
+			fn(false)
+		} else {
+			// temporarily acquire the context of the
+			// originator of the
+			// syscall_runtime_doAllThreadsSyscall and
+			// block others from using it for the duration
+			// of the fixup call.
+			lock(&mFixupRace.lock)
+			_g_.racectx = mFixupRace.ctx
+			fn(false)
+			_g_.racectx = 0
+			unlock(&mFixupRace.lock)
+		}
+	}
+	unlock(&_g_.m.mFixup.lock)
+	return fn != nil
+}
+
 // templateThread is a thread in a known-good state that exists solely
 // to start new threads in known-good states when the calling thread
 // may not be in a good state.
@@ -1924,6 +2117,7 @@ func templateThread() {
 		noteclear(&newmHandoff.wake)
 		unlock(&newmHandoff.lock)
 		notesleep(&newmHandoff.wake)
+		mDoFixup()
 	}
 }
 
@@ -1945,8 +2139,7 @@ func stopm() {
 	lock(&sched.lock)
 	mput(_g_.m)
 	unlock(&sched.lock)
-	notesleep(&_g_.m.park)
-	noteclear(&_g_.m.park)
+	mPark()
 	acquirep(_g_.m.nextp.ptr())
 	_g_.m.nextp = 0
 }
@@ -2106,12 +2299,11 @@ func stoplockedm() {
 	}
 	incidlelocked(1)
 	// Wait until another thread schedules lockedg again.
-	notesleep(&_g_.m.park)
-	noteclear(&_g_.m.park)
+	mPark()
 	status := readgstatus(_g_.m.lockedg.ptr())
 	if status&^_Gscan != _Grunnable {
-		print("runtime:stoplockedm: g is not Grunnable or Gscanrunnable\n")
-		dumpgstatus(_g_)
+		print("runtime:stoplockedm: lockedg (atomicstatus=", status, ") is not Grunnable or Gscanrunnable\n")
+		dumpgstatus(_g_.m.lockedg.ptr())
 		throw("stoplockedm: not runnable")
 	}
 	acquirep(_g_.m.nextp.ptr())
@@ -2295,8 +2487,12 @@ top:
 			if _p_ == p2 {
 				continue
 			}
-			if gp := runqsteal(_p_, p2, stealRunNextG); gp != nil {
-				return gp, false
+
+			// Don't bother to attempt to steal if p2 is idle.
+			if !idlepMask.read(enum.position()) {
+				if gp := runqsteal(_p_, p2, stealRunNextG); gp != nil {
+					return gp, false
+				}
 			}
 
 			// Consider stealing timers from p2.
@@ -2307,8 +2503,13 @@ top:
 			// and is not marked for preemption. If p2 is running
 			// and not being preempted we assume it will handle its
 			// own timers.
+			//
 			// If we're still looking for work after checking all
 			// the P's, then go ahead and steal from an active P.
+			//
+			// TODO(prattmic): Maintain a global look-aside similar
+			// to idlepMask to avoid looking at p2 if it can't
+			// possibly have timers.
 			if i > 2 || (i > 1 && shouldStealTimers(p2)) {
 				tnow, w, ran := checkTimers(p2, now)
 				now = tnow
@@ -2379,6 +2580,9 @@ stop:
 	// safe-points. We don't need to snapshot the contents because
 	// everything up to cap(allp) is immutable.
 	allpSnapshot := allp
+	// Also snapshot idlepMask. Value changes are OK, but we can't allow
+	// len to change out from under us.
+	idlepMaskSnapshot := idlepMask
 
 	// return P and block
 	lock(&sched.lock)
@@ -2419,8 +2623,8 @@ stop:
 	}
 
 	// check all runqueues once again
-	for _, _p_ := range allpSnapshot {
-		if !runqempty(_p_) {
+	for id, _p_ := range allpSnapshot {
+		if !idlepMaskSnapshot.read(uint32(id)) && !runqempty(_p_) {
 			lock(&sched.lock)
 			_p_ = pidleget()
 			unlock(&sched.lock)
@@ -4398,6 +4602,8 @@ func procresize(nprocs int32) *p {
 	}
 	sched.procresizetime = now
 
+	maskWords := (nprocs+31) / 32
+
 	// Grow allp if necessary.
 	if nprocs > int32(len(allp)) {
 		// Synchronize with retake, which could be running
@@ -4411,6 +4617,15 @@ func procresize(nprocs int32) *p {
 			// never lose old allocated Ps.
 			copy(nallp, allp[:cap(allp)])
 			allp = nallp
+		}
+
+		if maskWords <= int32(cap(idlepMask)) {
+			idlepMask = idlepMask[:maskWords]
+		} else {
+			nidlepMask := make([]uint32, maskWords)
+			// No need to copy beyond len, old Ps are irrelevant.
+			copy(nidlepMask, idlepMask)
+			idlepMask = nidlepMask
 		}
 		unlock(&allpLock)
 	}
@@ -4470,6 +4685,7 @@ func procresize(nprocs int32) *p {
 	if int32(len(allp)) != nprocs {
 		lock(&allpLock)
 		allp = allp[:nprocs]
+		idlepMask = idlepMask[:maskWords]
 		unlock(&allpLock)
 	}
 
@@ -4691,9 +4907,14 @@ func sysmon() {
 	checkdead()
 	unlock(&sched.lock)
 
+	// For syscall_runtime_doAllThreadsSyscall, sysmon is
+	// sufficiently up to participate in fixups.
+	atomic.Store(&sched.sysmonStarting, 0)
+
 	lasttrace := int64(0)
 	idle := 0 // how many cycles in succession we had not wokeup somebody
 	delay := uint32(0)
+
 	for {
 		if idle == 0 { // start with 20us sleep...
 			delay = 20
@@ -4704,6 +4925,7 @@ func sysmon() {
 			delay = 10 * 1000
 		}
 		usleep(delay)
+		mDoFixup()
 		now := nanotime()
 		next, _ := timeSleepUntil()
 		if debug.schedtrace <= 0 && (sched.gcwaiting != 0 || atomic.Load(&sched.npidle) == uint32(gomaxprocs)) {
@@ -4723,6 +4945,7 @@ func sysmon() {
 						osRelax(true)
 					}
 					notetsleep(&sched.sysmonnote, sleep)
+					mDoFixup()
 					if shouldRelax {
 						osRelax(false)
 					}
@@ -4771,6 +4994,7 @@ func sysmon() {
 				incidlelocked(1)
 			}
 		}
+		mDoFixup()
 		if next < now {
 			// There are timers that should have already run,
 			// perhaps because there is an unpreemptible P.
@@ -5153,8 +5377,46 @@ func globrunqget(_p_ *p, max int32) *g {
 	return gp
 }
 
-// Put p to on _Pidle list.
+// pIdleMask is a bitmap of of Ps in the _Pidle list, one bit per P.
+type pIdleMask []uint32
+
+// read returns true if P id is in the _Pidle list, and thus cannot have work.
+func (p pIdleMask) read(id uint32) bool {
+	word := id / 32
+	mask := uint32(1) << (id % 32)
+	return (atomic.Load(&p[word]) & mask) != 0
+}
+
+// set sets P id as idle in mask.
+//
+// Must be called only for a P owned by the caller. In order to maintain
+// consistency, a P going idle must the idle mask simultaneously with updates
+// to the idle P list under the sched.lock, otherwise a racing pidleget may
+// clear the mask before pidleput sets the mask, corrupting the bitmap.
+//
+// N.B., procresize takes ownership of all Ps in stopTheWorldWithSema.
+func (p pIdleMask) set(id int32) {
+	word := id / 32
+	mask := uint32(1) << (id % 32)
+	atomic.Or(&p[word], mask)
+}
+
+// clear sets P id as non-idle in mask.
+//
+// See comment on set.
+func (p pIdleMask) clear(id int32) {
+	word := id / 32
+	mask := uint32(1) << (id % 32)
+	atomic.And(&p[word], ^mask)
+}
+
+// pidleput puts p to on the _Pidle list.
+//
+// This releases ownership of p. Once sched.lock is released it is no longer
+// safe to use p.
+//
 // sched.lock must be held.
+//
 // May run during STW, so write barriers are not allowed.
 //go:nowritebarrierrec
 func pidleput(_p_ *p) {
@@ -5163,13 +5425,16 @@ func pidleput(_p_ *p) {
 	if !runqempty(_p_) {
 		throw("pidleput: P has non-empty run queue")
 	}
+	idlepMask.set(_p_.id)
 	_p_.link = sched.pidle
 	sched.pidle.set(_p_)
 	atomic.Xadd(&sched.npidle, 1) // TODO: fast atomic
 }
 
-// Try get a p from _Pidle list.
+// pidleget tries to get a p from the _Pidle list, acquiring ownership.
+//
 // sched.lock must be held.
+//
 // May run during STW, so write barriers are not allowed.
 //go:nowritebarrierrec
 func pidleget() *p {
@@ -5177,6 +5442,7 @@ func pidleget() *p {
 
 	_p_ := sched.pidle.ptr()
 	if _p_ != nil {
+		idlepMask.clear(_p_.id)
 		sched.pidle = _p_.link
 		atomic.Xadd(&sched.npidle, -1) // TODO: fast atomic
 	}

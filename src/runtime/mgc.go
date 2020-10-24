@@ -983,7 +983,6 @@ var work struct {
 	nproc  uint32
 	tstart int64
 	nwait  uint32
-	ndone  uint32
 
 	// Number of roots of various root types. Set by gcMarkRootPrepare.
 	nFlushCacheRoots                               int
@@ -1559,10 +1558,10 @@ top:
 	gcMarkTermination(nextTriggerRatio)
 }
 
+// World must be stopped and mark assists and background workers must be
+// disabled.
 func gcMarkTermination(nextTriggerRatio float64) {
-	// World is stopped.
-	// Start marktermination which includes enabling the write barrier.
-	atomic.Store(&gcBlackenEnabled, 0)
+	// Start marktermination (write barrier remains enabled for now).
 	setGCPhase(_GCmarktermination)
 
 	work.heap1 = memstats.heap_live
