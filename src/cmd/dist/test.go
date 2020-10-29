@@ -217,6 +217,9 @@ func (t *tester) run() {
 		fmt.Println("\nFAILED")
 		xexit(1)
 	} else if incomplete[goos+"/"+goarch] {
+		// The test succeeded, but consider it as failed so we don't
+		// forget to remove the port from the incomplete map once the
+		// port is complete.
 		fmt.Println("\nFAILED (incomplete port)")
 		xexit(1)
 	} else if t.partial {
@@ -463,13 +466,14 @@ func (t *tester) registerTests() {
 		})
 	}
 
-	// Test the ios build tag on darwin/amd64 for the iOS simulator.
-	if goos == "darwin" && goarch == "amd64" {
+	// Test ios/amd64 for the iOS simulator.
+	if goos == "darwin" && goarch == "amd64" && t.cgoEnabled {
 		t.tests = append(t.tests, distTest{
 			name:    "amd64ios",
-			heading: "ios tag on darwin/amd64",
+			heading: "GOOS=ios on darwin/amd64",
 			fn: func(dt *distTest) error {
-				t.addCmd(dt, "src", t.goTest(), t.timeout(300), "-tags=ios", "-run=SystemRoots", "crypto/x509")
+				cmd := t.addCmd(dt, "src", t.goTest(), t.timeout(300), "-run=SystemRoots", "crypto/x509")
+				cmd.Env = append(os.Environ(), "GOOS=ios", "CGO_ENABLED=1")
 				return nil
 			},
 		})
@@ -980,7 +984,7 @@ func (t *tester) supportedBuildmode(mode string) bool {
 		switch pair {
 		case "aix-ppc64",
 			"darwin-amd64", "darwin-arm64", "ios-arm64",
-			"linux-amd64", "linux-386", "linux-ppc64le", "linux-s390x",
+			"linux-amd64", "linux-386", "linux-ppc64le", "linux-riscv64", "linux-s390x",
 			"freebsd-amd64",
 			"windows-amd64", "windows-386":
 			return true
@@ -988,7 +992,7 @@ func (t *tester) supportedBuildmode(mode string) bool {
 		return false
 	case "c-shared":
 		switch pair {
-		case "linux-386", "linux-amd64", "linux-arm", "linux-arm64", "linux-ppc64le", "linux-s390x",
+		case "linux-386", "linux-amd64", "linux-arm", "linux-arm64", "linux-ppc64le", "linux-riscv64", "linux-s390x",
 			"darwin-amd64", "darwin-arm64",
 			"freebsd-amd64",
 			"android-arm", "android-arm64", "android-386",
@@ -998,7 +1002,7 @@ func (t *tester) supportedBuildmode(mode string) bool {
 		return false
 	case "shared":
 		switch pair {
-		case "linux-386", "linux-amd64", "linux-arm", "linux-arm64", "linux-ppc64le", "linux-s390x":
+		case "linux-386", "linux-amd64", "linux-arm", "linux-arm64", "linux-ppc64le", "linux-riscv64", "linux-s390x":
 			return true
 		}
 		return false
@@ -1017,7 +1021,7 @@ func (t *tester) supportedBuildmode(mode string) bool {
 	case "pie":
 		switch pair {
 		case "aix/ppc64",
-			"linux-386", "linux-amd64", "linux-arm", "linux-arm64", "linux-ppc64le", "linux-s390x",
+			"linux-386", "linux-amd64", "linux-arm", "linux-arm64", "linux-ppc64le", "linux-riscv64", "linux-s390x",
 			"android-amd64", "android-arm", "android-arm64", "android-386":
 			return true
 		case "darwin-amd64", "darwin-arm64":
@@ -1078,7 +1082,12 @@ func (t *tester) cgoTest(dt *distTest) error {
 	cmd := t.addCmd(dt, "misc/cgo/test", t.goTest())
 	cmd.Env = append(os.Environ(), "GOFLAGS=-ldflags=-linkmode=auto")
 
-	if t.internalLink() {
+	// Skip internal linking cases on arm64 to support GCC-9.4 and above,
+	// only for linux, conservatively.
+	// See issue #39466.
+	skipInternalLink := goarch == "arm64" && goos == "linux"
+
+	if t.internalLink() && !skipInternalLink {
 		cmd := t.addCmd(dt, "misc/cgo/test", t.goTest(), "-tags=internal")
 		cmd.Env = append(os.Environ(), "GOFLAGS=-ldflags=-linkmode=internal")
 	}
@@ -1154,7 +1163,7 @@ func (t *tester) cgoTest(dt *distTest) error {
 
 			if t.supportedBuildmode("pie") {
 				t.addCmd(dt, "misc/cgo/test", t.goTest(), "-buildmode=pie")
-				if t.internalLink() && t.internalLinkPIE() {
+				if t.internalLink() && t.internalLinkPIE() && !skipInternalLink {
 					t.addCmd(dt, "misc/cgo/test", t.goTest(), "-buildmode=pie", "-ldflags=-linkmode=internal", "-tags=internal,internal_pie")
 				}
 				t.addCmd(dt, "misc/cgo/testtls", t.goTest(), "-buildmode=pie")

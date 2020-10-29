@@ -298,6 +298,32 @@ func (p *ProfBuf) Close() {
 	(*profBuf)(p).close()
 }
 
+func ReadMetricsSlow(memStats *MemStats, samplesp unsafe.Pointer, len, cap int) {
+	stopTheWorld("ReadMetricsSlow")
+
+	// Initialize the metrics beforehand because this could
+	// allocate and skew the stats.
+	semacquire(&metricsSema)
+	initMetrics()
+	semrelease(&metricsSema)
+
+	systemstack(func() {
+		// Read memstats first. It's going to flush
+		// the mcaches which readMetrics does not do, so
+		// going the other way around may result in
+		// inconsistent statistics.
+		readmemstats_m(memStats)
+	})
+
+	// Read metrics off the system stack.
+	//
+	// The only part of readMetrics that could allocate
+	// and skew the stats is initMetrics.
+	readMetrics(samplesp, len, cap)
+
+	startTheWorld()
+}
+
 // ReadMemStatsSlow returns both the runtime-computed MemStats and
 // MemStats accumulated by scanning the heap.
 func ReadMemStatsSlow() (base, slow MemStats) {
@@ -337,20 +363,22 @@ func ReadMemStatsSlow() (base, slow MemStats) {
 			}
 		}
 
-		// Add in frees. readmemstats_m flushed the cached stats, so
-		// these are up-to-date.
+		// Add in frees by just reading the stats for those directly.
+		var m heapStatsDelta
+		memstats.heapStats.unsafeRead(&m)
+
+		// Collect per-sizeclass free stats.
 		var smallFree uint64
-		slow.Frees = mheap_.nlargefree
-		for i := range mheap_.nsmallfree {
-			slow.Frees += mheap_.nsmallfree[i]
-			bySize[i].Frees = mheap_.nsmallfree[i]
-			bySize[i].Mallocs += mheap_.nsmallfree[i]
-			smallFree += mheap_.nsmallfree[i] * uint64(class_to_size[i])
+		for i := 0; i < _NumSizeClasses; i++ {
+			slow.Frees += uint64(m.smallFreeCount[i])
+			bySize[i].Frees += uint64(m.smallFreeCount[i])
+			bySize[i].Mallocs += uint64(m.smallFreeCount[i])
+			smallFree += uint64(m.smallFreeCount[i]) * uint64(class_to_size[i])
 		}
-		slow.Frees += memstats.tinyallocs
+		slow.Frees += memstats.tinyallocs + uint64(m.largeFreeCount)
 		slow.Mallocs += slow.Frees
 
-		slow.TotalAlloc = slow.Alloc + mheap_.largefree + smallFree
+		slow.TotalAlloc = slow.Alloc + uint64(m.largeFree) + smallFree
 
 		for i := range slow.BySize {
 			slow.BySize[i].Mallocs = bySize[i].Mallocs
@@ -807,7 +835,7 @@ type AddrRanges struct {
 // Add.
 func NewAddrRanges() AddrRanges {
 	r := addrRanges{}
-	r.init(new(uint64))
+	r.init(new(sysMemStat))
 	return AddrRanges{r, true}
 }
 
@@ -831,7 +859,7 @@ func MakeAddrRanges(a ...AddrRange) AddrRanges {
 	return AddrRanges{addrRanges{
 		ranges:     ranges,
 		totalBytes: total,
-		sysStat:    new(uint64),
+		sysStat:    new(sysMemStat),
 	}, false}
 }
 
@@ -1112,4 +1140,28 @@ func MSpanCountAlloc(ms *MSpan, bits []byte) int {
 	result := s.countAlloc()
 	s.gcmarkBits = nil
 	return result
+}
+
+const (
+	TimeHistSubBucketBits   = timeHistSubBucketBits
+	TimeHistNumSubBuckets   = timeHistNumSubBuckets
+	TimeHistNumSuperBuckets = timeHistNumSuperBuckets
+)
+
+type TimeHistogram timeHistogram
+
+// Counts returns the counts for the given bucket, subBucket indices.
+// Returns true if the bucket was valid, otherwise returns the counts
+// for the overflow bucket and false.
+func (th *TimeHistogram) Count(bucket, subBucket uint) (uint64, bool) {
+	t := (*timeHistogram)(th)
+	i := bucket*TimeHistNumSubBuckets + subBucket
+	if i >= uint(len(t.counts)) {
+		return t.overflow, false
+	}
+	return t.counts[i], true
+}
+
+func (th *TimeHistogram) Record(duration int64) {
+	(*timeHistogram)(th).record(duration)
 }

@@ -387,14 +387,6 @@ type libcall struct {
 	err  uintptr // error number
 }
 
-// describes how to handle callback
-type wincallbackcontext struct {
-	gobody       unsafe.Pointer // go function to call
-	argsize      uintptr        // callback arguments size (in bytes)
-	restorestack uintptr        // adjust stack on return by (in bytes) (386 only)
-	cleanstack   bool
-}
-
 // Stack describes a Go execution stack.
 // The bounds of the stack are exactly [lo, hi),
 // with no implicit data structures on either side.
@@ -653,6 +645,13 @@ type p struct {
 	// This is updated using atomic functions.
 	// This is 0 if the timer heap is empty.
 	timer0When uint64
+
+	// The earliest known nextwhen field of a timer with
+	// timerModifiedEarlier status. Because the timer may have been
+	// modified again, there need not be any timer with this value.
+	// This is updated using atomic functions.
+	// This is 0 if the value is unknown.
+	timerModifiedEarliest uint64
 
 	// Per-P GC state
 	gcAssistTime         int64    // Nanoseconds in assistAlloc
@@ -1053,15 +1052,26 @@ var (
 	sched      schedt
 	newprocs   int32
 
-	// allpLock protects P-less reads and size changes of allp and
-	// idlepMask, and all writes to allp.
+	// allpLock protects P-less reads and size changes of allp, idlepMask,
+	// and timerpMask, and all writes to allp.
 	allpLock mutex
 	// len(allp) == gomaxprocs; may change at safe points, otherwise
 	// immutable.
 	allp []*p
 	// Bitmask of Ps in _Pidle list, one bit per P. Reads and writes must
 	// be atomic. Length may change at safe points.
-	idlepMask pIdleMask
+	//
+	// Each P must update only its own bit. In order to maintain
+	// consistency, a P going idle must the idle mask simultaneously with
+	// updates to the idle P list under the sched.lock, otherwise a racing
+	// pidleget may clear the mask before pidleput sets the mask,
+	// corrupting the bitmap.
+	//
+	// N.B., procresize takes ownership of all Ps in stopTheWorldWithSema.
+	idlepMask pMask
+	// Bitmask of Ps that may have a timer, one bit per P. Reads and writes
+	// must be atomic. Length may change at safe points.
+	timerpMask pMask
 
 	// Information about what cpu features are available.
 	// Packages outside the runtime should not use these

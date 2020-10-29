@@ -100,7 +100,7 @@ const (
 
 // heapRetained returns an estimate of the current heap RSS.
 func heapRetained() uint64 {
-	return atomic.Load64(&memstats.heap_sys) - atomic.Load64(&memstats.heap_released)
+	return memstats.heap_sys.load() - atomic.Load64(&memstats.heap_released)
 }
 
 // gcPaceScavenger updates the scavenger's pacing, particularly
@@ -123,7 +123,7 @@ func gcPaceScavenger() {
 		return
 	}
 	// Compute our scavenging goal.
-	goalRatio := float64(memstats.next_gc) / float64(memstats.last_next_gc)
+	goalRatio := float64(atomic.Load64(&memstats.next_gc)) / float64(memstats.last_next_gc)
 	retainedGoal := uint64(float64(memstats.last_heap_inuse) * goalRatio)
 	// Add retainExtraPercent overhead to retainedGoal. This calculation
 	// looks strange but the purpose is to arrive at an integer division
@@ -711,7 +711,16 @@ func (p *pageAlloc) scavengeRangeLocked(ci chunkIdx, base, npages uint) uintptr 
 
 	// Update global accounting only when not in test, otherwise
 	// the runtime's accounting will be wrong.
-	mSysStatInc(&memstats.heap_released, uintptr(npages)*pageSize)
+	nbytes := int64(npages) * pageSize
+	atomic.Xadd64(&memstats.heap_released, nbytes)
+
+	// Update consistent accounting too.
+	c := getMCache()
+	stats := memstats.heapStats.acquire(c)
+	atomic.Xaddint64(&stats.committed, -nbytes)
+	atomic.Xaddint64(&stats.released, nbytes)
+	memstats.heapStats.release(c)
+
 	return addr
 }
 
