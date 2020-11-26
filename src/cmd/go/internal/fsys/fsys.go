@@ -327,12 +327,22 @@ func OverlayPath(path string) (string, bool) {
 
 // Open opens the file at or overlaid on the given path.
 func Open(path string) (*os.File, error) {
+	return OpenFile(path, os.O_RDONLY, 0)
+}
+
+// OpenFile opens the file at or overlaid on the given path with the flag and perm.
+func OpenFile(path string, flag int, perm os.FileMode) (*os.File, error) {
 	cpath := canonicalize(path)
 	if node, ok := overlay[cpath]; ok {
+		// Opening a file in the overlay.
 		if node.isDir() {
-			return nil, &fs.PathError{Op: "Open", Path: path, Err: errors.New("fsys.Open doesn't support opening directories yet")}
+			return nil, &fs.PathError{Op: "OpenFile", Path: path, Err: errors.New("fsys.OpenFile doesn't support opening directories yet")}
 		}
-		return os.Open(node.actualFilePath)
+		// We can't open overlaid paths for write.
+		if perm != os.FileMode(os.O_RDONLY) {
+			return nil, &fs.PathError{Op: "OpenFile", Path: path, Err: errors.New("overlaid files can't be opened for write")}
+		}
+		return os.OpenFile(node.actualFilePath, flag, perm)
 	}
 	if parent, ok := parentIsOverlayFile(filepath.Dir(cpath)); ok {
 		// The file is deleted explicitly in the Replace map,
@@ -344,7 +354,7 @@ func Open(path string) (*os.File, error) {
 			Err:  fmt.Errorf("file %s does not exist: parent directory %s is replaced by a file in overlay", path, parent),
 		}
 	}
-	return os.Open(cpath)
+	return os.OpenFile(cpath, flag, perm)
 }
 
 // IsDirWithGoFiles reports whether dir is a directory containing Go files
@@ -426,7 +436,7 @@ func walk(path string, info fs.FileInfo, walkFn filepath.WalkFunc) error {
 // Walk walks the file tree rooted at root, calling walkFn for each file or
 // directory in the tree, including root.
 func Walk(root string, walkFn filepath.WalkFunc) error {
-	info, err := lstat(root)
+	info, err := Lstat(root)
 	if err != nil {
 		err = walkFn(root, nil, err)
 	} else {
@@ -439,7 +449,7 @@ func Walk(root string, walkFn filepath.WalkFunc) error {
 }
 
 // lstat implements a version of os.Lstat that operates on the overlay filesystem.
-func lstat(path string) (fs.FileInfo, error) {
+func Lstat(path string) (fs.FileInfo, error) {
 	return overlayStat(path, os.Lstat, "lstat")
 }
 
@@ -523,7 +533,7 @@ func Glob(pattern string) (matches []string, err error) {
 		return nil, err
 	}
 	if !hasMeta(pattern) {
-		if _, err = lstat(pattern); err != nil {
+		if _, err = Lstat(pattern); err != nil {
 			return nil, nil
 		}
 		return []string{pattern}, nil

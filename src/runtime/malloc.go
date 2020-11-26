@@ -521,6 +521,14 @@ func mallocinit() {
 		for i := 0x7f; i >= 0; i-- {
 			var p uintptr
 			switch {
+			case raceenabled:
+				// The TSAN runtime requires the heap
+				// to be in the range [0x00c000000000,
+				// 0x00e000000000).
+				p = uintptr(i)<<32 | uintptrMask&(0x00c0<<32)
+				if p >= uintptrMask&0x00e000000000 {
+					continue
+				}
 			case GOARCH == "arm64" && GOOS == "ios":
 				p = uintptr(i)<<40 | uintptrMask&(0x0013<<28)
 			case GOARCH == "arm64":
@@ -532,14 +540,6 @@ func mallocinit() {
 					continue
 				}
 				p = uintptr(i)<<40 | uintptrMask&(0xa0<<52)
-			case raceenabled:
-				// The TSAN runtime requires the heap
-				// to be in the range [0x00c000000000,
-				// 0x00e000000000).
-				p = uintptr(i)<<32 | uintptrMask&(0x00c0<<32)
-				if p >= uintptrMask&0x00e000000000 {
-					continue
-				}
 			default:
 				p = uintptr(i)<<40 | uintptrMask&(0x00c0<<32)
 			}
@@ -627,6 +627,8 @@ func mallocinit() {
 //
 // h must be locked.
 func (h *mheap) sysAlloc(n uintptr) (v unsafe.Pointer, size uintptr) {
+	assertLockHeld(&h.lock)
+
 	n = alignUp(n, heapArenaBytes)
 
 	// First, try the arena pre-reservation.
@@ -973,6 +975,9 @@ func mallocgc(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	shouldhelpgc := false
 	dataSize := size
 	c := getMCache()
+	if c == nil {
+		throw("mallocgc called without a P or outside bootstrapping")
+	}
 	var span *mspan
 	var x unsafe.Pointer
 	noscan := typ == nil || typ.ptrdata == 0
@@ -1200,7 +1205,11 @@ func reflect_unsafe_NewArray(typ *_type, n int) unsafe.Pointer {
 }
 
 func profilealloc(mp *m, x unsafe.Pointer, size uintptr) {
-	getMCache().nextSample = nextSample()
+	c := getMCache()
+	if c == nil {
+		throw("profilealloc called without a P or outside bootstrapping")
+	}
+	c.nextSample = nextSample()
 	mProf_Malloc(x, size)
 }
 
@@ -1212,6 +1221,13 @@ func profilealloc(mp *m, x unsafe.Pointer, size uintptr) {
 // distribution (exp(MemProfileRate)), so the best return value is a random
 // number taken from an exponential distribution whose mean is MemProfileRate.
 func nextSample() uintptr {
+	if MemProfileRate == 1 {
+		// Callers assign our return value to
+		// mcache.next_sample, but next_sample is not used
+		// when the rate is 1. So avoid the math below and
+		// just return something.
+		return 0
+	}
 	if GOOS == "plan9" {
 		// Plan 9 doesn't support floating point in note handler.
 		if g := getg(); g == g.m.gsignal {

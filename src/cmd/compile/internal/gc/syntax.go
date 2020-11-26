@@ -344,14 +344,22 @@ func (n *Node) CanBeAnSSASym() {
 
 // Name holds Node fields used only by named nodes (ONAME, OTYPE, OPACK, OLABEL, some OLITERAL).
 type Name struct {
-	Pack      *Node      // real package for import . names
-	Pkg       *types.Pkg // pkg for OPACK nodes
-	Defn      *Node      // initializing assignment
-	Curfn     *Node      // function for local variables
-	Param     *Param     // additional fields for ONAME, OTYPE
-	Decldepth int32      // declaration loop depth, increased for every loop or label
-	Vargen    int32      // unique name for ONAME within a function.  Function outputs are numbered starting at one.
-	flags     bitset16
+	Pack *Node      // real package for import . names
+	Pkg  *types.Pkg // pkg for OPACK nodes
+	// For a local variable (not param) or extern, the initializing assignment (OAS or OAS2).
+	// For a closure var, the ONAME node of the outer captured variable
+	Defn *Node
+	// The ODCLFUNC node (for a static function/method or a closure) in which
+	// local variable or param is declared.
+	Curfn     *Node
+	Param     *Param // additional fields for ONAME, OTYPE
+	Decldepth int32  // declaration loop depth, increased for every loop or label
+	// Unique number for ONAME nodes within a function. Function outputs
+	// (results) are numbered starting at one, followed by function inputs
+	// (parameters), and then local variables. Vargen is used to distinguish
+	// local variables/params with the same name.
+	Vargen int32
+	flags  bitset16
 }
 
 const (
@@ -608,10 +616,16 @@ func (p *Param) SetEmbedFiles(list []string) {
 // Func holds Node fields used only with function-like nodes.
 type Func struct {
 	Shortname *types.Sym
-	Enter     Nodes // for example, allocate and initialize memory for escaping parameters
-	Exit      Nodes
-	Cvars     Nodes   // closure params
-	Dcl       []*Node // autodcl for this func/closure
+	// Extra entry code for the function. For example, allocate and initialize
+	// memory for escaping parameters. However, just for OCLOSURE, Enter is a
+	// list of ONAME nodes of captured variables
+	Enter Nodes
+	Exit  Nodes
+	// ONAME nodes for closure params, each should have closurevar set
+	Cvars Nodes
+	// ONAME nodes for all params/locals for this func/closure, does NOT
+	// include closurevars until transformclosure runs.
+	Dcl []*Node
 
 	// Parents records the parent scope of each scope within a
 	// function. The root scope (0) has no parent, so the i'th
@@ -630,8 +644,8 @@ type Func struct {
 	DebugInfo  *ssa.FuncDebug
 	Ntype      *Node // signature
 	Top        int   // top context (ctxCallee, etc)
-	Closure    *Node // OCLOSURE <-> ODCLFUNC
-	Nname      *Node
+	Closure    *Node // OCLOSURE <-> ODCLFUNC (see header comment above)
+	Nname      *Node // The ONAME node associated with an ODCLFUNC (both have same Type)
 	lsym       *obj.LSym
 
 	Inl *Inline
@@ -680,6 +694,8 @@ const (
 	funcWrapper                   // is method wrapper
 	funcNeedctxt                  // function uses context register (has closure variables)
 	funcReflectMethod             // function calls reflect.Type.Method or MethodByName
+	// true if closure inside a function; false if a simple function or a
+	// closure in a global variable initialization
 	funcIsHiddenClosure
 	funcHasDefer                 // contains a defer statement
 	funcNilCheckDisabled         // disable nil checks when compiling this function
@@ -731,8 +747,10 @@ const (
 	OXXX Op = iota
 
 	// names
-	ONAME    // var or func name
-	ONONAME  // unnamed arg or return value: f(int, string) (int, error) { etc }
+	ONAME // var or func name
+	// Unnamed arg or return value: f(int, string) (int, error) { etc }
+	// Also used for a qualified package identifier that hasn't been resolved yet.
+	ONONAME
 	OTYPE    // type name
 	OPACK    // import
 	OLITERAL // literal
@@ -752,14 +770,18 @@ const (
 	OSTR2BYTES    // Type(Left) (Type is []byte, Left is a string)
 	OSTR2BYTESTMP // Type(Left) (Type is []byte, Left is a string, ephemeral)
 	OSTR2RUNES    // Type(Left) (Type is []rune, Left is a string)
-	OAS           // Left = Right or (if Colas=true) Left := Right
-	OAS2          // List = Rlist (x, y, z = a, b, c)
-	OAS2DOTTYPE   // List = Right (x, ok = I.(int))
-	OAS2FUNC      // List = Right (x, y = f())
-	OAS2MAPR      // List = Right (x, ok = m["foo"])
-	OAS2RECV      // List = Right (x, ok = <-c)
-	OASOP         // Left Etype= Right (x += y)
-	OCALL         // Left(List) (function call, method call or type conversion)
+	// Left = Right or (if Colas=true) Left := Right
+	// If Colas, then Ninit includes a DCL node for Left.
+	OAS
+	// List = Rlist (x, y, z = a, b, c) or (if Colas=true) List := Rlist
+	// If Colas, then Ninit includes DCL nodes for List
+	OAS2
+	OAS2DOTTYPE // List = Right (x, ok = I.(int))
+	OAS2FUNC    // List = Right (x, y = f())
+	OAS2MAPR    // List = Right (x, ok = m["foo"])
+	OAS2RECV    // List = Right (x, ok = <-c)
+	OASOP       // Left Etype= Right (x += y)
+	OCALL       // Left(List) (function call, method call or type conversion)
 
 	// OCALLFUNC, OCALLMETH, and OCALLINTER have the same structure.
 	// Prior to walk, they are: Left(List), where List is all regular arguments.
@@ -773,7 +795,7 @@ const (
 	OCALLPART  // Left.Right (method expression x.Method, not called)
 	OCAP       // cap(Left)
 	OCLOSE     // close(Left)
-	OCLOSURE   // func Type { Body } (func literal)
+	OCLOSURE   // func Type { Func.Closure.Nbody } (func literal)
 	OCOMPLIT   // Right{List} (composite literal, not yet lowered to specific form)
 	OMAPLIT    // Type{List} (composite literal, Type is map)
 	OSTRUCTLIT // Type{List} (composite literal, Type is struct)
@@ -863,9 +885,14 @@ const (
 	OSIZEOF      // unsafe.Sizeof(Left)
 
 	// statements
-	OBLOCK    // { List } (block of code)
-	OBREAK    // break [Sym]
-	OCASE     // case List: Nbody (List==nil means default)
+	OBLOCK // { List } (block of code)
+	OBREAK // break [Sym]
+	// OCASE:  case List: Nbody (List==nil means default)
+	//   For OTYPESW, List is a OTYPE node for the specified type (or OLITERAL
+	//   for nil), and, if a type-switch variable is specified, Rlist is an
+	//   ONAME for the version of the type-switch variable with the specified
+	//   type.
+	OCASE
 	OCONTINUE // continue [Sym]
 	ODEFER    // defer Left (Left must be call)
 	OEMPTY    // no-op (empty statement)
@@ -889,15 +916,19 @@ const (
 	ORETURN // return List
 	OSELECT // select { List } (List is list of OCASE)
 	OSWITCH // switch Ninit; Left { List } (List is a list of OCASE)
-	OTYPESW // Left = Right.(type) (appears as .Left of OSWITCH)
+	// OTYPESW:  Left := Right.(type) (appears as .Left of OSWITCH)
+	//   Left is nil if there is no type-switch variable
+	OTYPESW
 
 	// types
 	OTCHAN   // chan int
 	OTMAP    // map[string]int
 	OTSTRUCT // struct{}
 	OTINTER  // interface{}
-	OTFUNC   // func()
-	OTARRAY  // []int, [8]int, [N]int or [...]int
+	// OTFUNC: func() - Left is receiver field, List is list of param fields, Rlist is
+	// list of result fields.
+	OTFUNC
+	OTARRAY // []int, [8]int, [N]int or [...]int
 
 	// misc
 	ODDD        // func f(args ...int) or f(l...) or var a = [...]int{0, 1, 2}.

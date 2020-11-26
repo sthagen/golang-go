@@ -9,6 +9,7 @@ import (
 	"debug/elf"
 	"debug/macho"
 	"debug/pe"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"go/format"
@@ -33,6 +34,14 @@ import (
 	"cmd/go/internal/robustio"
 	"cmd/internal/sys"
 )
+
+func init() {
+	// GOVCS defaults to public:git|hg,private:all,
+	// which breaks many tests here - they can't use non-git, non-hg VCS at all!
+	// Change to fully permissive.
+	// The tests of the GOVCS setting itself are in ../../testdata/script/govcs.txt.
+	os.Setenv("GOVCS", "*:all")
+}
 
 var (
 	canRace = false // whether we can run the race detector
@@ -1877,6 +1886,18 @@ func TestGoEnv(t *testing.T) {
 	tg.grepStdout("gcc", "CC not found")
 	tg.run("env", "GOGCCFLAGS")
 	tg.grepStdout("-ffaster", "CC arguments not found")
+
+	tg.run("env", "GOVERSION")
+	envVersion := strings.TrimSpace(tg.stdout.String())
+
+	tg.run("version")
+	cmdVersion := strings.TrimSpace(tg.stdout.String())
+
+	// If 'go version' is "go version <version> <goos>/<goarch>", then
+	// 'go env GOVERSION' is just "<version>".
+	if cmdVersion == envVersion || !strings.Contains(cmdVersion, envVersion) {
+		t.Fatalf("'go env GOVERSION' %q should be a shorter substring of 'go version' %q", envVersion, cmdVersion)
+	}
 }
 
 const (
@@ -2128,6 +2149,38 @@ func testBuildmodePIE(t *testing.T, useCgo, setBuildmodeToPIE bool) {
 		}
 		if (dc & pe.IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE) == 0 {
 			t.Error("IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE flag is not set")
+		}
+		if useCgo {
+			// Test that only one symbol is exported (#40795).
+			// PIE binaries don´t require .edata section but unfortunately
+			// binutils doesn´t generate a .reloc section unless there is
+			// at least one symbol exported.
+			// See https://sourceware.org/bugzilla/show_bug.cgi?id=19011
+			section := f.Section(".edata")
+			if section == nil {
+				t.Fatalf(".edata section is not present")
+			}
+			// TODO: deduplicate this struct from cmd/link/internal/ld/pe.go
+			type IMAGE_EXPORT_DIRECTORY struct {
+				_                 [2]uint32
+				_                 [2]uint16
+				_                 [2]uint32
+				NumberOfFunctions uint32
+				NumberOfNames     uint32
+				_                 [3]uint32
+			}
+			var e IMAGE_EXPORT_DIRECTORY
+			if err := binary.Read(section.Open(), binary.LittleEndian, &e); err != nil {
+				t.Fatalf("binary.Read failed: %v", err)
+			}
+
+			// Only _cgo_dummy_export should be exported
+			if e.NumberOfFunctions != 1 {
+				t.Fatalf("got %d exported functions; want 1", e.NumberOfFunctions)
+			}
+			if e.NumberOfNames != 1 {
+				t.Fatalf("got %d exported names; want 1", e.NumberOfNames)
+			}
 		}
 	default:
 		panic("unreachable")

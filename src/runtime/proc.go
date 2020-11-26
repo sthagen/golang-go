@@ -577,6 +577,10 @@ func schedinit() {
 	lockInit(&trace.lock, lockRankTrace)
 	lockInit(&cpuprof.lock, lockRankCpuprof)
 	lockInit(&trace.stackTab.lock, lockRankTraceStackTab)
+	// Enforce that this lock is always a leaf lock.
+	// All of this lock's critical sections should be
+	// extremely short.
+	lockInit(&memstats.heapStats.noPLock, lockRankLeafRank)
 
 	// raceinit must be the first call to race detector.
 	// In particular, it must be done before mallocinit below calls racemapshadow.
@@ -586,6 +590,9 @@ func schedinit() {
 	}
 
 	sched.maxmcount = 10000
+
+	// The world starts stopped.
+	worldStopped()
 
 	moduledataverify()
 	stackinit()
@@ -616,6 +623,9 @@ func schedinit() {
 		throw("unknown runnable goroutine during bootstrap")
 	}
 	unlock(&sched.lock)
+
+	// World is effectively started now, as P's can run.
+	worldStarted()
 
 	// For cgocheck > 1, we turn on the write barrier at all times
 	// and check all pointer writes. We can't do this until after
@@ -955,10 +965,26 @@ func stopTheWorld(reason string) {
 // startTheWorld undoes the effects of stopTheWorld.
 func startTheWorld() {
 	systemstack(func() { startTheWorldWithSema(false) })
+
 	// worldsema must be held over startTheWorldWithSema to ensure
 	// gomaxprocs cannot change while worldsema is held.
-	semrelease(&worldsema)
-	getg().m.preemptoff = ""
+	//
+	// Release worldsema with direct handoff to the next waiter, but
+	// acquirem so that semrelease1 doesn't try to yield our time.
+	//
+	// Otherwise if e.g. ReadMemStats is being called in a loop,
+	// it might stomp on other attempts to stop the world, such as
+	// for starting or ending GC. The operation this blocks is
+	// so heavy-weight that we should just try to be as fair as
+	// possible here.
+	//
+	// We don't want to just allow us to get preempted between now
+	// and releasing the semaphore because then we keep everyone
+	// (including, for example, GCs) waiting longer.
+	mp := acquirem()
+	mp.preemptoff = ""
+	semrelease1(&worldsema, true, 0)
+	releasem(mp)
 }
 
 // stopTheWorldGC has the same effect as stopTheWorld, but blocks
@@ -1082,9 +1108,13 @@ func stopTheWorldWithSema() {
 	if bad != "" {
 		throw(bad)
 	}
+
+	worldStopped()
 }
 
 func startTheWorldWithSema(emitTraceEvent bool) int64 {
+	assertWorldStopped()
+
 	mp := acquirem() // disable preemption because it can be holding p in a local var
 	if netpollinited() {
 		list := netpoll(0) // non-blocking
@@ -1104,6 +1134,8 @@ func startTheWorldWithSema(emitTraceEvent bool) int64 {
 		notewakeup(&sched.sysmonnote)
 	}
 	unlock(&sched.lock)
+
+	worldStarted()
 
 	for p1 != nil {
 		p := p1
@@ -1633,7 +1665,12 @@ func allocm(_p_ *p, fn func(), id int64) *m {
 				freem = next
 				continue
 			}
-			stackfree(freem.g0.stack)
+			// stackfree must be on the system stack, but allocm is
+			// reachable off the system stack transitively from
+			// startm.
+			systemstack(func() {
+				stackfree(freem.g0.stack)
+			})
 			freem = freem.freelink
 		}
 		sched.freem = newList
@@ -2160,8 +2197,30 @@ func mspinning() {
 // May run with m.p==nil, so write barriers are not allowed.
 // If spinning is set, the caller has incremented nmspinning and startm will
 // either decrement nmspinning or set m.spinning in the newly started M.
+//
+// Callers passing a non-nil P must call from a non-preemptible context. See
+// comment on acquirem below.
+//
+// Must not have write barriers because this may be called without a P.
 //go:nowritebarrierrec
 func startm(_p_ *p, spinning bool) {
+	// Disable preemption.
+	//
+	// Every owned P must have an owner that will eventually stop it in the
+	// event of a GC stop request. startm takes transient ownership of a P
+	// (either from argument or pidleget below) and transfers ownership to
+	// a started M, which will be responsible for performing the stop.
+	//
+	// Preemption must be disabled during this transient ownership,
+	// otherwise the P this is running on may enter GC stop while still
+	// holding the transient P, leaving that P in limbo and deadlocking the
+	// STW.
+	//
+	// Callers passing a non-nil P must already be in non-preemptible
+	// context, otherwise such preemption could occur on function entry to
+	// startm. Callers passing a nil P may be preemptible, so we must
+	// disable preemption before acquiring a P from pidleget below.
+	mp := acquirem()
 	lock(&sched.lock)
 	if _p_ == nil {
 		_p_ = pidleget()
@@ -2174,11 +2233,12 @@ func startm(_p_ *p, spinning bool) {
 					throw("startm: negative nmspinning")
 				}
 			}
+			releasem(mp)
 			return
 		}
 	}
-	mp := mget()
-	if mp == nil {
+	nmp := mget()
+	if nmp == nil {
 		// No M is available, we must drop sched.lock and call newm.
 		// However, we already own a P to assign to the M.
 		//
@@ -2200,22 +2260,28 @@ func startm(_p_ *p, spinning bool) {
 			fn = mspinning
 		}
 		newm(fn, _p_, id)
+		// Ownership transfer of _p_ committed by start in newm.
+		// Preemption is now safe.
+		releasem(mp)
 		return
 	}
 	unlock(&sched.lock)
-	if mp.spinning {
+	if nmp.spinning {
 		throw("startm: m is spinning")
 	}
-	if mp.nextp != 0 {
+	if nmp.nextp != 0 {
 		throw("startm: m has p")
 	}
 	if spinning && !runqempty(_p_) {
 		throw("startm: p has runnable gs")
 	}
 	// The caller incremented nmspinning, so set m.spinning in the new M.
-	mp.spinning = spinning
-	mp.nextp.set(_p_)
-	notewakeup(&mp.park)
+	nmp.spinning = spinning
+	nmp.nextp.set(_p_)
+	notewakeup(&nmp.park)
+	// Ownership transfer of _p_ committed by wakeup. Preemption is now
+	// safe.
+	releasem(mp)
 }
 
 // Hands off P from syscall or locked M.
@@ -2554,14 +2620,17 @@ stop:
 	// We have nothing to do. If we're in the GC mark phase, can
 	// safely scan and blacken objects, and have work to do, run
 	// idle-time marking rather than give up the P.
-	if gcBlackenEnabled != 0 && _p_.gcBgMarkWorker != 0 && gcMarkWorkAvailable(_p_) {
-		_p_.gcMarkWorkerMode = gcMarkWorkerIdleMode
-		gp := _p_.gcBgMarkWorker.ptr()
-		casgstatus(gp, _Gwaiting, _Grunnable)
-		if trace.enabled {
-			traceGoUnpark(gp, 0)
+	if gcBlackenEnabled != 0 && gcMarkWorkAvailable(_p_) {
+		node := (*gcBgMarkWorkerNode)(gcBgMarkWorkerPool.pop())
+		if node != nil {
+			_p_.gcMarkWorkerMode = gcMarkWorkerIdleMode
+			gp := node.gp.ptr()
+			casgstatus(gp, _Gwaiting, _Grunnable)
+			if trace.enabled {
+				traceGoUnpark(gp, 0)
+			}
+			return gp, false
 		}
-		return gp, false
 	}
 
 	delta := int64(-1)
@@ -2591,9 +2660,10 @@ stop:
 	// safe-points. We don't need to snapshot the contents because
 	// everything up to cap(allp) is immutable.
 	allpSnapshot := allp
-	// Also snapshot idlepMask. Value changes are OK, but we can't allow
+	// Also snapshot masks. Value changes are OK, but we can't allow
 	// len to change out from under us.
 	idlepMaskSnapshot := idlepMask
+	timerpMaskSnapshot := timerpMask
 
 	// return P and block
 	lock(&sched.lock)
@@ -2655,16 +2725,9 @@ stop:
 	// transitioning from spinning to non-spinning. Note that we cannot use
 	// checkTimers here because it calls adjusttimers which may need to allocate
 	// memory, and that isn't allowed when we don't have an active P.
-	for _, _p_ := range allpSnapshot {
-		// This is similar to nobarrierWakeTime, but minimizes calls to
-		// nanotime.
-		if atomic.Load(&_p_.adjustTimers) > 0 {
-			if now == 0 {
-				now = nanotime()
-			}
-			pollUntil = now
-		} else {
-			w := int64(atomic.Load64(&_p_.timer0When))
+	for id, _p_ := range allpSnapshot {
+		if timerpMaskSnapshot.read(uint32(id)) {
+			w := nobarrierWakeTime(_p_)
 			if w != 0 && (pollUntil == 0 || w < pollUntil) {
 				pollUntil = w
 			}
@@ -2681,12 +2744,33 @@ stop:
 	}
 
 	// Check for idle-priority GC work again.
-	if gcBlackenEnabled != 0 && gcMarkWorkAvailable(nil) {
+	//
+	// N.B. Since we have no P, gcBlackenEnabled may change at any time; we
+	// must check again after acquiring a P.
+	if atomic.Load(&gcBlackenEnabled) != 0 && gcMarkWorkAvailable(nil) {
+		// Work is available; we can start an idle GC worker only if
+		// there is an available P and available worker G.
+		//
+		// We can attempt to acquire these in either order. Workers are
+		// almost always available (see comment in findRunnableGCWorker
+		// for the one case there may be none). Since we're slightly
+		// less likely to find a P, check for that first.
 		lock(&sched.lock)
+		var node *gcBgMarkWorkerNode
 		_p_ = pidleget()
-		if _p_ != nil && _p_.gcBgMarkWorker == 0 {
-			pidleput(_p_)
-			_p_ = nil
+		if _p_ != nil {
+			// Now that we own a P, gcBlackenEnabled can't change
+			// (as it requires STW).
+			if gcBlackenEnabled != 0 {
+				node = (*gcBgMarkWorkerNode)(gcBgMarkWorkerPool.pop())
+				if node == nil {
+					pidleput(_p_)
+					_p_ = nil
+				}
+			} else {
+				pidleput(_p_)
+				_p_ = nil
+			}
 		}
 		unlock(&sched.lock)
 		if _p_ != nil {
@@ -2695,8 +2779,15 @@ stop:
 				_g_.m.spinning = true
 				atomic.Xadd(&sched.nmspinning, 1)
 			}
-			// Go back to idle GC check.
-			goto stop
+
+			// Run the idle worker.
+			_p_.gcMarkWorkerMode = gcMarkWorkerIdleMode
+			gp := node.gp.ptr()
+			casgstatus(gp, _Gwaiting, _Grunnable)
+			if trace.enabled {
+				traceGoUnpark(gp, 0)
+			}
+			return gp, false
 		}
 	}
 
@@ -4517,6 +4608,7 @@ func (pp *p) init(id int32) {
 // sched.lock must be held and the world must be stopped.
 func (pp *p) destroy() {
 	assertLockHeld(&sched.lock)
+	assertWorldStopped()
 
 	// Move all runnable goroutines to the global queue
 	for pp.runqhead != pp.runqtail {
@@ -4547,18 +4639,6 @@ func (pp *p) destroy() {
 		unlock(&pp.timersLock)
 		unlock(&plocal.timersLock)
 	}
-	// If there's a background worker, make it runnable and put
-	// it on the global queue so it can clean itself up.
-	if gp := pp.gcBgMarkWorker.ptr(); gp != nil {
-		casgstatus(gp, _Gwaiting, _Grunnable)
-		if trace.enabled {
-			traceGoUnpark(gp, 0)
-		}
-		globrunqput(gp)
-		// This assignment doesn't race because the
-		// world is stopped.
-		pp.gcBgMarkWorker.set(nil)
-	}
 	// Flush p's write barrier buffer.
 	if gcphase != _GCoff {
 		wbBufFlush1(pp)
@@ -4580,7 +4660,9 @@ func (pp *p) destroy() {
 			mheap_.spanalloc.free(unsafe.Pointer(pp.mspancache.buf[i]))
 		}
 		pp.mspancache.len = 0
+		lock(&mheap_.lock)
 		pp.pcache.flush(&mheap_.pages)
+		unlock(&mheap_.lock)
 	})
 	freemcache(pp.mcache)
 	pp.mcache = nil
@@ -4619,6 +4701,7 @@ func (pp *p) destroy() {
 // Returns list of Ps with local work, they need to be scheduled by the caller.
 func procresize(nprocs int32) *p {
 	assertLockHeld(&sched.lock)
+	assertWorldStopped()
 
 	old := gomaxprocs
 	if old < 0 || nprocs <= 0 {

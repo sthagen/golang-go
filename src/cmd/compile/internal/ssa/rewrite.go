@@ -1427,10 +1427,11 @@ func DecodePPC64RotateMask(sauxint int64) (rotate, mb, me int64, mask uint64) {
 	return
 }
 
-// This verifies that the mask occupies the
-// rightmost bits.
+// This verifies that the mask is a set of
+// consecutive bits including the least
+// significant bit.
 func isPPC64ValidShiftMask(v int64) bool {
-	if ((v + 1) & v) == 0 {
+	if (v != 0) && ((v+1)&v) == 0 {
 		return true
 	}
 	return false
@@ -1573,18 +1574,18 @@ func needRaceCleanup(sym *AuxCall, v *Value) bool {
 	if !f.Config.Race {
 		return false
 	}
-	if !isSameCall(sym, "runtime.racefuncenter") && !isSameCall(sym, "runtime.racefuncexit") {
+	if !isSameCall(sym, "runtime.racefuncenter") && !isSameCall(sym, "runtime.racefuncenterfp") && !isSameCall(sym, "runtime.racefuncexit") {
 		return false
 	}
 	for _, b := range f.Blocks {
 		for _, v := range b.Values {
 			switch v.Op {
 			case OpStaticCall:
-				// Check for racefuncenter will encounter racefuncexit and vice versa.
+				// Check for racefuncenter/racefuncenterfp will encounter racefuncexit and vice versa.
 				// Allow calls to panic*
 				s := v.Aux.(*AuxCall).Fn.String()
 				switch s {
-				case "runtime.racefuncenter", "runtime.racefuncexit",
+				case "runtime.racefuncenter", "runtime.racefuncenterfp", "runtime.racefuncexit",
 					"runtime.panicdivide", "runtime.panicwrap",
 					"runtime.panicshift":
 					continue

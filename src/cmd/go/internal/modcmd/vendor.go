@@ -18,6 +18,7 @@ import (
 
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
+	"cmd/go/internal/fsys"
 	"cmd/go/internal/imports"
 	"cmd/go/internal/modload"
 
@@ -73,7 +74,7 @@ func runVendor(ctx context.Context, cmd *base.Command, args []string) {
 	modpkgs := make(map[module.Version][]string)
 	for _, pkg := range pkgs {
 		m := modload.PackageModule(pkg)
-		if m == modload.Target {
+		if m.Path == "" || m == modload.Target {
 			continue
 		}
 		modpkgs[m] = append(modpkgs[m], pkg)
@@ -91,28 +92,38 @@ func runVendor(ctx context.Context, cmd *base.Command, args []string) {
 		includeAllReplacements = true
 	}
 
+	var vendorMods []module.Version
+	for m := range isExplicit {
+		vendorMods = append(vendorMods, m)
+	}
+	for m := range modpkgs {
+		if !isExplicit[m] {
+			vendorMods = append(vendorMods, m)
+		}
+	}
+	module.Sort(vendorMods)
+
 	var buf bytes.Buffer
-	for _, m := range modload.LoadedModules()[1:] {
-		if pkgs := modpkgs[m]; len(pkgs) > 0 || isExplicit[m] {
-			line := moduleLine(m, modload.Replacement(m))
-			buf.WriteString(line)
+	for _, m := range vendorMods {
+		line := moduleLine(m, modload.Replacement(m))
+		buf.WriteString(line)
+		if cfg.BuildV {
+			os.Stderr.WriteString(line)
+		}
+		if isExplicit[m] {
+			buf.WriteString("## explicit\n")
 			if cfg.BuildV {
-				os.Stderr.WriteString(line)
+				os.Stderr.WriteString("## explicit\n")
 			}
-			if isExplicit[m] {
-				buf.WriteString("## explicit\n")
-				if cfg.BuildV {
-					os.Stderr.WriteString("## explicit\n")
-				}
+		}
+		pkgs := modpkgs[m]
+		sort.Strings(pkgs)
+		for _, pkg := range pkgs {
+			fmt.Fprintf(&buf, "%s\n", pkg)
+			if cfg.BuildV {
+				fmt.Fprintf(os.Stderr, "%s\n", pkg)
 			}
-			sort.Strings(pkgs)
-			for _, pkg := range pkgs {
-				fmt.Fprintf(&buf, "%s\n", pkg)
-				if cfg.BuildV {
-					fmt.Fprintf(os.Stderr, "%s\n", pkg)
-				}
-				vendorPkg(vdir, pkg)
-			}
+			vendorPkg(vdir, pkg)
 		}
 	}
 
@@ -249,7 +260,7 @@ func matchPotentialSourceFile(dir string, info fs.FileInfo) bool {
 		return false
 	}
 	if strings.HasSuffix(info.Name(), ".go") {
-		f, err := os.Open(filepath.Join(dir, info.Name()))
+		f, err := fsys.Open(filepath.Join(dir, info.Name()))
 		if err != nil {
 			base.Fatalf("go mod vendor: %v", err)
 		}

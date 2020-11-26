@@ -50,10 +50,6 @@ type mcache struct {
 	// in this mcache are stale and need to the flushed so they
 	// can be swept. This is done in acquirep.
 	flushGen uint32
-
-	// statsSeq is a counter indicating whether this P is currently
-	// writing any stats. Its value is even when not, odd when it is.
-	statsSeq uint32
 }
 
 // A gclink is a node in a linked list of blocks, like mlink,
@@ -124,8 +120,8 @@ func freemcache(c *mcache) {
 
 // getMCache is a convenience function which tries to obtain an mcache.
 //
-// Must be running with a P when called (so the caller must be in a
-// non-preemptible state) or must be called during bootstrapping.
+// Returns nil if we're not bootstrapping or we don't have a P. The caller's
+// P must not change, so we must be in a non-preemptible state.
 func getMCache() *mcache {
 	// Grab the mcache, since that's where stats live.
 	pp := getg().m.p.ptr()
@@ -136,9 +132,6 @@ func getMCache() *mcache {
 		// mcache0 is cleared when bootstrapping is complete,
 		// by procresize.
 		c = mcache0
-		if c == nil {
-			throw("getMCache called with no P or outside bootstrapping")
-		}
 	} else {
 		c = pp.mcache
 	}
@@ -181,9 +174,9 @@ func (c *mcache) refill(spc spanClass) {
 
 	// Assume all objects from this span will be allocated in the
 	// mcache. If it gets uncached, we'll adjust this.
-	stats := memstats.heapStats.acquire(c)
+	stats := memstats.heapStats.acquire()
 	atomic.Xadduintptr(&stats.smallAllocCount[spc.sizeclass()], uintptr(s.nelems)-uintptr(s.allocCount))
-	memstats.heapStats.release(c)
+	memstats.heapStats.release()
 
 	// Update heap_live with the same assumption.
 	usedBytes := uintptr(s.allocCount) * s.elemsize
@@ -232,10 +225,10 @@ func (c *mcache) allocLarge(size uintptr, needzero bool, noscan bool) *mspan {
 	if s == nil {
 		throw("out of memory")
 	}
-	stats := memstats.heapStats.acquire(c)
+	stats := memstats.heapStats.acquire()
 	atomic.Xadduintptr(&stats.largeAlloc, npages*pageSize)
 	atomic.Xadduintptr(&stats.largeAllocCount, 1)
-	memstats.heapStats.release(c)
+	memstats.heapStats.release()
 
 	// Update heap_live and revise pacing if needed.
 	atomic.Xadd64(&memstats.heap_live, int64(npages*pageSize))
@@ -266,9 +259,9 @@ func (c *mcache) releaseAll() {
 		if s != &emptymspan {
 			// Adjust nsmallalloc in case the span wasn't fully allocated.
 			n := uintptr(s.nelems) - uintptr(s.allocCount)
-			stats := memstats.heapStats.acquire(c)
+			stats := memstats.heapStats.acquire()
 			atomic.Xadduintptr(&stats.smallAllocCount[spanClass(i).sizeclass()], -n)
-			memstats.heapStats.release(c)
+			memstats.heapStats.release()
 			if s.sweepgen != sg+1 {
 				// refill conservatively counted unallocated slots in heap_live.
 				// Undo this.

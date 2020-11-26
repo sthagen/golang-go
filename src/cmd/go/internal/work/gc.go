@@ -52,7 +52,7 @@ func pkgPath(a *Action) string {
 	return ppath
 }
 
-func (gcToolchain) gc(b *Builder, a *Action, archive string, importcfg []byte, symabis string, asmhdr bool, gofiles []string) (ofile string, output []byte, err error) {
+func (gcToolchain) gc(b *Builder, a *Action, archive string, importcfg, embedcfg []byte, symabis string, asmhdr bool, gofiles []string) (ofile string, output []byte, err error) {
 	p := a.Package
 	objdir := a.Objdir
 	if archive != "" {
@@ -136,6 +136,12 @@ func (gcToolchain) gc(b *Builder, a *Action, archive string, importcfg []byte, s
 			return "", nil, err
 		}
 		args = append(args, "-importcfg", objdir+"importcfg")
+	}
+	if embedcfg != nil {
+		if err := b.writeFile(objdir+"embedcfg", embedcfg); err != nil {
+			return "", nil, err
+		}
+		args = append(args, "-embedcfg", objdir+"embedcfg")
 	}
 	if ofile == archive {
 		args = append(args, "-pack")
@@ -256,7 +262,7 @@ func (a *Action) trimpath() string {
 	if len(objdir) > 1 && objdir[len(objdir)-1] == filepath.Separator {
 		objdir = objdir[:len(objdir)-1]
 	}
-	rewrite := objdir + "=>"
+	rewrite := ""
 
 	rewriteDir := a.Package.Dir
 	if cfg.BuildTrimpath {
@@ -265,21 +271,54 @@ func (a *Action) trimpath() string {
 		} else {
 			rewriteDir = a.Package.ImportPath
 		}
-		rewrite += ";" + a.Package.Dir + "=>" + rewriteDir
+		rewrite += a.Package.Dir + "=>" + rewriteDir + ";"
 	}
 
 	// Add rewrites for overlays. The 'from' and 'to' paths in overlays don't need to have
 	// same basename, so go from the overlay contents file path (passed to the compiler)
 	// to the path the disk path would be rewritten to.
+
+	cgoFiles := make(map[string]bool)
+	for _, f := range a.Package.CgoFiles {
+		cgoFiles[f] = true
+	}
+
+	// TODO(matloob): Higher up in the stack, when the logic for deciding when to make copies
+	// of c/c++/m/f/hfiles is consolidated, use the same logic that Build uses to determine
+	// whether to create the copies in objdir to decide whether to rewrite objdir to the
+	// package directory here.
+	var overlayNonGoRewrites string // rewrites for non-go files
+	hasCgoOverlay := false
 	if fsys.OverlayFile != "" {
 		for _, filename := range a.Package.AllFiles() {
-			overlayPath, ok := fsys.OverlayPath(filepath.Join(a.Package.Dir, filename))
-			if !ok {
-				continue
+			path := filename
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(a.Package.Dir, path)
 			}
-			rewrite += ";" + overlayPath + "=>" + filepath.Join(rewriteDir, filename)
+			base := filepath.Base(path)
+			isGo := strings.HasSuffix(filename, ".go") || strings.HasSuffix(filename, ".s")
+			isCgo := cgoFiles[filename] || !isGo
+			overlayPath, isOverlay := fsys.OverlayPath(path)
+			if isCgo && isOverlay {
+				hasCgoOverlay = true
+			}
+			if !isCgo && isOverlay {
+				rewrite += overlayPath + "=>" + filepath.Join(rewriteDir, base) + ";"
+			} else if isCgo {
+				// Generate rewrites for non-Go files copied to files in objdir.
+				if filepath.Dir(path) == a.Package.Dir {
+					// This is a file copied to objdir.
+					overlayNonGoRewrites += filepath.Join(objdir, base) + "=>" + filepath.Join(rewriteDir, base) + ";"
+				}
+			} else {
+				// Non-overlay Go files are covered by the a.Package.Dir rewrite rule above.
+			}
 		}
 	}
+	if hasCgoOverlay {
+		rewrite += overlayNonGoRewrites
+	}
+	rewrite += objdir + "=>"
 
 	return rewrite
 }
@@ -331,9 +370,10 @@ func (gcToolchain) asm(b *Builder, a *Action, sfiles []string) ([]string, error)
 
 	var ofiles []string
 	for _, sfile := range sfiles {
+		overlayPath, _ := fsys.OverlayPath(mkAbs(p.Dir, sfile))
 		ofile := a.Objdir + sfile[:len(sfile)-len(".s")] + ".o"
 		ofiles = append(ofiles, ofile)
-		args1 := append(args, "-o", ofile, mkAbs(p.Dir, sfile))
+		args1 := append(args, "-o", ofile, overlayPath)
 		if err := b.run(a, p.Dir, p.ImportPath, nil, args1...); err != nil {
 			return nil, err
 		}
@@ -349,7 +389,8 @@ func (gcToolchain) symabis(b *Builder, a *Action, sfiles []string) (string, erro
 			if p.ImportPath == "runtime/cgo" && strings.HasPrefix(sfile, "gcc_") {
 				continue
 			}
-			args = append(args, mkAbs(p.Dir, sfile))
+			op, _ := fsys.OverlayPath(mkAbs(p.Dir, sfile))
+			args = append(args, op)
 		}
 
 		// Supply an empty go_asm.h as if the compiler had been run.
