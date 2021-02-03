@@ -46,6 +46,7 @@ const (
 //go:cgo_import_dynamic runtime._SetThreadPriority SetThreadPriority%2 "kernel32.dll"
 //go:cgo_import_dynamic runtime._SetUnhandledExceptionFilter SetUnhandledExceptionFilter%1 "kernel32.dll"
 //go:cgo_import_dynamic runtime._SetWaitableTimer SetWaitableTimer%6 "kernel32.dll"
+//go:cgo_import_dynamic runtime._Sleep Sleep%1 "kernel32.dll"
 //go:cgo_import_dynamic runtime._SuspendThread SuspendThread%1 "kernel32.dll"
 //go:cgo_import_dynamic runtime._SwitchToThread SwitchToThread%0 "kernel32.dll"
 //go:cgo_import_dynamic runtime._TlsAlloc TlsAlloc%0 "kernel32.dll"
@@ -97,6 +98,7 @@ var (
 	_SetThreadPriority,
 	_SetUnhandledExceptionFilter,
 	_SetWaitableTimer,
+	_Sleep,
 	_SuspendThread,
 	_SwitchToThread,
 	_TlsAlloc,
@@ -898,20 +900,18 @@ func minit() {
 		throw("runtime.minit: duplicatehandle failed")
 	}
 
+	mp := getg().m
+	lock(&mp.threadLock)
+	mp.thread = thandle
+
 	// Configure usleep timer, if possible.
-	var timer uintptr
-	if haveHighResTimer {
-		timer = createHighResTimer()
-		if timer == 0 {
+	if mp.highResTimer == 0 && haveHighResTimer {
+		mp.highResTimer = createHighResTimer()
+		if mp.highResTimer == 0 {
 			print("runtime: CreateWaitableTimerEx failed; errno=", getlasterror(), "\n")
 			throw("CreateWaitableTimerEx when creating timer failed")
 		}
 	}
-
-	mp := getg().m
-	lock(&mp.threadLock)
-	mp.thread = thandle
-	mp.highResTimer = timer
 	unlock(&mp.threadLock)
 
 	// Query the true stack base from the OS. Currently we're
@@ -947,13 +947,29 @@ func minit() {
 func unminit() {
 	mp := getg().m
 	lock(&mp.threadLock)
-	stdcall1(_CloseHandle, mp.thread)
-	mp.thread = 0
+	if mp.thread != 0 {
+		stdcall1(_CloseHandle, mp.thread)
+		mp.thread = 0
+	}
+	unlock(&mp.threadLock)
+}
+
+// Called from exitm, but not from drop, to undo the effect of thread-owned
+// resources in minit, semacreate, or elsewhere. Do not take locks after calling this.
+//go:nosplit
+func mdestroy(mp *m) {
 	if mp.highResTimer != 0 {
 		stdcall1(_CloseHandle, mp.highResTimer)
 		mp.highResTimer = 0
 	}
-	unlock(&mp.threadLock)
+	if mp.waitsema != 0 {
+		stdcall1(_CloseHandle, mp.waitsema)
+		mp.waitsema = 0
+	}
+	if mp.resumesema != 0 {
+		stdcall1(_CloseHandle, mp.resumesema)
+		mp.resumesema = 0
+	}
 }
 
 // Calling stdcall on os stack.
@@ -1080,6 +1096,11 @@ func ctrlhandler1(_type uint32) uint32 {
 	}
 
 	if sigsend(s) {
+		if s == _SIGTERM {
+			// Windows terminates the process after this handler returns.
+			// Block indefinitely to give signal handlers a chance to clean up.
+			stdcall1(_Sleep, uintptr(_INFINITE))
+		}
 		return 1
 	}
 	return 0

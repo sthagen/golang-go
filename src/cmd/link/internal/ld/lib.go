@@ -49,11 +49,11 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	exec "internal/execabs"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -1273,6 +1273,7 @@ func (ctxt *Link) hostlink() {
 		}
 	case objabi.Hopenbsd:
 		argv = append(argv, "-Wl,-nopie")
+		argv = append(argv, "-pthread")
 	case objabi.Hwindows:
 		if windowsgui {
 			argv = append(argv, "-mwindows")
