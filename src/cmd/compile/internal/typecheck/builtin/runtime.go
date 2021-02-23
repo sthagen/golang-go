@@ -166,8 +166,7 @@ func typedmemclr(typ *byte, dst *any)
 func typedslicecopy(typ *byte, dstPtr *any, dstLen int, srcPtr *any, srcLen int) int
 
 func selectnbsend(hchan chan<- any, elem *any) bool
-func selectnbrecv(elem *any, hchan <-chan any) bool
-func selectnbrecv2(elem *any, received *bool, hchan <-chan any) bool
+func selectnbrecv(elem *any, hchan <-chan any) (bool, bool)
 
 func selectsetpc(pc *uintptr)
 func selectgo(cas0 *byte, order0 *byte, pc0 *uintptr, nsends int, nrecvs int, block bool) (int, bool)
