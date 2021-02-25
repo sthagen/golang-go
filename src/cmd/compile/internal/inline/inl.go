@@ -354,15 +354,15 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 		return true
 
 	case ir.OCLOSURE:
-		// TODO(danscales,mdempsky): Get working with -G.
-		// Probably after #43818 is fixed.
-		if base.Flag.G > 0 {
-			v.reason = "inlining closures not yet working with -G"
+		if base.Debug.InlFuncsWithClosures == 0 {
+			// TODO(danscales): change default of InlFuncsWithClosures
+			// to 1 when #44370 is fixed
+			v.reason = "not inlining functions with closures"
 			return true
 		}
 
-		// TODO(danscales) - fix some bugs when budget is lowered below 15
-		// Maybe make budget proportional to number of closure variables, e.g.:
+		// TODO(danscales): Maybe make budget proportional to number of closure
+		// variables, e.g.:
 		//v.budget -= int32(len(n.(*ir.ClosureExpr).Func.ClosureVars) * 3)
 		v.budget -= 15
 		// Scan body of closure (which DoChildren doesn't automatically
@@ -383,6 +383,22 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 
 	case ir.OAPPEND:
 		v.budget -= inlineExtraAppendCost
+
+	case ir.ODEREF:
+		// *(*X)(unsafe.Pointer(&x)) is low-cost
+		n := n.(*ir.StarExpr)
+
+		ptr := n.X
+		for ptr.Op() == ir.OCONVNOP {
+			ptr = ptr.(*ir.ConvExpr).X
+		}
+		if ptr.Op() == ir.OADDR {
+			v.budget += 1 // undo half of default cost of ir.ODEREF+ir.OADDR
+		}
+
+	case ir.OCONVNOP:
+		// This doesn't produce code, but the children might.
+		v.budget++ // undo default cost
 
 	case ir.ODCLCONST, ir.OFALL:
 		// These nodes don't produce code; omit from inlining budget.

@@ -5,6 +5,7 @@
 package ssa
 
 import (
+	"cmd/compile/internal/abi"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/types"
 	"cmd/internal/obj"
@@ -71,15 +72,18 @@ type auxType int8
 
 type Param struct {
 	Type   *types.Type
-	Offset int32    // Offset of Param if not in a register.
+	Offset int32 // Offset of Param if not in a register, spill offset if it is in a register input, types.BADWIDTH if it is a register output.
+	Reg    []abi.RegIndex
 	Name   *ir.Name // For OwnAux, need to prepend stores with Vardefs
 }
 
 type AuxCall struct {
+	// TODO(register args) this information is largely redundant with ../abi information, needs cleanup once new ABI is in place.
 	Fn      *obj.LSym
 	args    []Param // Includes receiver for method calls.  Does NOT include hidden closure pointer.
 	results []Param
-	reg     *regInfo // regInfo for this call // TODO for now nil means ignore
+	reg     *regInfo                // regInfo for this call // TODO for now nil means ignore
+	abiInfo *abi.ABIParamResultInfo // TODO remove fields above redundant with this information.
 }
 
 // ResultForOffset returns the index of the result at a particular offset among the results
@@ -101,8 +105,20 @@ func (a *AuxCall) OffsetOfResult(which int64) int64 {
 }
 
 // OffsetOfArg returns the SP offset of argument which (indexed 0, 1, etc).
+// If the call is to a method, the receiver is the first argument (i.e., index 0)
 func (a *AuxCall) OffsetOfArg(which int64) int64 {
 	return int64(a.args[which].Offset)
+}
+
+// RegsOfResult returns the register(s) used for result which (indexed 0, 1, etc).
+func (a *AuxCall) RegsOfResult(which int64) []abi.RegIndex {
+	return a.results[which].Reg
+}
+
+// RegsOfArg returns the register(s) used for argument which (indexed 0, 1, etc).
+// If the call is to a method, the receiver is the first argument (i.e., index 0)
+func (a *AuxCall) RegsOfArg(which int64) []abi.RegIndex {
+	return a.args[which].Reg
 }
 
 // TypeOfResult returns the type of result which (indexed 0, 1, etc).
@@ -111,6 +127,7 @@ func (a *AuxCall) TypeOfResult(which int64) *types.Type {
 }
 
 // TypeOfArg returns the type of argument which (indexed 0, 1, etc).
+// If the call is to a method, the receiver is the first argument (i.e., index 0)
 func (a *AuxCall) TypeOfArg(which int64) *types.Type {
 	return a.args[which].Type
 }
@@ -121,6 +138,7 @@ func (a *AuxCall) SizeOfResult(which int64) int64 {
 }
 
 // SizeOfArg returns the size of argument which (indexed 0, 1, etc).
+// If the call is to a method, the receiver is the first argument (i.e., index 0)
 func (a *AuxCall) SizeOfArg(which int64) int64 {
 	return a.TypeOfArg(which).Width
 }
@@ -141,7 +159,7 @@ func (a *AuxCall) LateExpansionResultType() *types.Type {
 	return types.NewResults(tys)
 }
 
-// NArgs returns the number of arguments
+// NArgs returns the number of arguments (including receiver, if there is one).
 func (a *AuxCall) NArgs() int64 {
 	return int64(len(a.args))
 }
@@ -186,9 +204,9 @@ func (a *AuxCall) String() string {
 }
 
 // StaticAuxCall returns an AuxCall for a static call.
-func StaticAuxCall(sym *obj.LSym, args []Param, results []Param) *AuxCall {
+func StaticAuxCall(sym *obj.LSym, args []Param, results []Param, paramResultInfo *abi.ABIParamResultInfo) *AuxCall {
 	// TODO Create regInfo for AuxCall
-	return &AuxCall{Fn: sym, args: args, results: results}
+	return &AuxCall{Fn: sym, args: args, results: results, abiInfo: paramResultInfo}
 }
 
 // InterfaceAuxCall returns an AuxCall for an interface call.
@@ -206,9 +224,10 @@ func ClosureAuxCall(args []Param, results []Param) *AuxCall {
 func (*AuxCall) CanBeAnSSAAux() {}
 
 // OwnAuxCall returns a function's own AuxCall
-func OwnAuxCall(fn *obj.LSym, args []Param, results []Param) *AuxCall {
+
+func OwnAuxCall(fn *obj.LSym, args []Param, results []Param, paramResultInfo *abi.ABIParamResultInfo) *AuxCall {
 	// TODO if this remains identical to ClosureAuxCall above after new ABI is done, should deduplicate.
-	return &AuxCall{Fn: fn, args: args, results: results}
+	return &AuxCall{Fn: fn, args: args, results: results, abiInfo: paramResultInfo}
 }
 
 const (
