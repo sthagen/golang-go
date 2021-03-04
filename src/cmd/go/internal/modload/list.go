@@ -78,7 +78,7 @@ func listModules(ctx context.Context, args []string, listVersions, listRetracted
 		if i := strings.Index(arg, "@"); i >= 0 {
 			path := arg[:i]
 			vers := arg[i+1:]
-			var current string
+			current := "none"
 			for _, m := range buildList {
 				if m.Path == path {
 					current = m.Version
@@ -136,17 +136,9 @@ func listModules(ctx context.Context, args []string, listVersions, listRetracted
 				if listVersions {
 					// Don't make the user provide an explicit '@latest' when they're
 					// explicitly asking what the available versions are.
-					// Instead, resolve the module, even if it isn't an existing dependency.
-					info, err := Query(ctx, arg, "latest", "", nil)
-					if err == nil {
-						mod := moduleInfo(ctx, module.Version{Path: arg, Version: info.Version}, false, listRetracted)
-						mods = append(mods, mod)
-					} else {
-						mods = append(mods, &modinfo.ModulePublic{
-							Path:  arg,
-							Error: modinfoError(arg, "", err),
-						})
-					}
+					// Instead, return a modinfo without a version,
+					// to which we can attach the requested version list.
+					mods = append(mods, &modinfo.ModulePublic{Path: arg})
 					continue
 				}
 				if cfg.BuildMod == "vendor" {
