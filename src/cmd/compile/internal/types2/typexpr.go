@@ -141,7 +141,7 @@ func (check *Checker) ordinaryType(pos syntax.Pos, typ Type) {
 	// We don't want to call under() (via Interface) or complete interfaces while we
 	// are in the middle of type-checking parameter declarations that might belong to
 	// interface methods. Delay this check to the end of type-checking.
-	check.atEnd(func() {
+	check.later(func() {
 		if t := asInterface(typ); t != nil {
 			check.completeInterface(pos, t) // TODO(gri) is this the correct position?
 			if t.allTypes != nil {
@@ -352,8 +352,10 @@ func (check *Checker) funcType(sig *Signature, recvPar *syntax.Field, tparams []
 	params, variadic := check.collectParams(scope, ftyp.ParamList, nil, true)
 	results, _ := check.collectParams(scope, ftyp.ResultList, nil, false)
 	scope.Squash(func(obj, alt Object) {
-		check.errorf(obj, "%s redeclared in this block", obj.Name())
-		check.reportAltDecl(alt)
+		var err error_
+		err.errorf(obj, "%s redeclared in this block", obj.Name())
+		err.recordAltDecl(alt)
+		check.report(&err)
 	})
 
 	if recvPar != nil {
@@ -572,7 +574,7 @@ func (check *Checker) typInternal(e0 syntax.Expr, def *Named) (T Type) {
 		//
 		// Delay this check because it requires fully setup types;
 		// it is safe to continue in any case (was issue 6667).
-		check.atEnd(func() {
+		check.later(func() {
 			if !Comparable(typ.key) {
 				var why string
 				if asTypeParam(typ.key) != nil {
@@ -674,7 +676,7 @@ func (check *Checker) instantiatedType(x syntax.Expr, targs []syntax.Expr, def *
 
 	// make sure we check instantiation works at least once
 	// and that the resulting type is valid
-	check.atEnd(func() {
+	check.later(func() {
 		t := typ.expand()
 		check.validType(t, nil)
 	})
@@ -796,8 +798,10 @@ func (check *Checker) collectParams(scope *Scope, list []*syntax.Field, type0 sy
 
 func (check *Checker) declareInSet(oset *objset, pos syntax.Pos, obj Object) bool {
 	if alt := oset.insert(obj); alt != nil {
-		check.errorf(pos, "%s redeclared", obj.Name())
-		check.reportAltDecl(alt)
+		var err error_
+		err.errorf(pos, "%s redeclared", obj.Name())
+		err.recordAltDecl(alt)
+		check.report(&err)
 		return false
 	}
 	return true
@@ -940,18 +944,22 @@ func (check *Checker) completeInterface(pos syntax.Pos, ityp *Interface) {
 			methods = append(methods, m)
 			mpos[m] = pos
 		case explicit:
-			check.errorf(pos, "duplicate method %s", m.name)
-			check.errorf(mpos[other.(*Func)], "\tother declaration of %s", m.name) // secondary error, \t indented
+			var err error_
+			err.errorf(pos, "duplicate method %s", m.name)
+			err.errorf(mpos[other.(*Func)], "other declaration of %s", m.name)
+			check.report(&err)
 		default:
 			// We have a duplicate method name in an embedded (not explicitly declared) method.
 			// Check method signatures after all types are computed (issue #33656).
 			// If we're pre-go1.14 (overlapping embeddings are not permitted), report that
 			// error here as well (even though we could do it eagerly) because it's the same
 			// error message.
-			check.atEnd(func() {
+			check.later(func() {
 				if !check.allowVersion(m.pkg, 1, 14) || !check.identical(m.typ, other.Type()) {
-					check.errorf(pos, "duplicate method %s", m.name)
-					check.errorf(mpos[other.(*Func)], "\tother declaration of %s", m.name) // secondary error, \t indented
+					var err error_
+					err.errorf(pos, "duplicate method %s", m.name)
+					err.errorf(mpos[other.(*Func)], "other declaration of %s", m.name)
+					check.report(&err)
 				}
 			})
 		}
@@ -1162,7 +1170,7 @@ func (check *Checker) structType(styp *Struct, e *syntax.StructType) {
 			// (via under(t)) a possibly incomplete type.
 			embeddedTyp := typ // for closure below
 			embeddedPos := pos
-			check.atEnd(func() {
+			check.later(func() {
 				t, isPtr := deref(embeddedTyp)
 				switch t := optype(t).(type) {
 				case *Basic:
@@ -1222,7 +1230,7 @@ func (check *Checker) collectTypeConstraints(pos syntax.Pos, types []syntax.Expr
 	// interfaces, which may not be complete yet. It's ok to do this check at the
 	// end because it's not a requirement for correctness of the code.
 	// Note: This is a quadratic algorithm, but type lists tend to be short.
-	check.atEnd(func() {
+	check.later(func() {
 		for i, t := range list {
 			if t := asInterface(t); t != nil {
 				check.completeInterface(types[i].Pos(), t)
