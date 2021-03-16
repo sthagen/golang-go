@@ -73,7 +73,7 @@ func (g *irgen) stencil() {
 				// immediately called.
 				foundFuncInst = true
 			}
-			if n.Op() != ir.OCALLFUNC || n.(*ir.CallExpr).X.Op() != ir.OFUNCINST {
+			if n.Op() != ir.OCALL || n.(*ir.CallExpr).X.Op() != ir.OFUNCINST {
 				return
 			}
 			// We have found a function call using a generic function
@@ -95,6 +95,10 @@ func (g *irgen) stencil() {
 				copy(withRecv[1:], call.Args)
 				call.Args = withRecv
 			}
+			// Do the typechecking of the Call now, which changes OCALL
+			// to OCALLFUNC and does typecheckaste/assignconvfn.
+			call.SetTypecheck(0)
+			typecheck.Call(call)
 			modified = true
 		})
 
@@ -348,7 +352,8 @@ func (subst *subster) node(n ir.Node) ir.Node {
 				// an error.
 				_, isCallExpr := m.(*ir.CallExpr)
 				_, isStructKeyExpr := m.(*ir.StructKeyExpr)
-				if !isCallExpr && !isStructKeyExpr {
+				if !isCallExpr && !isStructKeyExpr && x.Op() != ir.OPANIC &&
+					x.Op() != ir.OCLOSE {
 					base.Fatalf(fmt.Sprintf("Nil type for %v", x))
 				}
 			} else if x.Op() != ir.OCLOSURE {
@@ -382,10 +387,20 @@ func (subst *subster) node(n ir.Node) ir.Node {
 				call.X.SetTypecheck(0)
 				call.X.SetType(nil)
 				typecheck.Callee(call.X)
-				m.SetTypecheck(0)
-				typecheck.Call(m.(*ir.CallExpr))
-			} else {
-				base.FatalfAt(call.Pos(), "Expecting OCALLPART or OTYPE with CALL")
+				call.SetTypecheck(0)
+				typecheck.Call(call)
+			} else if call.X.Op() == ir.ODOT || call.X.Op() == ir.ODOTPTR {
+				// An OXDOT for a generic receiver was resolved to
+				// an access to a field which has a function
+				// value. Typecheck the call to that function, now
+				// that the OXDOT was resolved.
+				call.SetTypecheck(0)
+				typecheck.Call(call)
+			} else if call.X.Op() != ir.OFUNCINST {
+				// A call with an OFUNCINST will get typechecked
+				// in stencil() once we have created & attached the
+				// instantiation to be called.
+				base.FatalfAt(call.Pos(), "Expecting OCALLPART or OTYPE or OFUNCINST with CALL")
 			}
 		}
 
@@ -420,6 +435,7 @@ func (subst *subster) node(n ir.Node) ir.Node {
 			// Set Ntype for now to be compatible with later parts of compiler
 			newfn.Nname.Ntype = subst.node(oldfn.Nname.Ntype).(ir.Ntype)
 			typed(subst.typ(oldfn.Nname.Type()), newfn.Nname)
+			typed(newfn.Nname.Type(), m)
 			newfn.SetTypecheck(1)
 			subst.g.target.Decls = append(subst.g.target.Decls, newfn)
 		}
@@ -452,9 +468,11 @@ func (subst *subster) list(l []ir.Node) []ir.Node {
 }
 
 // tstruct substitutes type params in types of the fields of a structure type. For
-// each field, if Nname is set, tstruct also translates the Nname using subst.vars, if
-// Nname is in subst.vars.
-func (subst *subster) tstruct(t *types.Type) *types.Type {
+// each field, if Nname is set, tstruct also translates the Nname using
+// subst.vars, if Nname is in subst.vars. To always force the creation of a new
+// (top-level) struct, regardless of whether anything changed with the types or
+// names of the struct's fields, set force to true.
+func (subst *subster) tstruct(t *types.Type, force bool) *types.Type {
 	if t.NumFields() == 0 {
 		if t.HasTParam() {
 			// For an empty struct, we need to return a new type,
@@ -465,6 +483,9 @@ func (subst *subster) tstruct(t *types.Type) *types.Type {
 		return t
 	}
 	var newfields []*types.Field
+	if force {
+		newfields = make([]*types.Field, t.NumFields())
+	}
 	for i, f := range t.Fields().Slice() {
 		t2 := subst.typ(f.Type)
 		if (t2 != f.Type || f.Nname != nil) && newfields == nil {
@@ -641,19 +662,32 @@ func (subst *subster) typ(t *types.Type) *types.Type {
 		}
 
 	case types.TSTRUCT:
-		newt = subst.tstruct(t)
+		newt = subst.tstruct(t, false)
 		if newt == t {
 			newt = nil
 		}
 
 	case types.TFUNC:
-		newrecvs := subst.tstruct(t.Recvs())
-		newparams := subst.tstruct(t.Params())
-		newresults := subst.tstruct(t.Results())
+		newrecvs := subst.tstruct(t.Recvs(), false)
+		newparams := subst.tstruct(t.Params(), false)
+		newresults := subst.tstruct(t.Results(), false)
 		if newrecvs != t.Recvs() || newparams != t.Params() || newresults != t.Results() {
+			// If any types have changed, then the all the fields of
+			// of recv, params, and results must be copied, because they have
+			// offset fields that are dependent, and so must have an
+			// independent copy for each new signature.
 			var newrecv *types.Field
 			if newrecvs.NumFields() > 0 {
+				if newrecvs == t.Recvs() {
+					newrecvs = subst.tstruct(t.Recvs(), true)
+				}
 				newrecv = newrecvs.Field(0)
+			}
+			if newparams == t.Params() {
+				newparams = subst.tstruct(t.Params(), true)
+			}
+			if newresults == t.Results() {
+				newresults = subst.tstruct(t.Results(), true)
 			}
 			newt = types.NewSignature(t.Pkg(), newrecv, t.TParams().FieldSlice(), newparams.FieldSlice(), newresults.FieldSlice())
 		}
@@ -664,8 +698,24 @@ func (subst *subster) typ(t *types.Type) *types.Type {
 			newt = nil
 		}
 
-		// TODO: case TCHAN
-		// TODO: case TMAP
+	case types.TMAP:
+		newkey := subst.typ(t.Key())
+		newval := subst.typ(t.Elem())
+		if newkey != t.Key() || newval != t.Elem() {
+			newt = types.NewMap(newkey, newval)
+		}
+
+	case types.TCHAN:
+		elem := t.Elem()
+		newelem := subst.typ(elem)
+		if newelem != elem {
+			newt = types.NewChan(newelem, t.ChanDir())
+			if !newt.HasTParam() {
+				// TODO(danscales): not sure why I have to do this
+				// only for channels.....
+				types.CheckSize(newt)
+			}
+		}
 	}
 	if newt == nil {
 		// Even though there were typeparams in the type, there may be no

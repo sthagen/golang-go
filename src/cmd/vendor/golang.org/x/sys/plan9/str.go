@@ -2,16 +2,14 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package syscall
+// +build plan9
+
+package plan9
 
 func itoa(val int) string { // do it here rather than with fmt to avoid dependency
 	if val < 0 {
-		return "-" + uitoa(uint(-val))
+		return "-" + itoa(-val)
 	}
-	return uitoa(uint(val))
-}
-
-func uitoa(val uint) string {
 	var buf [32]byte // big enough for int64
 	i := len(buf) - 1
 	for val >= 10 {

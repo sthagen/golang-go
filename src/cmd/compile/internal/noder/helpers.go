@@ -54,8 +54,11 @@ func Nil(pos src.XPos, typ *types.Type) ir.Node {
 // Expressions
 
 func Addr(pos src.XPos, x ir.Node) *ir.AddrExpr {
-	// TODO(mdempsky): Avoid typecheck.Expr. Probably just need to set OPTRLIT when appropriate.
-	n := typecheck.Expr(typecheck.NodAddrAt(pos, x)).(*ir.AddrExpr)
+	n := typecheck.NodAddrAt(pos, x)
+	switch x.Op() {
+	case ir.OARRAYLIT, ir.OMAPLIT, ir.OSLICELIT, ir.OSTRUCTLIT:
+		n.SetOp(ir.OPTRLIT)
+	}
 	typed(types.NewPtr(x.Type()), n)
 	return n
 }
@@ -125,7 +128,7 @@ func Call(pos src.XPos, typ *types.Type, fun ir.Node, args []ir.Node, dots bool)
 	n.IsDDD = dots
 
 	if fun.Op() == ir.OXDOT {
-		if fun.(*ir.SelectorExpr).X.Type().Kind() != types.TTYPEPARAM {
+		if !fun.(*ir.SelectorExpr).X.Type().HasTParam() {
 			base.FatalfAt(pos, "Expecting type param receiver in %v", fun)
 		}
 		// For methods called in a generic function, don't do any extra
@@ -135,30 +138,19 @@ func Call(pos src.XPos, typ *types.Type, fun ir.Node, args []ir.Node, dots bool)
 		return n
 	}
 	if fun.Op() != ir.OFUNCINST {
-		// If no type params, still do normal typechecking, since we're
-		// still missing some things done by tcCall below (mainly
-		// typecheckargs and typecheckaste).
+		// If no type params, do normal typechecking, since we're
+		// still missing some things done by tcCall (mainly
+		// typecheckaste/assignconvfn - implementing assignability of args
+		// to params).  This will convert OCALL to OCALLFUNC.
 		typecheck.Call(n)
 		return n
 	}
 
+	// Leave the op as OCALL, which indicates the call still needs typechecking.
 	n.Use = ir.CallUseExpr
 	if fun.Type().NumResults() == 0 {
 		n.Use = ir.CallUseStmt
 	}
-
-	// Rewrite call node depending on use.
-	switch fun.Op() {
-	case ir.ODOTINTER:
-		n.SetOp(ir.OCALLINTER)
-
-	case ir.ODOTMETH:
-		n.SetOp(ir.OCALLMETH)
-
-	default:
-		n.SetOp(ir.OCALLFUNC)
-	}
-
 	typed(typ, n)
 	return n
 }
