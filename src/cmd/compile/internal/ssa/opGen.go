@@ -1556,6 +1556,10 @@ const (
 	OpARM64FRINTZD
 	OpARM64CSEL
 	OpARM64CSEL0
+	OpARM64CSINC
+	OpARM64CSINV
+	OpARM64CSNEG
+	OpARM64CSETM
 	OpARM64CALLstatic
 	OpARM64CALLclosure
 	OpARM64CALLinter
@@ -2085,9 +2089,6 @@ const (
 	OpRISCV64REMW
 	OpRISCV64REMUW
 	OpRISCV64MOVaddr
-	OpRISCV64MOVBconst
-	OpRISCV64MOVHconst
-	OpRISCV64MOVWconst
 	OpRISCV64MOVDconst
 	OpRISCV64MOVBload
 	OpRISCV64MOVHload
@@ -20775,6 +20776,62 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:    "CSINC",
+		auxType: auxCCop,
+		argLen:  3,
+		asm:     arm64.ACSINC,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+				{1, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+			outputs: []outputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+		},
+	},
+	{
+		name:    "CSINV",
+		auxType: auxCCop,
+		argLen:  3,
+		asm:     arm64.ACSINV,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+				{1, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+			outputs: []outputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+		},
+	},
+	{
+		name:    "CSNEG",
+		auxType: auxCCop,
+		argLen:  3,
+		asm:     arm64.ACSNEG,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+				{1, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+			outputs: []outputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+		},
+	},
+	{
+		name:    "CSETM",
+		auxType: auxCCop,
+		argLen:  1,
+		asm:     arm64.ACSETM,
+		reg: regInfo{
+			outputs: []outputInfo{
+				{0, 670826495}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 R30
+			},
+		},
+	},
+	{
 		name:         "CALLstatic",
 		auxType:      auxCallOff,
 		argLen:       1,
@@ -27839,42 +27896,6 @@ var opcodeTable = [...]opInfo{
 			inputs: []inputInfo{
 				{0, 9223372037861408758}, // SP X3 X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30 SB
 			},
-			outputs: []outputInfo{
-				{0, 1006632948}, // X3 X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
-			},
-		},
-	},
-	{
-		name:              "MOVBconst",
-		auxType:           auxInt8,
-		argLen:            0,
-		rematerializeable: true,
-		asm:               riscv.AMOV,
-		reg: regInfo{
-			outputs: []outputInfo{
-				{0, 1006632948}, // X3 X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
-			},
-		},
-	},
-	{
-		name:              "MOVHconst",
-		auxType:           auxInt16,
-		argLen:            0,
-		rematerializeable: true,
-		asm:               riscv.AMOV,
-		reg: regInfo{
-			outputs: []outputInfo{
-				{0, 1006632948}, // X3 X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
-			},
-		},
-	},
-	{
-		name:              "MOVWconst",
-		auxType:           auxInt32,
-		argLen:            0,
-		rematerializeable: true,
-		asm:               riscv.AMOV,
-		reg: regInfo{
 			outputs: []outputInfo{
 				{0, 1006632948}, // X3 X5 X6 X7 X8 X9 X10 X11 X12 X13 X14 X15 X16 X17 X18 X19 X20 X21 X22 X23 X24 X25 X26 X28 X29 X30
 			},
