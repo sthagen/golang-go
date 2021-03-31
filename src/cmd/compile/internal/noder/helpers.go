@@ -18,10 +18,6 @@ import (
 //
 // TODO(mdempsky): Move into their own package so they can be easily
 // reused by iimport and frontend optimizations.
-//
-// TODO(mdempsky): Update to consistently return already typechecked
-// results, rather than leaving the caller responsible for using
-// typecheck.Expr or typecheck.Stmt.
 
 type ImplicitNode interface {
 	ir.Node
@@ -81,8 +77,8 @@ func Binary(pos src.XPos, op ir.Op, typ *types.Type, x, y ir.Node) ir.Node {
 			n.SetTypecheck(3)
 			return n
 		}
-		n1 := transformAdd(n)
-		return typed(typ, n1)
+		typed(typ, n)
+		return transformAdd(n)
 	default:
 		return typed(x.Type(), ir.NewBinaryExpr(pos, op, x, y))
 	}
@@ -91,6 +87,9 @@ func Binary(pos src.XPos, op ir.Op, typ *types.Type, x, y ir.Node) ir.Node {
 func Call(pos src.XPos, typ *types.Type, fun ir.Node, args []ir.Node, dots bool) ir.Node {
 	n := ir.NewCallExpr(pos, ir.OCALL, fun, args)
 	n.IsDDD = dots
+	// n.Use will be changed to ir.CallUseStmt in g.stmt() if this call is
+	// just a statement (any return values are ignored).
+	n.Use = ir.CallUseExpr
 
 	if fun.Op() == ir.OTYPE {
 		// Actually a type conversion, not a function call.
@@ -99,9 +98,8 @@ func Call(pos src.XPos, typ *types.Type, fun ir.Node, args []ir.Node, dots bool)
 			// the type.
 			return typed(typ, n)
 		}
-		n1 := transformConvCall(n)
-		n1.SetTypecheck(1)
-		return n1
+		typed(typ, n)
+		return transformConvCall(n)
 	}
 
 	if fun, ok := fun.(*ir.Name); ok && fun.BuiltinOp != 0 {
@@ -133,12 +131,8 @@ func Call(pos src.XPos, typ *types.Type, fun ir.Node, args []ir.Node, dots bool)
 			}
 		}
 
-		switch fun.BuiltinOp {
-		case ir.OCLOSE, ir.ODELETE, ir.OPANIC, ir.OPRINT, ir.OPRINTN:
-			return typecheck.Stmt(n)
-		default:
-			return typecheck.Expr(n)
-		}
+		typed(typ, n)
+		return transformBuiltin(n)
 	}
 
 	// Add information, now that we know that fun is actually being called.
@@ -158,9 +152,13 @@ func Call(pos src.XPos, typ *types.Type, fun ir.Node, args []ir.Node, dots bool)
 		}
 	}
 
-	n.Use = ir.CallUseExpr
-	if fun.Type().NumResults() == 0 {
-		n.Use = ir.CallUseStmt
+	if fun.Type().HasTParam() {
+		// If the fun arg is or has a type param, don't do any extra
+		// transformations, since we may not have needed properties yet
+		// (e.g. number of return values, etc). The type param is probably
+		// described by a structural constraint that requires it to be a
+		// certain function type, etc., but we don't want to analyze that.
+		return typed(typ, n)
 	}
 
 	if fun.Op() == ir.OXDOT {
@@ -176,8 +174,8 @@ func Call(pos src.XPos, typ *types.Type, fun ir.Node, args []ir.Node, dots bool)
 	if fun.Op() != ir.OFUNCINST {
 		// If no type params, do the normal call transformations. This
 		// will convert OCALL to OCALLFUNC.
-		transformCall(n)
 		typed(typ, n)
+		transformCall(n)
 		return n
 	}
 
@@ -195,13 +193,14 @@ func Compare(pos src.XPos, typ *types.Type, op ir.Op, x, y ir.Node) ir.Node {
 		n.SetTypecheck(3)
 		return n
 	}
+	typed(typ, n)
 	transformCompare(n)
-	return typed(typ, n)
+	return n
 }
 
-func Deref(pos src.XPos, x ir.Node) *ir.StarExpr {
+func Deref(pos src.XPos, typ *types.Type, x ir.Node) *ir.StarExpr {
 	n := ir.NewStarExpr(pos, x)
-	typed(x.Type().Elem(), n)
+	typed(typ, n)
 	return n
 }
 
@@ -291,21 +290,27 @@ func Slice(pos src.XPos, typ *types.Type, x, low, high, max ir.Node) ir.Node {
 		n.SetTypecheck(3)
 		return n
 	}
+	typed(typ, n)
 	transformSlice(n)
-	return typed(typ, n)
+	return n
 }
 
-func Unary(pos src.XPos, op ir.Op, x ir.Node) ir.Node {
+func Unary(pos src.XPos, typ *types.Type, op ir.Op, x ir.Node) ir.Node {
 	switch op {
 	case ir.OADDR:
 		return Addr(pos, x)
 	case ir.ODEREF:
-		return Deref(pos, x)
+		return Deref(pos, typ, x)
 	}
 
-	typ := x.Type()
 	if op == ir.ORECV {
-		typ = typ.Elem()
+		if typ.IsFuncArgStruct() && typ.NumFields() == 2 {
+			// Remove the second boolean type (if provided by type2),
+			// since that works better with the rest of the compiler
+			// (which will add it back in later).
+			assert(typ.Field(1).Type.Kind() == types.TBOOL)
+			typ = typ.Field(0).Type
+		}
 	}
 	return typed(typ, ir.NewUnaryExpr(pos, op, x))
 }
