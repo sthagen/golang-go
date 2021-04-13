@@ -165,13 +165,14 @@ func (ts *testScript) setup() {
 		"GOCACHE=" + testGOCACHE,
 		"GODEBUG=" + os.Getenv("GODEBUG"),
 		"GOEXE=" + cfg.ExeSuffix,
-		"GOEXPSTRING=" + objabi.Expstring()[2:],
+		"GOEXPERIMENT=" + objabi.GOEXPERIMENT(),
 		"GOOS=" + runtime.GOOS,
 		"GOPATH=" + filepath.Join(ts.workdir, "gopath"),
 		"GOPROXY=" + proxyURL,
 		"GOPRIVATE=",
 		"GOROOT=" + testGOROOT,
 		"GOROOT_FINAL=" + os.Getenv("GOROOT_FINAL"), // causes spurious rebuilds and breaks the "stale" built-in if not propagated
+		"GOTRACEBACK=all",
 		"TESTGO_GOROOT=" + testGOROOT,
 		"GOSUMDB=" + testSumDBVerifierKey,
 		"GONOPROXY=",
@@ -1120,22 +1121,10 @@ func (ts *testScript) startBackground(want simpleStatus, command string, args ..
 	}
 
 	go func() {
-		bg.err = waitOrStop(ts.ctx, cmd, stopSignal(), ts.gracePeriod)
+		bg.err = waitOrStop(ts.ctx, cmd, quitSignal(), ts.gracePeriod)
 		close(done)
 	}()
 	return bg, nil
-}
-
-// stopSignal returns the appropriate signal to use to request that a process
-// stop execution.
-func stopSignal() os.Signal {
-	if runtime.GOOS == "windows" {
-		// Per https://golang.org/pkg/os/#Signal, “Interrupt is not implemented on
-		// Windows; using it with os.Process.Signal will return an error.”
-		// Fall back to Kill instead.
-		return os.Kill
-	}
-	return os.Interrupt
 }
 
 // waitOrStop waits for the already-started command cmd by calling its Wait method.

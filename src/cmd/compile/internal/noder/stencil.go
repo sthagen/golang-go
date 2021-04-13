@@ -298,7 +298,6 @@ func (g *irgen) genericSubst(newsym *types.Sym, nameNode *ir.Name, targs []ir.No
 		subst.fields(ir.PPARAM, append(oldt.Recvs().FieldSlice(), oldt.Params().FieldSlice()...), newf.Dcl),
 		subst.fields(ir.PPARAMOUT, oldt.Results().FieldSlice(), newf.Dcl))
 
-	newf.Nname.Ntype = ir.TypeNode(newt)
 	newf.Nname.SetType(newt)
 	ir.MarkFunc(newf.Nname)
 	newf.SetTypecheck(1)
@@ -497,8 +496,7 @@ func (subst *subster) node(n ir.Node) ir.Node {
 
 		case ir.OCLOSURE:
 			x := x.(*ir.ClosureExpr)
-			// Need to save/duplicate x.Func.Nname,
-			// x.Func.Nname.Ntype, x.Func.Dcl, x.Func.ClosureVars, and
+			// Need to duplicate x.Func.Nname, x.Func.Dcl, x.Func.ClosureVars, and
 			// x.Func.Body.
 			oldfn := x.Func
 			newfn := ir.NewFunc(oldfn.Pos())
@@ -522,8 +520,6 @@ func (subst *subster) node(n ir.Node) ir.Node {
 			newfn.Dcl = subst.namelist(oldfn.Dcl)
 			newfn.ClosureVars = subst.namelist(oldfn.ClosureVars)
 
-			// Set Ntype for now to be compatible with later parts of compiler
-			newfn.Nname.Ntype = subst.node(oldfn.Nname.Ntype).(ir.Ntype)
 			typed(subst.typ(oldfn.Nname.Type()), newfn.Nname)
 			typed(newfn.Nname.Type(), m)
 			newfn.SetTypecheck(1)
@@ -625,9 +621,9 @@ func (subst *subster) tinter(t *types.Type) *types.Type {
 	for i, f := range t.Methods().Slice() {
 		t2 := subst.typ(f.Type)
 		if (t2 != f.Type || f.Nname != nil) && newfields == nil {
-			newfields = make([]*types.Field, t.NumFields())
+			newfields = make([]*types.Field, t.Methods().Len())
 			for j := 0; j < i; j++ {
-				newfields[j] = t.Methods().Slice()[j]
+				newfields[j] = t.Methods().Index(j)
 			}
 		}
 		if newfields != nil {
@@ -716,7 +712,7 @@ func (subst *subster) typ(t *types.Type) *types.Type {
 		// In order to deal with recursive generic types, create a TFORW
 		// type initially and set the Def field of its sym, so it can be
 		// found if this type appears recursively within the type.
-		forw = newNamedTypeWithSym(t.Pos(), newsym)
+		forw = newIncompleteNamedType(t.Pos(), newsym)
 		//println("Creating new type by sub", newsym.Name, forw.HasTParam())
 		forw.SetRParams(neededTargs)
 	}
@@ -896,9 +892,9 @@ func deref(t *types.Type) *types.Type {
 	return t
 }
 
-// newNamedTypeWithSym returns a TFORW type t with name specified by sym, such
+// newIncompleteNamedType returns a TFORW type t with name specified by sym, such
 // that t.nod and sym.Def are set correctly.
-func newNamedTypeWithSym(pos src.XPos, sym *types.Sym) *types.Type {
+func newIncompleteNamedType(pos src.XPos, sym *types.Sym) *types.Type {
 	name := ir.NewDeclNameAt(pos, ir.OTYPE, sym)
 	forw := types.NewNamed(name)
 	name.SetType(forw)

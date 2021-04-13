@@ -31,11 +31,6 @@ const debug = false // leave on during development
 //
 const forceStrict = false
 
-// If methodTypeParamsOk is set, type parameters are
-// permitted in method declarations (in interfaces, too).
-// Generalization and experimental feature.
-const methodTypeParamsOk = true
-
 // exprInfo stores information about an untyped expression.
 type exprInfo struct {
 	isLhs bool // expression is lhs operand of a shift with delayed type-check
@@ -310,6 +305,33 @@ func (check *Checker) processDelayed(top int) {
 	}
 	assert(top <= len(check.delayed)) // stack must not have shrunk
 	check.delayed = check.delayed[:top]
+}
+
+func (check *Checker) record(x *operand) {
+	// convert x into a user-friendly set of values
+	// TODO(gri) this code can be simplified
+	var typ Type
+	var val constant.Value
+	switch x.mode {
+	case invalid:
+		typ = Typ[Invalid]
+	case novalue:
+		typ = (*Tuple)(nil)
+	case constant_:
+		typ = x.typ
+		val = x.val
+	default:
+		typ = x.typ
+	}
+	assert(x.expr != nil && typ != nil)
+
+	if isUntyped(typ) {
+		// delay type and value recording until we know the type
+		// or until the end of type checking
+		check.rememberUntyped(x.expr, false, x.mode, typ.(*Basic), val)
+	} else {
+		check.recordTypeAndValue(x.expr, x.mode, typ, val)
+	}
 }
 
 func (check *Checker) recordUntyped() {

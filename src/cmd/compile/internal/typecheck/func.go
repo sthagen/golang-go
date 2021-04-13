@@ -144,15 +144,18 @@ func ImportedBody(fn *ir.Func) {
 		fmt.Printf("typecheck import [%v] %L { %v }\n", fn.Sym(), fn, ir.Nodes(fn.Inl.Body))
 	}
 
-	savefn := ir.CurFunc
-	ir.CurFunc = fn
-	if inTypeCheckInl {
-		base.Fatalf("inTypeCheckInl should not be set recursively")
+	if !go117ExportTypes {
+		// If we didn't export & import types, typecheck the code here.
+		savefn := ir.CurFunc
+		ir.CurFunc = fn
+		if inTypeCheckInl {
+			base.Fatalf("inTypeCheckInl should not be set recursively")
+		}
+		inTypeCheckInl = true
+		Stmts(fn.Inl.Body)
+		inTypeCheckInl = false
+		ir.CurFunc = savefn
 	}
-	inTypeCheckInl = true
-	Stmts(fn.Inl.Body)
-	inTypeCheckInl = false
-	ir.CurFunc = savefn
 
 	base.Pos = lno
 }
@@ -459,7 +462,7 @@ func tcCall(n *ir.CallExpr, top int) ir.Node {
 
 		n := ir.NewConvExpr(n.Pos(), ir.OCONV, nil, arg)
 		n.SetType(l.Type())
-		return typecheck1(n, top)
+		return tcConv(n)
 	}
 
 	typecheckargs(n)

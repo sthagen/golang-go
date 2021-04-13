@@ -556,7 +556,12 @@ func (ctxt *Link) loadlib() {
 			if ctxt.BuildMode == BuildModeShared || ctxt.linkShared {
 				Exitf("cannot implicitly include runtime/cgo in a shared library")
 			}
-			loadobjfile(ctxt, lib)
+			for ; i < len(ctxt.Library); i++ {
+				lib := ctxt.Library[i]
+				if lib.Shlib == "" {
+					loadobjfile(ctxt, lib)
+				}
+			}
 		}
 	}
 
@@ -598,9 +603,6 @@ func (ctxt *Link) loadlib() {
 				// errors - see if we can find libcompiler_rt.a instead.
 				*flagLibGCC = ctxt.findLibPathCmd("--print-file-name=libcompiler_rt.a", "libcompiler_rt")
 			}
-			if *flagLibGCC != "none" {
-				hostArchive(ctxt, *flagLibGCC)
-			}
 			if ctxt.HeadType == objabi.Hwindows {
 				if p := ctxt.findLibPath("libmingwex.a"); p != "none" {
 					hostArchive(ctxt, p)
@@ -621,6 +623,9 @@ func (ctxt *Link) loadlib() {
 					import:
 					libmsvcrt.a libm.a
 				*/
+			}
+			if *flagLibGCC != "none" {
+				hostArchive(ctxt, *flagLibGCC)
 			}
 		}
 	}

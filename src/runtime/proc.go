@@ -5,14 +5,12 @@
 package runtime
 
 import (
-	"internal/bytealg"
 	"internal/cpu"
+	"internal/goexperiment"
 	"runtime/internal/atomic"
 	"runtime/internal/sys"
 	"unsafe"
 )
-
-var buildVersion = sys.TheVersion
 
 // set using cmd/go/internal/modload.ModInfoProg
 var modinfo string
@@ -1258,7 +1256,7 @@ func mStackIsSystemAllocated() bool {
 }
 
 // mstart is the entry-point for new Ms.
-// It is written in assembly, marked TOPFRAME, and calls mstart0.
+// It is written in assembly, uses ABI0, is marked TOPFRAME, and calls mstart0.
 func mstart()
 
 // mstart0 is the Go entry-point for new Ms.
@@ -4022,12 +4020,6 @@ func malg(stacksize int32) *g {
 //
 //go:nosplit
 func newproc(siz int32, fn *funcval) {
-	if experimentRegabiDefer && siz != 0 {
-		// TODO: When we commit to experimentRegabiDefer,
-		// rewrite newproc's comment, since it will no longer
-		// have a funny stack layout or need to be nosplit.
-		throw("go with non-empty frame")
-	}
 	argp := add(unsafe.Pointer(&fn), sys.PtrSize)
 	gp := getg()
 	pc := getcallerpc()
@@ -4053,6 +4045,14 @@ func newproc(siz int32, fn *funcval) {
 //
 //go:systemstack
 func newproc1(fn *funcval, argp unsafe.Pointer, narg int32, callergp *g, callerpc uintptr) *g {
+	if goexperiment.RegabiDefer && narg != 0 {
+		// TODO: When we commit to GOEXPERIMENT=regabidefer,
+		// rewrite the comments for newproc and newproc1.
+		// newproc will no longer have a funny stack layout or
+		// need to be nosplit.
+		throw("go with non-empty frame")
+	}
+
 	_g_ := getg()
 
 	if fn == nil {
@@ -6037,26 +6037,6 @@ func setMaxThreads(in int) (out int) {
 	checkmcount()
 	unlock(&sched.lock)
 	return
-}
-
-func haveexperiment(name string) bool {
-	// GOEXPERIMENT is a comma-separated list of enabled
-	// experiments. It's not the raw environment variable, but a
-	// pre-processed list from cmd/internal/objabi.
-	x := sys.GOEXPERIMENT
-	for x != "" {
-		xname := ""
-		i := bytealg.IndexByteString(x, ',')
-		if i < 0 {
-			xname, x = x, ""
-		} else {
-			xname, x = x[:i], x[i+1:]
-		}
-		if xname == name {
-			return true
-		}
-	}
-	return false
 }
 
 //go:nosplit

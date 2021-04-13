@@ -89,7 +89,7 @@ func (gcToolchain) gc(b *Builder, a *Action, archive string, importcfg, embedcfg
 	}
 	compilingRuntime := p.Standard && (p.ImportPath == "runtime" || strings.HasPrefix(p.ImportPath, "runtime/internal"))
 	// The runtime package imports a couple of general internal packages.
-	if p.Standard && (p.ImportPath == "internal/cpu" || p.ImportPath == "internal/bytealg") {
+	if p.Standard && (p.ImportPath == "internal/cpu" || p.ImportPath == "internal/bytealg" || p.ImportPath == "internal/abi") {
 		compilingRuntime = true
 	}
 	if compilingRuntime {
@@ -290,10 +290,11 @@ func (a *Action) trimpath() string {
 
 	rewriteDir := a.Package.Dir
 	if cfg.BuildTrimpath {
+		importPath := a.Package.Internal.OrigImportPath
 		if m := a.Package.Module; m != nil && m.Version != "" {
-			rewriteDir = m.Path + "@" + m.Version + strings.TrimPrefix(a.Package.ImportPath, m.Path)
+			rewriteDir = m.Path + "@" + m.Version + strings.TrimPrefix(importPath, m.Path)
 		} else {
-			rewriteDir = a.Package.ImportPath
+			rewriteDir = importPath
 		}
 		rewrite += a.Package.Dir + "=>" + rewriteDir + ";"
 	}

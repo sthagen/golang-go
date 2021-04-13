@@ -175,7 +175,7 @@ func gcinit() {
 	}
 
 	// No sweep on the first cycle.
-	mheap_.sweepdone = 1
+	mheap_.sweepDrained = 1
 
 	// Set a reasonable initial GC trigger.
 	memstats.triggerRatio = 7 / 8.0
@@ -759,8 +759,7 @@ func (c *gcControllerState) findRunnableGCWorker(_p_ *p) *g {
 				return false
 			}
 
-			// TODO: having atomic.Casint64 would be more pleasant.
-			if atomic.Cas64((*uint64)(unsafe.Pointer(ptr)), uint64(v), uint64(v-1)) {
+			if atomic.Casint64(ptr, v, v-1) {
 				return true
 			}
 		}
@@ -1188,7 +1187,7 @@ func GC() {
 	// First, wait for sweeping to finish. (We know there are no
 	// more spans on the sweep queue, but we may be concurrently
 	// sweeping spans, so we have to wait.)
-	for atomic.Load(&work.cycles) == n+1 && atomic.Load(&mheap_.sweepers) != 0 {
+	for atomic.Load(&work.cycles) == n+1 && !isSweepDone() {
 		Gosched()
 	}
 
@@ -1750,6 +1749,13 @@ func gcMarkTermination(nextTriggerRatio float64) {
 	// so events don't leak into the wrong cycle.
 	mProf_NextCycle()
 
+	// There may be stale spans in mcaches that need to be swept.
+	// Those aren't tracked in any sweep lists, so we need to
+	// count them against sweep completion until we ensure all
+	// those spans have been forced out.
+	sl := newSweepLocker()
+	sl.blockCompletion()
+
 	systemstack(func() { startTheWorldWithSema(true) })
 
 	// Flush the heap profile so we can start a new cycle next GC.
@@ -1773,6 +1779,9 @@ func gcMarkTermination(nextTriggerRatio float64) {
 			_p_.mcache.prepareForSweep()
 		})
 	})
+	// Now that we've swept stale spans in mcaches, they don't
+	// count against unswept spans.
+	sl.dispose()
 
 	// Print gctrace before dropping worldsema. As soon as we drop
 	// worldsema another cycle could start and smash the stats
@@ -2183,7 +2192,7 @@ func gcSweep(mode gcMode) {
 
 	lock(&mheap_.lock)
 	mheap_.sweepgen += 2
-	mheap_.sweepdone = 0
+	mheap_.sweepDrained = 0
 	mheap_.pagesSwept = 0
 	mheap_.sweepArenas = mheap_.allArenas
 	mheap_.reclaimIndex = 0
@@ -2347,9 +2356,12 @@ func fmtNSAsMS(buf []byte, ns uint64) []byte {
 // if any other work appears after this call (such as returning).
 // Typically the following call should be marked go:noinline so it
 // performs a stack check.
+//
+// In rare cases this may not cause the stack to move, specifically if
+// there's a preemption between this call and the next.
 func gcTestMoveStackOnNextCall() {
 	gp := getg()
-	gp.stackguard0 = getcallersp()
+	gp.stackguard0 = stackForceMove
 }
 
 // gcTestIsReachable performs a GC and returns a bit set where bit i
