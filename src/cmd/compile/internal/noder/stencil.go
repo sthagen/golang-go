@@ -53,11 +53,15 @@ func (g *irgen) stencil() {
 				continue
 			}
 
-		case ir.OAS:
-
-		case ir.OAS2:
+		case ir.OAS, ir.OAS2, ir.OAS2DOTTYPE, ir.OAS2FUNC, ir.OAS2MAPR, ir.OAS2RECV, ir.OASOP:
+			// These are all the various kinds of global assignments,
+			// whose right-hand-sides might contain a function
+			// instantiation.
 
 		default:
+			// The other possible ops at the top level are ODCLCONST
+			// and ODCLTYPE, which don't have any function
+			// instantiations.
 			continue
 		}
 
@@ -266,6 +270,7 @@ func (g *irgen) genericSubst(newsym *types.Sym, nameNode *ir.Name, targs []ir.No
 	gf := nameNode.Func
 	// Pos of the instantiated function is same as the generic function
 	newf := ir.NewFunc(gf.Pos())
+	newf.Pragma = gf.Pragma // copy over pragmas from generic function to stenciled implementation.
 	newf.Nname = ir.NewNameAt(gf.Pos(), newsym)
 	newf.Nname.Func = newf
 	newf.Nname.Defn = newf

@@ -6,6 +6,7 @@
 #include "go_tls.h"
 #include "funcdata.h"
 #include "textflag.h"
+#include "cgo/abi_amd64.h"
 
 // _rt0_amd64 is common startup code for most amd64 systems when using
 // internal linking. This is the entry point for the program from the
@@ -28,18 +29,9 @@ TEXT main(SB),NOSPLIT,$-8
 // c-archive) or when the shared library is loaded (for c-shared).
 // We expect argc and argv to be passed in the usual C ABI registers
 // DI and SI.
-TEXT _rt0_amd64_lib(SB),NOSPLIT,$0x50
-	// Align stack per ELF ABI requirements.
-	MOVQ	SP, AX
-	ANDQ	$~15, SP
-	// Save C ABI callee-saved registers, as caller may need them.
-	MOVQ	BX, 0x10(SP)
-	MOVQ	BP, 0x18(SP)
-	MOVQ	R12, 0x20(SP)
-	MOVQ	R13, 0x28(SP)
-	MOVQ	R14, 0x30(SP)
-	MOVQ	R15, 0x38(SP)
-	MOVQ	AX, 0x40(SP)
+TEXT _rt0_amd64_lib(SB),NOSPLIT,$0
+	// Transition from C ABI to Go ABI.
+	PUSH_REGS_HOST_TO_ABI0()
 
 	MOVQ	DI, _rt0_amd64_lib_argc<>(SB)
 	MOVQ	SI, _rt0_amd64_lib_argv<>(SB)
@@ -51,25 +43,27 @@ TEXT _rt0_amd64_lib(SB),NOSPLIT,$0x50
 	MOVQ	_cgo_sys_thread_create(SB), AX
 	TESTQ	AX, AX
 	JZ	nocgo
+
+	// We're calling back to C.
+	// Align stack per ELF ABI requirements.
+	MOVQ	SP, BX  // Callee-save in C ABI
+	ANDQ	$~15, SP
 	MOVQ	$_rt0_amd64_lib_go(SB), DI
 	MOVQ	$0, SI
 	CALL	AX
+	MOVQ	BX, SP
 	JMP	restore
 
 nocgo:
+	ADJSP	$16
 	MOVQ	$0x800000, 0(SP)		// stacksize
 	MOVQ	$_rt0_amd64_lib_go(SB), AX
 	MOVQ	AX, 8(SP)			// fn
 	CALL	runtime·newosproc0(SB)
+	ADJSP	$-16
 
 restore:
-	MOVQ	0x10(SP), BX
-	MOVQ	0x18(SP), BP
-	MOVQ	0x20(SP), R12
-	MOVQ	0x28(SP), R13
-	MOVQ	0x30(SP), R14
-	MOVQ	0x38(SP), R15
-	MOVQ	0x40(SP), SP
+	POP_REGS_HOST_TO_ABI0()
 	RET
 
 // _rt0_amd64_lib_go initializes the Go runtime.
@@ -231,9 +225,9 @@ ok:
 	CALL	runtime·abort(SB)	// mstart should never return
 	RET
 
-	// Prevent dead-code elimination of debugCallV1, which is
+	// Prevent dead-code elimination of debugCallV2, which is
 	// intended to be called by debuggers.
-	MOVQ	$runtime·debugCallV1<ABIInternal>(SB), AX
+	MOVQ	$runtime·debugCallV2<ABIInternal>(SB), AX
 	RET
 
 // mainPC is a function value for runtime.main, to be passed to newproc.
@@ -1763,7 +1757,7 @@ TEXT runtime·gcWriteBarrierR9<ABIInternal>(SB),NOSPLIT,$0
 DATA	debugCallFrameTooLarge<>+0x00(SB)/20, $"call frame too large"
 GLOBL	debugCallFrameTooLarge<>(SB), RODATA, $20	// Size duplicated below
 
-// debugCallV1 is the entry point for debugger-injected function
+// debugCallV2 is the entry point for debugger-injected function
 // calls on running goroutines. It informs the runtime that a
 // debug call has been injected and creates a call frame for the
 // debugger to fill in.
@@ -1776,7 +1770,7 @@ GLOBL	debugCallFrameTooLarge<>(SB), RODATA, $20	// Size duplicated below
 //    after step 2).
 // 4. Save all machine registers (including flags and XMM reigsters)
 //    so they can be restored later by the debugger.
-// 5. Set the PC to debugCallV1 and resume execution.
+// 5. Set the PC to debugCallV2 and resume execution.
 //
 // If the goroutine is in state _Grunnable, then it's not generally
 // safe to inject a call because it may return out via other runtime
@@ -1786,19 +1780,19 @@ GLOBL	debugCallFrameTooLarge<>(SB), RODATA, $20	// Size duplicated below
 //
 // If the goroutine is in any other state, it's not safe to inject a call.
 //
-// This function communicates back to the debugger by setting RAX and
+// This function communicates back to the debugger by setting R12 and
 // invoking INT3 to raise a breakpoint signal. See the comments in the
 // implementation for the protocol the debugger is expected to
 // follow. InjectDebugCall in the runtime tests demonstrates this protocol.
 //
 // The debugger must ensure that any pointers passed to the function
 // obey escape analysis requirements. Specifically, it must not pass
-// a stack pointer to an escaping argument. debugCallV1 cannot check
+// a stack pointer to an escaping argument. debugCallV2 cannot check
 // this invariant.
 //
 // This is ABIInternal because Go code injects its PC directly into new
 // goroutine stacks.
-TEXT runtime·debugCallV1<ABIInternal>(SB),NOSPLIT,$152-0
+TEXT runtime·debugCallV2<ABIInternal>(SB),NOSPLIT,$152-0
 	// Save all registers that may contain pointers so they can be
 	// conservatively scanned.
 	//
@@ -1838,10 +1832,10 @@ TEXT runtime·debugCallV1<ABIInternal>(SB),NOSPLIT,$152-0
 	MOVQ	AX, 0(SP)
 	MOVQ	16(SP), AX
 	MOVQ	AX, 8(SP)
-	// Set AX to 8 and invoke INT3. The debugger should get the
+	// Set R12 to 8 and invoke INT3. The debugger should get the
 	// reason a call can't be injected from the top of the stack
 	// and resume execution.
-	MOVQ	$8, AX
+	MOVQ	$8, R12
 	BYTE	$0xcc
 	JMP	restore
 
@@ -1849,17 +1843,18 @@ good:
 	// Registers are saved and it's safe to make a call.
 	// Open up a call frame, moving the stack if necessary.
 	//
-	// Once the frame is allocated, this will set AX to 0 and
+	// Once the frame is allocated, this will set R12 to 0 and
 	// invoke INT3. The debugger should write the argument
-	// frame for the call at SP, push the trapping PC on the
-	// stack, set the PC to the function to call, set RCX to point
-	// to the closure (if a closure call), and resume execution.
+	// frame for the call at SP, set up argument registers, push
+	// the trapping PC on the stack, set the PC to the function to
+	// call, set RDX to point to the closure (if a closure call),
+	// and resume execution.
 	//
-	// If the function returns, this will set AX to 1 and invoke
+	// If the function returns, this will set R12 to 1 and invoke
 	// INT3. The debugger can then inspect any return value saved
-	// on the stack at SP and resume execution again.
+	// on the stack at SP and in registers and resume execution again.
 	//
-	// If the function panics, this will set AX to 2 and invoke INT3.
+	// If the function panics, this will set R12 to 2 and invoke INT3.
 	// The interface{} value of the panic will be at SP. The debugger
 	// can inspect the panic value and resume execution again.
 #define DEBUG_CALL_DISPATCH(NAME,MAXSIZE)	\
@@ -1887,16 +1882,16 @@ good:
 	MOVQ	$debugCallFrameTooLarge<>(SB), AX
 	MOVQ	AX, 0(SP)
 	MOVQ	$20, 8(SP) // length of debugCallFrameTooLarge string
-	MOVQ	$8, AX
+	MOVQ	$8, R12
 	BYTE	$0xcc
 	JMP	restore
 
 restore:
 	// Calls and failures resume here.
 	//
-	// Set AX to 16 and invoke INT3. The debugger should restore
+	// Set R12 to 16 and invoke INT3. The debugger should restore
 	// all registers except RIP and RSP and resume execution.
-	MOVQ	$16, AX
+	MOVQ	$16, R12
 	BYTE	$0xcc
 	// We must not modify flags after this point.
 
@@ -1925,9 +1920,9 @@ restore:
 #define DEBUG_CALL_FN(NAME,MAXSIZE)		\
 TEXT NAME(SB),WRAPPER,$MAXSIZE-0;		\
 	NO_LOCAL_POINTERS;			\
-	MOVQ	$0, AX;				\
+	MOVQ	$0, R12;				\
 	BYTE	$0xcc;				\
-	MOVQ	$1, AX;				\
+	MOVQ	$1, R12;				\
 	BYTE	$0xcc;				\
 	RET
 DEBUG_CALL_FN(debugCall32<>, 32)
@@ -1950,7 +1945,7 @@ TEXT runtime·debugCallPanicked(SB),NOSPLIT,$16-16
 	MOVQ	AX, 0(SP)
 	MOVQ	val_data+8(FP), AX
 	MOVQ	AX, 8(SP)
-	MOVQ	$2, AX
+	MOVQ	$2, R12
 	BYTE	$0xcc
 	RET
 

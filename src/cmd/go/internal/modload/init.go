@@ -354,7 +354,7 @@ func (goModDirtyError) Error() string {
 		return fmt.Sprintf("updates to go.mod needed, disabled by -mod=%v; to update it:\n\tgo mod tidy", cfg.BuildMod)
 	}
 	if cfg.BuildModReason != "" {
-		return fmt.Sprintf("updates to go.mod needed, disabled by -mod=%s\n\t(%s)\n\tto update it:\n\t", cfg.BuildMod, cfg.BuildModReason)
+		return fmt.Sprintf("updates to go.mod needed, disabled by -mod=%s\n\t(%s)\n\tto update it:\n\tgo mod tidy", cfg.BuildMod, cfg.BuildModReason)
 	}
 	return "updates to go.mod needed; to update it:\n\tgo mod tidy"
 }
@@ -617,7 +617,13 @@ func fixVersion(ctx context.Context, fixed *bool) modfile.VersionFixer {
 // when there is no module root. Normally, this is forbidden because it's slow
 // and there's no way to make the result reproducible, but some commands
 // like 'go get' are expected to do this.
+//
+// This function affects the default cfg.BuildMod when outside of a module,
+// so it can only be called prior to Init.
 func AllowMissingModuleImports() {
+	if initialized {
+		panic("AllowMissingModuleImports after Init")
+	}
 	allowMissingModuleImports = true
 }
 
@@ -699,7 +705,11 @@ func setDefaultBuildMod() {
 		return
 	}
 	if modRoot == "" {
-		cfg.BuildMod = "readonly"
+		if allowMissingModuleImports {
+			cfg.BuildMod = "mod"
+		} else {
+			cfg.BuildMod = "readonly"
+		}
 		return
 	}
 
@@ -728,6 +738,17 @@ func setDefaultBuildMod() {
 // convertLegacyConfig imports module requirements from a legacy vendoring
 // configuration file, if one is present.
 func convertLegacyConfig(modPath string) (from string, err error) {
+	noneSelected := func(path string) (version string) { return "none" }
+	queryPackage := func(path, rev string) (module.Version, error) {
+		pkgMods, modOnly, err := QueryPattern(context.Background(), path, rev, noneSelected, nil)
+		if err != nil {
+			return module.Version{}, err
+		}
+		if len(pkgMods) > 0 {
+			return pkgMods[0].Mod, nil
+		}
+		return modOnly.Mod, nil
+	}
 	for _, name := range altConfigs {
 		cfg := filepath.Join(modRoot, name)
 		data, err := os.ReadFile(cfg)
@@ -737,7 +758,7 @@ func convertLegacyConfig(modPath string) (from string, err error) {
 				return "", nil
 			}
 			cfg = filepath.ToSlash(cfg)
-			err := modconv.ConvertLegacyConfig(modFile, cfg, data)
+			err := modconv.ConvertLegacyConfig(modFile, cfg, data, queryPackage)
 			return name, err
 		}
 	}
