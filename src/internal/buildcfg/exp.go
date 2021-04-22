@@ -27,6 +27,10 @@ var regabiSupported = GOARCH == "amd64" && (GOOS == "linux" || GOOS == "darwin" 
 // configuration and any variation from this is an experiment.
 var experimentBaseline = goexperiment.Flags{
 	RegabiWrappers: regabiSupported,
+	RegabiG:        regabiSupported,
+	RegabiReflect:  regabiSupported,
+	RegabiDefer:    regabiSupported,
+	RegabiArgs:     regabiSupported,
 }
 
 // FramePointerEnabled enables the use of platform conventions for

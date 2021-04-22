@@ -468,26 +468,24 @@ func (ctxt *Link) domacho() {
 		}
 	}
 	if machoPlatform == 0 {
-		switch ctxt.Arch.Family {
-		default:
-			machoPlatform = PLATFORM_MACOS
-			if ctxt.LinkMode == LinkInternal {
-				// For lldb, must say LC_VERSION_MIN_MACOSX or else
-				// it won't know that this Mach-O binary is from OS X
-				// (could be iOS or WatchOS instead).
-				// Go on iOS uses linkmode=external, and linkmode=external
-				// adds this itself. So we only need this code for linkmode=internal
-				// and we can assume OS X.
-				//
-				// See golang.org/issues/12941.
-				//
-				// The version must be at least 10.9; see golang.org/issues/30488.
-				ml := newMachoLoad(ctxt.Arch, LC_VERSION_MIN_MACOSX, 2)
-				ml.data[0] = 10<<16 | 9<<8 | 0<<0 // OS X version 10.9.0
-				ml.data[1] = 10<<16 | 9<<8 | 0<<0 // SDK 10.9.0
-			}
-		case sys.ARM, sys.ARM64:
+		machoPlatform = PLATFORM_MACOS
+		if buildcfg.GOOS == "ios" {
 			machoPlatform = PLATFORM_IOS
+		}
+		if ctxt.LinkMode == LinkInternal && machoPlatform == PLATFORM_MACOS {
+			var version uint32
+			switch ctxt.Arch.Family {
+			case sys.AMD64:
+				// The version must be at least 10.9; see golang.org/issues/30488.
+				version = 10<<16 | 9<<8 | 0<<0 // 10.9.0
+			case sys.ARM64:
+				version = 11<<16 | 0<<8 | 0<<0 // 11.0.0
+			}
+			ml := newMachoLoad(ctxt.Arch, LC_BUILD_VERSION, 4)
+			ml.data[0] = uint32(machoPlatform)
+			ml.data[1] = version // OS version
+			ml.data[2] = version // SDK version
+			ml.data[3] = 0       // ntools
 		}
 	}
 

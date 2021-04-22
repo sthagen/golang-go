@@ -595,6 +595,21 @@ func (r *importReader) exoticParam() *types.Field {
 	return f
 }
 
+func (r *importReader) exoticField() *types.Field {
+	pos := r.pos()
+	sym := r.exoticSym()
+	off := r.uint64()
+	typ := r.exoticType()
+	note := r.string()
+	f := types.NewField(pos, sym, typ)
+	f.Offset = int64(off)
+	if sym != nil {
+		f.Nname = ir.NewNameAt(pos, sym)
+	}
+	f.Note = note
+	return f
+}
+
 func (r *importReader) exoticSym() *types.Sym {
 	name := r.string()
 	if name == "" {
@@ -1201,7 +1216,7 @@ func (r *importReader) node() ir.Node {
 		n.SetType(r.exoticType())
 		switch op {
 		case ir.ODOT, ir.ODOTPTR, ir.ODOTINTER:
-			n.Selection = r.exoticParam()
+			n.Selection = r.exoticField()
 		case ir.ODOTMETH, ir.OCALLPART, ir.OMETHEXPR:
 			// These require a Lookup to link to the correct declaration.
 			rcvrType := expr.Type()
@@ -1247,7 +1262,7 @@ func (r *importReader) node() ir.Node {
 		}
 		return n
 
-	case ir.OCONV, ir.OCONVIFACE, ir.OCONVNOP, ir.OBYTES2STR, ir.ORUNES2STR, ir.OSTR2BYTES, ir.OSTR2RUNES, ir.ORUNESTR:
+	case ir.OCONV, ir.OCONVIFACE, ir.OCONVNOP, ir.OBYTES2STR, ir.ORUNES2STR, ir.OSTR2BYTES, ir.OSTR2RUNES, ir.ORUNESTR, ir.OSLICE2ARRPTR:
 		if !go117ExportTypes && op != ir.OCONV {
 			// 	unreachable - mapped to OCONV case by exporter
 			goto error

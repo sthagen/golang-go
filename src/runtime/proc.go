@@ -1402,6 +1402,9 @@ func mPark() {
 	g := getg()
 	for {
 		notesleep(&g.m.park)
+		// Note, because of signal handling by this parked m,
+		// a preemptive mDoFixup() may actually occur via
+		// mDoFixupAndOSYield(). (See golang.org/issue/44193)
 		noteclear(&g.m.park)
 		if !mDoFixup() {
 			return
@@ -1635,6 +1638,22 @@ func syscall_runtime_doAllThreadsSyscall(fn func(bool) bool) {
 	for atomic.Load(&sched.sysmonStarting) != 0 {
 		osyield()
 	}
+
+	// We don't want this thread to handle signals for the
+	// duration of this critical section. The underlying issue
+	// being that this locked coordinating m is the one monitoring
+	// for fn() execution by all the other m's of the runtime,
+	// while no regular go code execution is permitted (the world
+	// is stopped). If this present m were to get distracted to
+	// run signal handling code, and find itself waiting for a
+	// second thread to execute go code before being able to
+	// return from that signal handling, a deadlock will result.
+	// (See golang.org/issue/44193.)
+	lockOSThread()
+	var sigmask sigset
+	sigsave(&sigmask)
+	sigblock(false)
+
 	stopTheWorldGC("doAllThreadsSyscall")
 	if atomic.Load(&newmHandoff.haveTemplateThread) != 0 {
 		// Ensure that there are no in-flight thread
@@ -1686,6 +1705,7 @@ func syscall_runtime_doAllThreadsSyscall(fn func(bool) bool) {
 			// the possibility of racing with mp.
 			lock(&mp.mFixup.lock)
 			mp.mFixup.fn = fn
+			atomic.Store(&mp.mFixup.used, 1)
 			if mp.doesPark {
 				// For non-service threads this will
 				// cause the wakeup to be short lived
@@ -1702,9 +1722,7 @@ func syscall_runtime_doAllThreadsSyscall(fn func(bool) bool) {
 				if mp.procid == tid {
 					continue
 				}
-				lock(&mp.mFixup.lock)
-				done = done && (mp.mFixup.fn == nil)
-				unlock(&mp.mFixup.lock)
+				done = atomic.Load(&mp.mFixup.used) == 0
 			}
 			if done {
 				break
@@ -1731,6 +1749,8 @@ func syscall_runtime_doAllThreadsSyscall(fn func(bool) bool) {
 		unlock(&mFixupRace.lock)
 	}
 	startTheWorldGC()
+	msigrestore(sigmask)
+	unlockOSThread()
 }
 
 // runSafePointFn runs the safe point function, if any, for this P.
@@ -2225,9 +2245,21 @@ var mFixupRace struct {
 // mDoFixup runs any outstanding fixup function for the running m.
 // Returns true if a fixup was outstanding and actually executed.
 //
+// Note: to avoid deadlocks, and the need for the fixup function
+// itself to be async safe, signals are blocked for the working m
+// while it holds the mFixup lock. (See golang.org/issue/44193)
+//
 //go:nosplit
 func mDoFixup() bool {
 	_g_ := getg()
+	if used := atomic.Load(&_g_.m.mFixup.used); used == 0 {
+		return false
+	}
+
+	// slow path - if fixup fn is used, block signals and lock.
+	var sigmask sigset
+	sigsave(&sigmask)
+	sigblock(false)
 	lock(&_g_.m.mFixup.lock)
 	fn := _g_.m.mFixup.fn
 	if fn != nil {
@@ -2244,7 +2276,6 @@ func mDoFixup() bool {
 			// is more obviously safe.
 			throw("GC must be disabled to protect validity of fn value")
 		}
-		*(*uintptr)(unsafe.Pointer(&_g_.m.mFixup.fn)) = 0
 		if _g_.racectx != 0 || !raceenabled {
 			fn(false)
 		} else {
@@ -2259,9 +2290,22 @@ func mDoFixup() bool {
 			_g_.racectx = 0
 			unlock(&mFixupRace.lock)
 		}
+		*(*uintptr)(unsafe.Pointer(&_g_.m.mFixup.fn)) = 0
+		atomic.Store(&_g_.m.mFixup.used, 0)
 	}
 	unlock(&_g_.m.mFixup.lock)
+	msigrestore(sigmask)
 	return fn != nil
+}
+
+// mDoFixupAndOSYield is called when an m is unable to send a signal
+// because the allThreadsSyscall mechanism is in progress. That is, an
+// mPark() has been interrupted with this signal handler so we need to
+// ensure the fixup is executed from this context.
+//go:nosplit
+func mDoFixupAndOSYield() {
+	mDoFixup()
+	osyield()
 }
 
 // templateThread is a thread in a known-good state that exists solely
@@ -2681,85 +2725,40 @@ top:
 		}
 	}
 
-	// Steal work from other P's.
+	// Spinning Ms: steal work from other Ps.
+	//
+	// Limit the number of spinning Ms to half the number of busy Ps.
+	// This is necessary to prevent excessive CPU consumption when
+	// GOMAXPROCS>>1 but the program parallelism is low.
 	procs := uint32(gomaxprocs)
-	ranTimer := false
-	// If number of spinning M's >= number of busy P's, block.
-	// This is necessary to prevent excessive CPU consumption
-	// when GOMAXPROCS>>1 but the program parallelism is low.
-	if !_g_.m.spinning && 2*atomic.Load(&sched.nmspinning) >= procs-atomic.Load(&sched.npidle) {
-		goto stop
-	}
-	if !_g_.m.spinning {
-		_g_.m.spinning = true
-		atomic.Xadd(&sched.nmspinning, 1)
-	}
-	const stealTries = 4
-	for i := 0; i < stealTries; i++ {
-		stealTimersOrRunNextG := i == stealTries-1
+	if _g_.m.spinning || 2*atomic.Load(&sched.nmspinning) < procs-atomic.Load(&sched.npidle) {
+		if !_g_.m.spinning {
+			_g_.m.spinning = true
+			atomic.Xadd(&sched.nmspinning, 1)
+		}
 
-		for enum := stealOrder.start(fastrand()); !enum.done(); enum.next() {
-			if sched.gcwaiting != 0 {
-				goto top
-			}
-			p2 := allp[enum.position()]
-			if _p_ == p2 {
-				continue
-			}
-
-			// Steal timers from p2. This call to checkTimers is the only place
-			// where we might hold a lock on a different P's timers. We do this
-			// once on the last pass before checking runnext because stealing
-			// from the other P's runnext should be the last resort, so if there
-			// are timers to steal do that first.
-			//
-			// We only check timers on one of the stealing iterations because
-			// the time stored in now doesn't change in this loop and checking
-			// the timers for each P more than once with the same value of now
-			// is probably a waste of time.
-			//
-			// timerpMask tells us whether the P may have timers at all. If it
-			// can't, no need to check at all.
-			if stealTimersOrRunNextG && timerpMask.read(enum.position()) {
-				tnow, w, ran := checkTimers(p2, now)
-				now = tnow
-				if w != 0 && (pollUntil == 0 || w < pollUntil) {
-					pollUntil = w
-				}
-				if ran {
-					// Running the timers may have
-					// made an arbitrary number of G's
-					// ready and added them to this P's
-					// local run queue. That invalidates
-					// the assumption of runqsteal
-					// that is always has room to add
-					// stolen G's. So check now if there
-					// is a local G to run.
-					if gp, inheritTime := runqget(_p_); gp != nil {
-						return gp, inheritTime
-					}
-					ranTimer = true
-				}
-			}
-
-			// Don't bother to attempt to steal if p2 is idle.
-			if !idlepMask.read(enum.position()) {
-				if gp := runqsteal(_p_, p2, stealTimersOrRunNextG); gp != nil {
-					return gp, false
-				}
-			}
+		gp, inheritTime, tnow, w, newWork := stealWork(now)
+		now = tnow
+		if gp != nil {
+			// Successfully stole.
+			return gp, inheritTime
+		}
+		if newWork {
+			// There may be new timer or GC work; restart to
+			// discover.
+			goto top
+		}
+		if w != 0 && (pollUntil == 0 || w < pollUntil) {
+			// Earlier timer to wait for.
+			pollUntil = w
 		}
 	}
-	if ranTimer {
-		// Running a timer may have made some goroutine ready.
-		goto top
-	}
 
-stop:
-
-	// We have nothing to do. If we're in the GC mark phase, can
-	// safely scan and blacken objects, and have work to do, run
-	// idle-time marking rather than give up the P.
+	// We have nothing to do.
+	//
+	// If we're in the GC mark phase, can safely scan and blacken objects,
+	// and have work to do, run idle-time marking rather than give up the
+	// P.
 	if gcBlackenEnabled != 0 && gcMarkWorkAvailable(_p_) {
 		node := (*gcBgMarkWorkerNode)(gcBgMarkWorkerPool.pop())
 		if node != nil {
@@ -2844,86 +2843,44 @@ stop:
 		}
 	}
 
-	// check all runqueues once again
-	for id, _p_ := range allpSnapshot {
-		if !idlepMaskSnapshot.read(uint32(id)) && !runqempty(_p_) {
-			lock(&sched.lock)
-			_p_ = pidleget()
-			unlock(&sched.lock)
-			if _p_ != nil {
-				acquirep(_p_)
-				if wasSpinning {
-					_g_.m.spinning = true
-					atomic.Xadd(&sched.nmspinning, 1)
-				}
-				goto top
-			}
-			break
+	// Check all runqueues once again.
+	_p_ = checkRunqsNoP(allpSnapshot, idlepMaskSnapshot)
+	if _p_ != nil {
+		acquirep(_p_)
+		if wasSpinning {
+			_g_.m.spinning = true
+			atomic.Xadd(&sched.nmspinning, 1)
 		}
-	}
-
-	// Similar to above, check for timer creation or expiry concurrently with
-	// transitioning from spinning to non-spinning. Note that we cannot use
-	// checkTimers here because it calls adjusttimers which may need to allocate
-	// memory, and that isn't allowed when we don't have an active P.
-	for id, _p_ := range allpSnapshot {
-		if timerpMaskSnapshot.read(uint32(id)) {
-			w := nobarrierWakeTime(_p_)
-			if w != 0 && (pollUntil == 0 || w < pollUntil) {
-				pollUntil = w
-			}
-		}
+		goto top
 	}
 
 	// Check for idle-priority GC work again.
-	//
-	// N.B. Since we have no P, gcBlackenEnabled may change at any time; we
-	// must check again after acquiring a P.
-	if atomic.Load(&gcBlackenEnabled) != 0 && gcMarkWorkAvailable(nil) {
-		// Work is available; we can start an idle GC worker only if
-		// there is an available P and available worker G.
-		//
-		// We can attempt to acquire these in either order. Workers are
-		// almost always available (see comment in findRunnableGCWorker
-		// for the one case there may be none). Since we're slightly
-		// less likely to find a P, check for that first.
-		lock(&sched.lock)
-		var node *gcBgMarkWorkerNode
-		_p_ = pidleget()
-		if _p_ != nil {
-			// Now that we own a P, gcBlackenEnabled can't change
-			// (as it requires STW).
-			if gcBlackenEnabled != 0 {
-				node = (*gcBgMarkWorkerNode)(gcBgMarkWorkerPool.pop())
-				if node == nil {
-					pidleput(_p_)
-					_p_ = nil
-				}
-			} else {
-				pidleput(_p_)
-				_p_ = nil
-			}
+	_p_, gp = checkIdleGCNoP()
+	if _p_ != nil {
+		acquirep(_p_)
+		if wasSpinning {
+			_g_.m.spinning = true
+			atomic.Xadd(&sched.nmspinning, 1)
 		}
-		unlock(&sched.lock)
-		if _p_ != nil {
-			acquirep(_p_)
-			if wasSpinning {
-				_g_.m.spinning = true
-				atomic.Xadd(&sched.nmspinning, 1)
-			}
 
-			// Run the idle worker.
-			_p_.gcMarkWorkerMode = gcMarkWorkerIdleMode
-			gp := node.gp.ptr()
-			casgstatus(gp, _Gwaiting, _Grunnable)
-			if trace.enabled {
-				traceGoUnpark(gp, 0)
-			}
-			return gp, false
+		// Run the idle worker.
+		_p_.gcMarkWorkerMode = gcMarkWorkerIdleMode
+		casgstatus(gp, _Gwaiting, _Grunnable)
+		if trace.enabled {
+			traceGoUnpark(gp, 0)
 		}
+		return gp, false
 	}
 
-	// poll network
+	// Finally, check for timer creation or expiry concurrently with
+	// transitioning from spinning to non-spinning.
+	//
+	// Note that we cannot use checkTimers here because it calls
+	// adjusttimers which may need to allocate memory, and that isn't
+	// allowed when we don't have an active P.
+	pollUntil = checkTimersNoP(allpSnapshot, timerpMaskSnapshot, pollUntil)
+
+	// Poll network until next timer.
 	if netpollinited() && (atomic.Load(&netpollWaiters) > 0 || pollUntil != 0) && atomic.Xchg64(&sched.lastpoll, 0) != 0 {
 		atomic.Store64(&sched.pollUntil, uint64(pollUntil))
 		if _g_.m.p != 0 {
@@ -3006,6 +2963,168 @@ func pollWork() bool {
 		}
 	}
 	return false
+}
+
+// stealWork attempts to steal a runnable goroutine or timer from any P.
+//
+// If newWork is true, new work may have been readied.
+//
+// If now is not 0 it is the current time. stealWork returns the passed time or
+// the current time if now was passed as 0.
+func stealWork(now int64) (gp *g, inheritTime bool, rnow, pollUntil int64, newWork bool) {
+	pp := getg().m.p.ptr()
+
+	ranTimer := false
+
+	const stealTries = 4
+	for i := 0; i < stealTries; i++ {
+		stealTimersOrRunNextG := i == stealTries-1
+
+		for enum := stealOrder.start(fastrand()); !enum.done(); enum.next() {
+			if sched.gcwaiting != 0 {
+				// GC work may be available.
+				return nil, false, now, pollUntil, true
+			}
+			p2 := allp[enum.position()]
+			if pp == p2 {
+				continue
+			}
+
+			// Steal timers from p2. This call to checkTimers is the only place
+			// where we might hold a lock on a different P's timers. We do this
+			// once on the last pass before checking runnext because stealing
+			// from the other P's runnext should be the last resort, so if there
+			// are timers to steal do that first.
+			//
+			// We only check timers on one of the stealing iterations because
+			// the time stored in now doesn't change in this loop and checking
+			// the timers for each P more than once with the same value of now
+			// is probably a waste of time.
+			//
+			// timerpMask tells us whether the P may have timers at all. If it
+			// can't, no need to check at all.
+			if stealTimersOrRunNextG && timerpMask.read(enum.position()) {
+				tnow, w, ran := checkTimers(p2, now)
+				now = tnow
+				if w != 0 && (pollUntil == 0 || w < pollUntil) {
+					pollUntil = w
+				}
+				if ran {
+					// Running the timers may have
+					// made an arbitrary number of G's
+					// ready and added them to this P's
+					// local run queue. That invalidates
+					// the assumption of runqsteal
+					// that it always has room to add
+					// stolen G's. So check now if there
+					// is a local G to run.
+					if gp, inheritTime := runqget(pp); gp != nil {
+						return gp, inheritTime, now, pollUntil, ranTimer
+					}
+					ranTimer = true
+				}
+			}
+
+			// Don't bother to attempt to steal if p2 is idle.
+			if !idlepMask.read(enum.position()) {
+				if gp := runqsteal(pp, p2, stealTimersOrRunNextG); gp != nil {
+					return gp, false, now, pollUntil, ranTimer
+				}
+			}
+		}
+	}
+
+	// No goroutines found to steal. Regardless, running a timer may have
+	// made some goroutine ready that we missed. Indicate the next timer to
+	// wait for.
+	return nil, false, now, pollUntil, ranTimer
+}
+
+// Check all Ps for a runnable G to steal.
+//
+// On entry we have no P. If a G is available to steal and a P is available,
+// the P is returned which the caller should acquire and attempt to steal the
+// work to.
+func checkRunqsNoP(allpSnapshot []*p, idlepMaskSnapshot pMask) *p {
+	for id, p2 := range allpSnapshot {
+		if !idlepMaskSnapshot.read(uint32(id)) && !runqempty(p2) {
+			lock(&sched.lock)
+			pp := pidleget()
+			unlock(&sched.lock)
+			if pp != nil {
+				return pp
+			}
+
+			// Can't get a P, don't bother checking remaining Ps.
+			break
+		}
+	}
+
+	return nil
+}
+
+// Check all Ps for a timer expiring sooner than pollUntil.
+//
+// Returns updated pollUntil value.
+func checkTimersNoP(allpSnapshot []*p, timerpMaskSnapshot pMask, pollUntil int64) int64 {
+	for id, p2 := range allpSnapshot {
+		if timerpMaskSnapshot.read(uint32(id)) {
+			w := nobarrierWakeTime(p2)
+			if w != 0 && (pollUntil == 0 || w < pollUntil) {
+				pollUntil = w
+			}
+		}
+	}
+
+	return pollUntil
+}
+
+// Check for idle-priority GC, without a P on entry.
+//
+// If some GC work, a P, and a worker G are all available, the P and G will be
+// returned. The returned P has not been wired yet.
+func checkIdleGCNoP() (*p, *g) {
+	// N.B. Since we have no P, gcBlackenEnabled may change at any time; we
+	// must check again after acquiring a P.
+	if atomic.Load(&gcBlackenEnabled) == 0 {
+		return nil, nil
+	}
+	if !gcMarkWorkAvailable(nil) {
+		return nil, nil
+	}
+
+	// Work is available; we can start an idle GC worker only if
+	// there is an available P and available worker G.
+	//
+	// We can attempt to acquire these in either order. Workers are
+	// almost always available (see comment in findRunnableGCWorker
+	// for the one case there may be none). Since we're slightly
+	// less likely to find a P, check for that first.
+	lock(&sched.lock)
+	pp := pidleget()
+	unlock(&sched.lock)
+	if pp == nil {
+		return nil, nil
+	}
+
+	// Now that we own a P, gcBlackenEnabled can't change
+	// (as it requires STW).
+	if gcBlackenEnabled == 0 {
+		lock(&sched.lock)
+		pidleput(pp)
+		unlock(&sched.lock)
+		return nil, nil
+	}
+
+	node := (*gcBgMarkWorkerNode)(gcBgMarkWorkerPool.pop())
+	if node == nil {
+		lock(&sched.lock)
+		pidleput(pp)
+		unlock(&sched.lock)
+		return nil, nil
+	}
+
+	return pp, node.gp.ptr()
 }
 
 // wakeNetPoller wakes up the thread sleeping in the network poller if it isn't
@@ -3252,7 +3371,7 @@ func dropg() {
 
 // checkTimers runs any timers for the P that are ready.
 // If now is not 0 it is the current time.
-// It returns the current time or 0 if it is not known,
+// It returns the passed time or the current time if now was passed as 0.
 // and the time when the next timer should run or 0 if there is no next timer,
 // and reports whether it ran any timers.
 // If the time when the next timer should run is not 0,

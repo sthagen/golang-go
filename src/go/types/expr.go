@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/constant"
+	"go/internal/typeparams"
 	"go/token"
 	"math"
 )
@@ -1435,7 +1436,7 @@ func (check *Checker) exprInternal(x *operand, e ast.Expr, hint Type) exprKind {
 	case *ast.IndexExpr:
 		check.exprOrType(x, e.X)
 		if x.mode == invalid {
-			check.use(e.Index)
+			check.use(typeparams.UnpackExpr(e.Index)...)
 			goto Error
 		}
 
@@ -1853,12 +1854,6 @@ func (check *Checker) expr(x *operand, e ast.Expr) {
 func (check *Checker) multiExpr(x *operand, e ast.Expr) {
 	check.rawExpr(x, e, nil)
 	check.exclude(x, 1<<novalue|1<<builtin|1<<typexpr)
-}
-
-// multiExprOrType is like multiExpr but the result may also be a type.
-func (check *Checker) multiExprOrType(x *operand, e ast.Expr) {
-	check.rawExpr(x, e, nil)
-	check.exclude(x, 1<<novalue|1<<builtin)
 }
 
 // exprWithHint typechecks expression e and initializes x with the expression value;

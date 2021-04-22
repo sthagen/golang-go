@@ -302,8 +302,10 @@ goodm:
 	get_tls(CX)		// Set G in TLS
 	MOVQ	R14, g(CX)
 	MOVQ	(g_sched+gobuf_sp)(R14), SP	// sp = g0.sched.sp
+	PUSHQ	AX	// open up space for fn's arg spill slot
 	MOVQ	0(DX), R12
 	CALL	R12		// fn(g)
+	POPQ	AX
 	JMP	runtime·badmcall2(SB)
 	RET
 #else
@@ -909,7 +911,8 @@ havem:
 	MOVQ	BX, 0(SP)
 	MOVQ	CX, 8(SP)
 	MOVQ	DX, 16(SP)
-	CALL	runtime·cgocallbackg(SB)
+	MOVQ	$runtime·cgocallbackg(SB), AX
+	CALL	AX	// indirect call to bypass nosplit check. We're on a different stack now.
 
 	// Compute the size of the frame again. FP and SP have
 	// completely different values here than they did above,
@@ -2089,6 +2092,14 @@ TEXT runtime·panicSlice3CU<ABIInternal>(SB),NOSPLIT,$0-16
 	MOVQ	CX, y+8(FP)
 #endif
 	JMP	runtime·goPanicSlice3CU<ABIInternal>(SB)
+TEXT runtime·panicSliceConvert<ABIInternal>(SB),NOSPLIT,$0-16
+#ifdef GOEXPERIMENT_regabiargs
+	MOVQ	DX, AX
+#else
+	MOVQ	DX, x+0(FP)
+	MOVQ	BX, y+8(FP)
+#endif
+	JMP	runtime·goPanicSliceConvert<ABIInternal>(SB)
 
 #ifdef GOOS_android
 // Use the free TLS_SLOT_APP slot #2 on Android Q.

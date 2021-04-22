@@ -750,6 +750,15 @@ func (w *exportWriter) exoticParam(f *types.Field) {
 	w.exoticType(f.Type)
 	w.bool(f.IsDDD())
 }
+
+func (w *exportWriter) exoticField(f *types.Field) {
+	w.pos(f.Pos)
+	w.exoticSym(f.Sym)
+	w.uint64(uint64(f.Offset))
+	w.exoticType(f.Type)
+	w.string(f.Note)
+}
+
 func (w *exportWriter) exoticSym(s *types.Sym) {
 	if s == nil {
 		w.string("")
@@ -1592,7 +1601,7 @@ func (w *exportWriter) expr(n ir.Node) {
 		if go117ExportTypes {
 			w.exoticType(n.Type())
 			if n.Op() == ir.ODOT || n.Op() == ir.ODOTPTR || n.Op() == ir.ODOTINTER {
-				w.exoticParam(n.Selection)
+				w.exoticField(n.Selection)
 			}
 			// n.Selection is not required for OMETHEXPR, ODOTMETH, and OCALLPART. It will
 			// be reconstructed during import.
@@ -1668,7 +1677,7 @@ func (w *exportWriter) expr(n ir.Node) {
 			w.op(ir.OEND)
 		}
 
-	case ir.OCONV, ir.OCONVIFACE, ir.OCONVNOP, ir.OBYTES2STR, ir.ORUNES2STR, ir.OSTR2BYTES, ir.OSTR2RUNES, ir.ORUNESTR:
+	case ir.OCONV, ir.OCONVIFACE, ir.OCONVNOP, ir.OBYTES2STR, ir.ORUNES2STR, ir.OSTR2BYTES, ir.OSTR2RUNES, ir.ORUNESTR, ir.OSLICE2ARRPTR:
 		n := n.(*ir.ConvExpr)
 		if go117ExportTypes {
 			w.op(n.Op())
