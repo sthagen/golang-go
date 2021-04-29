@@ -20,7 +20,7 @@ func (check *Checker) indexExpr(x *operand, e *syntax.IndexExpr) (isFuncInst boo
 	switch x.mode {
 	case invalid:
 		check.use(e.Index)
-		return
+		return false
 
 	case typexpr:
 		// type instantiation
@@ -29,7 +29,7 @@ func (check *Checker) indexExpr(x *operand, e *syntax.IndexExpr) (isFuncInst boo
 		if x.typ != Typ[Invalid] {
 			x.mode = typexpr
 		}
-		return
+		return false
 
 	case value:
 		if sig := asSignature(x.typ); sig != nil && len(sig.tparams) > 0 {
@@ -77,8 +77,13 @@ func (check *Checker) indexExpr(x *operand, e *syntax.IndexExpr) (isFuncInst boo
 		x.typ = typ.elem
 
 	case *Map:
+		index := check.singleIndex(e)
+		if index == nil {
+			x.mode = invalid
+			return
+		}
 		var key operand
-		check.expr(&key, e.Index)
+		check.expr(&key, index)
 		check.assignment(&key, typ.key, "map index")
 		// ok to continue even if indexing failed - map element type is known
 		x.mode = mapindex
@@ -132,8 +137,13 @@ func (check *Checker) indexExpr(x *operand, e *syntax.IndexExpr) (isFuncInst boo
 			// If there are maps, the index expression must be assignable
 			// to the map key type (as for simple map index expressions).
 			if nmaps > 0 {
+				index := check.singleIndex(e)
+				if index == nil {
+					x.mode = invalid
+					return
+				}
 				var key operand
-				check.expr(&key, e.Index)
+				check.expr(&key, index)
 				check.assignment(&key, tkey, "map index")
 				// ok to continue even if indexing failed - map element type is known
 
@@ -170,22 +180,10 @@ func (check *Checker) indexExpr(x *operand, e *syntax.IndexExpr) (isFuncInst boo
 		return
 	}
 
-	if e.Index == nil {
-		check.errorf(e, invalidAST+"missing index for %s", x)
+	index := check.singleIndex(e)
+	if index == nil {
 		x.mode = invalid
 		return
-	}
-
-	index := e.Index
-	if l, _ := index.(*syntax.ListExpr); l != nil {
-		if n := len(l.ElemList); n <= 1 {
-			check.errorf(e, invalidAST+"invalid use of ListExpr for index expression %v with %d indices", e, n)
-			x.mode = invalid
-			return
-		}
-		// len(l.ElemList) > 1
-		check.error(l.ElemList[1], invalidOp+"more than one index")
-		index = l.ElemList[0] // continue with first index
 	}
 
 	// In pathological (invalid) cases (e.g.: type T1 [][[]T1{}[0][0]]T0)
@@ -196,7 +194,7 @@ func (check *Checker) indexExpr(x *operand, e *syntax.IndexExpr) (isFuncInst boo
 	}
 
 	check.index(index, length)
-	return
+	return false
 }
 
 func (check *Checker) sliceExpr(x *operand, e *syntax.SliceExpr) {
@@ -310,6 +308,27 @@ L:
 	}
 }
 
+// singleIndex returns the (single) index from the index expression e.
+// If the index is missing, or if there are multiple indices, an error
+// is reported and the result is nil.
+func (check *Checker) singleIndex(e *syntax.IndexExpr) syntax.Expr {
+	index := e.Index
+	if index == nil {
+		check.errorf(e, invalidAST+"missing index for %s", e.X)
+		return nil
+	}
+	if l, _ := index.(*syntax.ListExpr); l != nil {
+		if n := len(l.ElemList); n <= 1 {
+			check.errorf(e, invalidAST+"invalid use of ListExpr for index expression %v with %d indices", e, n)
+			return nil
+		}
+		// len(l.ElemList) > 1
+		check.error(l.ElemList[1], invalidOp+"more than one index")
+		index = l.ElemList[0] // continue with first index
+	}
+	return index
+}
+
 // index checks an index expression for validity.
 // If max >= 0, it is the upper bound for index.
 // If the result typ is != Typ[Invalid], index is valid and typ is its (possibly named) integer type.
@@ -320,19 +339,7 @@ func (check *Checker) index(index syntax.Expr, max int64) (typ Type, val int64) 
 
 	var x operand
 	check.expr(&x, index)
-	if x.mode == invalid {
-		return
-	}
-
-	// an untyped constant must be representable as Int
-	check.convertUntyped(&x, Typ[Int])
-	if x.mode == invalid {
-		return
-	}
-
-	// the index must be of integer type
-	if !isInteger(x.typ) {
-		check.errorf(&x, invalidArg+"index %s must be integer", &x)
+	if !check.isValidIndex(&x, "index", false) {
 		return
 	}
 
@@ -340,14 +347,13 @@ func (check *Checker) index(index syntax.Expr, max int64) (typ Type, val int64) 
 		return x.typ, -1
 	}
 
-	// a constant index i must be in bounds
-	if constant.Sign(x.val) < 0 {
-		check.errorf(&x, invalidArg+"index %s must not be negative", &x)
+	if x.val.Kind() == constant.Unknown {
 		return
 	}
 
-	v, valid := constant.Int64Val(constant.ToInt(x.val))
-	if !valid || max >= 0 && v >= max {
+	v, ok := constant.Int64Val(x.val)
+	assert(ok)
+	if max >= 0 && v >= max {
 		if check.conf.CompilerErrorMessages {
 			check.errorf(&x, invalidArg+"array index %s out of bounds [0:%d]", x.val.String(), max)
 		} else {
@@ -358,6 +364,44 @@ func (check *Checker) index(index syntax.Expr, max int64) (typ Type, val int64) 
 
 	// 0 <= v [ && v < max ]
 	return x.typ, v
+}
+
+// isValidIndex checks whether operand x satisfies the criteria for integer
+// index values. If allowNegative is set, a constant operand may be negative.
+// If the operand is not valid, an error is reported (using what as context)
+// and the result is false.
+func (check *Checker) isValidIndex(x *operand, what string, allowNegative bool) bool {
+	if x.mode == invalid {
+		return false
+	}
+
+	// spec: "a constant index that is untyped is given type int"
+	check.convertUntyped(x, Typ[Int])
+	if x.mode == invalid {
+		return false
+	}
+
+	// spec: "the index x must be of integer type or an untyped constant"
+	if !isInteger(x.typ) {
+		check.errorf(x, invalidArg+"%s %s must be integer", what, x)
+		return false
+	}
+
+	if x.mode == constant_ {
+		// spec: "a constant index must be non-negative ..."
+		if !allowNegative && constant.Sign(x.val) < 0 {
+			check.errorf(x, invalidArg+"%s %s must not be negative", what, x)
+			return false
+		}
+
+		// spec: "... and representable by a value of type int"
+		if !representableConst(x.val, check, Typ[Int], &x.val) {
+			check.errorf(x, invalidArg+"%s %s overflows int", what, x)
+			return false
+		}
+	}
+
+	return true
 }
 
 // indexElts checks the elements (elts) of an array or slice composite literal

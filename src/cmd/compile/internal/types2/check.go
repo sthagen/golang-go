@@ -87,7 +87,16 @@ type Checker struct {
 	impMap  map[importKey]*Package      // maps (import path, source directory) to (complete or fake) package
 	posMap  map[*Interface][]syntax.Pos // maps interface types to lists of embedded interface positions
 	typMap  map[string]*Named           // maps an instantiated named type hash to a *Named type
-	pkgCnt  map[string]int              // counts number of imported packages with a given name (for better error messages)
+
+	// pkgPathMap maps package names to the set of distinct import paths we've
+	// seen for that name, anywhere in the import graph. It is used for
+	// disambiguating package names in error messages.
+	//
+	// pkgPathMap is allocated lazily, so that we don't pay the price of building
+	// it on the happy path. seenPkgMap tracks the packages that we've already
+	// walked.
+	pkgPathMap map[string]map[string]bool
+	seenPkgMap map[*Package]bool
 
 	// information collected during type-checking of a set of package files
 	// (initialized by Files, valid only for the duration of check.Files;
@@ -181,7 +190,6 @@ func NewChecker(conf *Config, pkg *Package, info *Info) *Checker {
 		impMap:  make(map[importKey]*Package),
 		posMap:  make(map[*Interface][]syntax.Pos),
 		typMap:  make(map[string]*Named),
-		pkgCnt:  make(map[string]int),
 	}
 }
 
@@ -271,9 +279,6 @@ func (check *Checker) checkFiles(files []*syntax.File) (err error) {
 		print("== unusedImports ==")
 		check.unusedImports()
 	}
-	// no longer needed - release memory
-	check.imports = nil
-	check.dotImportMap = nil
 
 	print("== recordUntyped ==")
 	check.recordUntyped()
@@ -284,6 +289,12 @@ func (check *Checker) checkFiles(files []*syntax.File) (err error) {
 	}
 
 	check.pkg.complete = true
+
+	// no longer needed - release memory
+	check.imports = nil
+	check.dotImportMap = nil
+	check.pkgPathMap = nil
+	check.seenPkgMap = nil
 
 	// TODO(gri) There's more memory we should release at this point.
 
@@ -364,14 +375,14 @@ func (check *Checker) recordTypeAndValue(x syntax.Expr, mode operandMode, typ Ty
 }
 
 func (check *Checker) recordBuiltinType(f syntax.Expr, sig *Signature) {
-	// f must be a (possibly parenthesized) identifier denoting a built-in
-	// (built-ins in package unsafe always produce a constant result and
-	// we don't record their signatures, so we don't see qualified idents
-	// here): record the signature for f and possible children.
+	// f must be a (possibly parenthesized, possibly qualified)
+	// identifier denoting a built-in (including unsafe's non-constant
+	// functions Add and Slice): record the signature for f and possible
+	// children.
 	for {
 		check.recordTypeAndValue(f, builtin, sig, nil)
 		switch p := f.(type) {
-		case *syntax.Name:
+		case *syntax.Name, *syntax.SelectorExpr:
 			return // we're done
 		case *syntax.ParenExpr:
 			f = p.X

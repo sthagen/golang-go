@@ -883,6 +883,45 @@ const (
 	//  var _ = real(int(1))
 	_InvalidReal
 
+	// _InvalidUnsafeAdd occurs when unsafe.Add is called with a
+	// length argument that is not of integer type.
+	//
+	// Example:
+	//  import "unsafe"
+	//
+	//  var p unsafe.Pointer
+	//  var _ = unsafe.Add(p, float64(1))
+	_InvalidUnsafeAdd
+
+	// _InvalidUnsafeSlice occurs when unsafe.Slice is called with a
+	// pointer argument that is not of pointer type or a length argument
+	// that is not of integer type, negative, or out of bounds.
+	//
+	// Example:
+	//  import "unsafe"
+	//
+	//  var x int
+	//  var _ = unsafe.Slice(x, 1)
+	//
+	// Example:
+	//  import "unsafe"
+	//
+	//  var x int
+	//  var _ = unsafe.Slice(&x, float64(1))
+	//
+	// Example:
+	//  import "unsafe"
+	//
+	//  var x int
+	//  var _ = unsafe.Slice(&x, -1)
+	//
+	// Example:
+	//  import "unsafe"
+	//
+	//  var x int
+	//  var _ = unsafe.Slice(&x, uint64(1) << 63)
+	_InvalidUnsafeSlice
+
 	/* exprs > assertion */
 
 	// _InvalidAssert occurs when a type assertion is applied to a
@@ -1317,6 +1356,15 @@ const (
 
 	// _BadDecl occurs when a declaration has invalid syntax.
 	_BadDecl
+
+	// _RepeatedDecl occurs when an identifier occurs more than once on the left
+	// hand side of a short variable declaration.
+	//
+	// Example:
+	//  func _() {
+	//  	x, y, y := 1, 2, 3
+	//  }
+	_RepeatedDecl
 
 	// _Todo is a placeholder for error codes that have not been decided.
 	// TODO(rFindley) remove this error code after deciding on errors for generics code.

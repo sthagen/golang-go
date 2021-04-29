@@ -124,6 +124,13 @@ func initMetrics() {
 				out.scalar = in.heapStats.numObjects
 			},
 		},
+		"/gc/heap/tiny/allocs:objects": {
+			deps: makeStatDepSet(heapStatsDep),
+			compute: func(in *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = uint64(in.heapStats.tinyAllocCount)
+			},
+		},
 		"/gc/pauses:seconds": {
 			compute: func(_ *statAggregate, out *metricValue) {
 				hist := out.float64HistOrInit(timeHistBuckets)
@@ -243,6 +250,15 @@ func initMetrics() {
 			compute: func(_ *statAggregate, out *metricValue) {
 				out.kind = metricKindUint64
 				out.scalar = uint64(gcount())
+			},
+		},
+		"/sched/latencies:seconds": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				hist := out.float64HistOrInit(timeHistBuckets)
+				hist.counts[0] = atomic.Load64(&sched.timeToRun.underflow)
+				for i := range sched.timeToRun.counts {
+					hist.counts[i+1] = atomic.Load64(&sched.timeToRun.counts[i])
+				}
 			},
 		},
 	}

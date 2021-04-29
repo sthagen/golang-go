@@ -11,7 +11,6 @@ import (
 	"cmd/go/internal/par"
 	"context"
 	"fmt"
-	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -455,71 +454,6 @@ func EditBuildList(ctx context.Context, add, mustSelect []module.Version) (chang
 	return changed, err
 }
 
-func editRequirements(ctx context.Context, rs *Requirements, add, mustSelect []module.Version) (edited *Requirements, changed bool, err error) {
-	mg, err := rs.Graph(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-	buildList := mg.BuildList()
-
-	final, err := editBuildList(ctx, buildList, add, mustSelect)
-	if err != nil {
-		return nil, false, err
-	}
-
-	if !reflect.DeepEqual(final, buildList) {
-		changed = true
-	} else if len(mustSelect) == 0 {
-		// No change to the build list and no explicit roots to promote, so we're done.
-		return rs, false, nil
-	}
-
-	var rootPaths []string
-	for _, m := range mustSelect {
-		if m.Version != "none" && m.Path != Target.Path {
-			rootPaths = append(rootPaths, m.Path)
-		}
-	}
-	for _, m := range final[1:] {
-		if v, ok := rs.rootSelected(m.Path); ok && (v == m.Version || rs.direct[m.Path]) {
-			// m.Path was formerly a root, and either its version hasn't changed or
-			// we believe that it provides a package directly imported by a package
-			// or test in the main module. For now we'll assume that it is still
-			// relevant. If we actually load all of the packages and tests in the
-			// main module (which we are not doing here), we can revise the explicit
-			// roots at that point.
-			rootPaths = append(rootPaths, m.Path)
-		}
-	}
-
-	if go117LazyTODO {
-		// mvs.Req is not lazy, and in a lazily-loaded module we don't want
-		// to minimize the roots anyway. (Instead, we want to retain explicit
-		// root paths so that they remain explicit: only 'go mod tidy' should
-		// remove roots.)
-	}
-
-	min, err := mvs.Req(Target, rootPaths, &mvsReqs{roots: final[1:]})
-	if err != nil {
-		return nil, false, err
-	}
-
-	// A module that is not even in the build list necessarily cannot provide
-	// any imported packages. Mark as direct only the direct modules that are
-	// still in the build list.
-	//
-	// TODO(bcmills): Would it make more sense to leave the direct map as-is
-	// but allow it to refer to modules that are no longer in the build list?
-	// That might complicate updateRoots, but it may be cleaner in other ways.
-	direct := make(map[string]bool, len(rs.direct))
-	for _, m := range final {
-		if rs.direct[m.Path] {
-			direct[m.Path] = true
-		}
-	}
-	return newRequirements(rs.depth, min, direct), changed, nil
-}
-
 // A ConstraintError describes inconsistent constraints in EditBuildList
 type ConstraintError struct {
 	// Conflict lists the source of the conflict for each version in mustSelect
@@ -545,9 +479,9 @@ type Conflict struct {
 	Constraint module.Version
 }
 
-// tidyBuildList trims the build list to the minimal requirements needed to
+// tidyRoots trims the root requirements to the minimal roots needed to
 // retain the same versions of all packages loaded by ld.
-func tidyBuildList(ctx context.Context, ld *loader, initialRS *Requirements) *Requirements {
+func tidyRoots(ctx context.Context, rs *Requirements, pkgs []*loadPkg) (*Requirements, error) {
 	if go117LazyTODO {
 		// Tidy needs to maintain the lazy-loading invariants for lazy modules.
 		// The implementation for eager modules should be factored out into a function.
@@ -559,33 +493,10 @@ func tidyBuildList(ctx context.Context, ld *loader, initialRS *Requirements) *Re
 		// changed after loading packages.
 	}
 
-	var (
-		tidy *Requirements
-		err  error
-	)
-	if depth == lazy {
-		panic("internal error: 'go mod tidy' for lazy modules is not yet implemented")
-	} else {
-		tidy, err = tidyEagerRoots(ctx, ld.requirements, ld.pkgs)
+	if depth == eager {
+		return tidyEagerRoots(ctx, rs, pkgs)
 	}
-	if err != nil {
-		base.Fatalf("go: %v", err)
-	}
-
-	if cfg.BuildV {
-		mg, _ := tidy.Graph(ctx)
-
-		for _, m := range initialRS.rootModules {
-			if mg.Selected(m.Path) == "none" {
-				fmt.Fprintf(os.Stderr, "unused %s\n", m.Path)
-			} else if go117LazyTODO {
-				// If the main module is lazy and we demote a root to a non-root
-				// (because it is not actually relevant), should we log that too?
-			}
-		}
-	}
-
-	return tidy
+	panic("internal error: 'go mod tidy' for lazy modules is not yet implemented")
 }
 
 // tidyEagerRoots returns a minimal set of root requirements that maintains the
@@ -616,7 +527,11 @@ func tidyEagerRoots(ctx context.Context, rs *Requirements, pkgs []*loadPkg) (*Re
 
 	min, err := mvs.Req(Target, rootPaths, &mvsReqs{roots: keep})
 	if err != nil {
-		return nil, err
+		return rs, err
+	}
+	if reflect.DeepEqual(min, rs.rootModules) {
+		// rs is already tidy, so preserve its cached graph.
+		return rs, nil
 	}
 	return newRequirements(eager, min, rs.direct), nil
 }
@@ -725,28 +640,4 @@ func updateRoots(ctx context.Context, direct map[string]bool, rs *Requirements, 
 	// module graph and build list, if they have already been loaded.
 
 	return newRequirements(rs.depth, min, direct), nil
-}
-
-// checkMultiplePaths verifies that a given module path is used as itself
-// or as a replacement for another module, but not both at the same time.
-//
-// (See https://golang.org/issue/26607 and https://golang.org/issue/34650.)
-func checkMultiplePaths(rs *Requirements) {
-	mods := rs.rootModules
-	if cached := rs.graph.Load(); cached != nil {
-		if mg := cached.(cachedGraph).mg; mg != nil {
-			mods = mg.BuildList()
-		}
-	}
-
-	firstPath := map[module.Version]string{}
-	for _, mod := range mods {
-		src := resolveReplacement(mod)
-		if prev, ok := firstPath[src]; !ok {
-			firstPath[src] = mod.Path
-		} else if prev != mod.Path {
-			base.Errorf("go: %s@%s used for two different module paths (%s and %s)", src.Path, src.Version, prev, mod.Path)
-		}
-	}
-	base.ExitIfErrors()
 }

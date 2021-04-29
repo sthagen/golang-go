@@ -539,7 +539,10 @@ func (ctxt *Link) loadlib() {
 	// up symbol by name may not get expected result.
 
 	iscgo = ctxt.LibraryByPkg["runtime/cgo"] != nil
-	ctxt.canUsePlugins = ctxt.LibraryByPkg["plugin"] != nil
+
+	// Plugins a require cgo support to function. Similarly, plugins may require additional
+	// internal linker support on some platforms which may not be implemented.
+	ctxt.canUsePlugins = ctxt.LibraryByPkg["plugin"] != nil && iscgo
 
 	// We now have enough information to determine the link mode.
 	determineLinkMode(ctxt)
@@ -1517,12 +1520,13 @@ func (ctxt *Link) hostlink() {
 	// even when linking with -static, causing a linker
 	// error when using GNU ld. So take out -rdynamic if
 	// we added it. We do it in this order, rather than
-	// only adding -rdynamic later, so that -*extldflags
+	// only adding -rdynamic later, so that -extldflags
 	// can override -rdynamic without using -static.
+	// Similarly for -Wl,--dynamic-linker.
 	checkStatic := func(arg string) {
 		if ctxt.IsELF && arg == "-static" {
 			for i := range argv {
-				if argv[i] == "-rdynamic" {
+				if argv[i] == "-rdynamic" || strings.HasPrefix(argv[i], "-Wl,--dynamic-linker,") {
 					argv[i] = "-static"
 				}
 			}
@@ -1773,6 +1777,8 @@ func hostlinkArchArgs(arch *sys.Arch) []string {
 	return nil
 }
 
+var wantHdr = objabi.HeaderString()
+
 // ldobj loads an input object. If it is a host object (an object
 // compiled by a non-Go compiler) it returns the Hostobj pointer. If
 // it is a Go object, it returns nil.
@@ -1866,29 +1872,13 @@ func ldobj(ctxt *Link, f *bio.Reader, lib *sym.Library, length int64, pn string,
 			return nil
 		}
 
-		Errorf(nil, "%s: not an object file", pn)
+		Errorf(nil, "%s: not an object file: @%d %02x%02x%02x%02x", pn, start, c1, c2, c3, c4)
 		return nil
 	}
 
 	// First, check that the basic GOOS, GOARCH, and Version match.
-	t := fmt.Sprintf("%s %s %s ", buildcfg.GOOS, buildcfg.GOARCH, buildcfg.Version)
-
-	line = strings.TrimRight(line, "\n")
-	if !strings.HasPrefix(line[10:]+" ", t) && !*flagF {
-		Errorf(nil, "%s: object is [%s] expected [%s]", pn, line[10:], t)
-		return nil
-	}
-
-	// Second, check that longer lines match each other exactly,
-	// so that the Go compiler and write additional information
-	// that must be the same from run to run.
-	if len(line) >= len(t)+10 {
-		if theline == "" {
-			theline = line[10:]
-		} else if theline != line[10:] {
-			Errorf(nil, "%s: object is [%s] expected [%s]", pn, line[10:], theline)
-			return nil
-		}
+	if line != wantHdr {
+		Errorf(nil, "%s: linked object header mismatch:\nhave %q\nwant %q\n", pn, line, wantHdr)
 	}
 
 	// Skip over exports and other info -- ends with \n!\n.

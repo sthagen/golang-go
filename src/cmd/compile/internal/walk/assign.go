@@ -322,6 +322,13 @@ func ascompatee(op ir.Op, nl, nr []ir.Node) []ir.Node {
 		// Save subexpressions needed on left side.
 		// Drill through non-dereferences.
 		for {
+			// If an expression has init statements, they must be evaluated
+			// before any of its saved sub-operands (#45706).
+			// TODO(mdempsky): Disallow init statements on lvalues.
+			init := ir.TakeInit(l)
+			walkStmtList(init)
+			early.Append(init...)
+
 			switch ll := l.(type) {
 			case *ir.IndexExpr:
 				if ll.X.Type().IsArray() {

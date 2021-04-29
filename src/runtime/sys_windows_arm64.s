@@ -6,6 +6,7 @@
 #include "go_tls.h"
 #include "textflag.h"
 #include "funcdata.h"
+#include "time_windows.h"
 
 // Offsets into Thread Environment Block (pointer in R18)
 #define TEB_error 0x68
@@ -309,14 +310,19 @@ TEXT runtime·callbackasm1<ABIInternal>(SB),NOSPLIT,$208-0
 
 	// Save callback register arguments R0-R7.
 	// We do this at the top of the frame so they're contiguous with stack arguments.
-	MOVD	R0, arg0-(8*8)(SP)
-	MOVD	R1, arg1-(7*8)(SP)
-	MOVD	R2, arg2-(6*8)(SP)
-	MOVD	R3, arg3-(5*8)(SP)
-	MOVD	R4, arg4-(4*8)(SP)
-	MOVD	R5, arg5-(3*8)(SP)
-	MOVD	R6, arg6-(2*8)(SP)
-	MOVD	R7, arg7-(1*8)(SP)
+	// The 7*8 setting up R14 looks like a bug but is not: the eighth word
+	// is the space the assembler reserved for our caller's frame pointer,
+	// but we are not called from Go so that space is ours to use,
+	// and we must to be contiguous with the stack arguments.
+	MOVD	$arg0-(7*8)(SP), R14
+	MOVD	R0, (0*8)(R14)
+	MOVD	R1, (1*8)(R14)
+	MOVD	R2, (2*8)(R14)
+	MOVD	R3, (3*8)(R14)
+	MOVD	R4, (4*8)(R14)
+	MOVD	R5, (5*8)(R14)
+	MOVD	R6, (6*8)(R14)
+	MOVD	R7, (7*8)(R14)
 
 	// Push C callee-save registers R19-R28.
 	// LR, FP already saved.
@@ -325,7 +331,7 @@ TEXT runtime·callbackasm1<ABIInternal>(SB),NOSPLIT,$208-0
 	// Create a struct callbackArgs on our stack.
 	MOVD	$cbargs-(18*8+callbackArgs__size)(SP), R13
 	MOVD	R12, callbackArgs_index(R13)	// callback index
-	MOVD	$arg0-(8*8)(SP), R0
+	MOVD	R14, R0
 	MOVD	R0, callbackArgs_args(R13)		// address of args vector
 	MOVD	$0, R0
 	MOVD	R0, callbackArgs_result(R13)	// result
@@ -402,16 +408,6 @@ TEXT runtime·switchtothread(SB),NOSPLIT,$16-0
 	ADD	$16, RSP
 	RET
 
-// See https://wrkhpi.wordpress.com/2007/08/09/getting-os-information-the-kuser_shared_data-structure/
-// Archived copy at:
-// http://web.archive.org/web/20210411000829/https://wrkhpi.wordpress.com/2007/08/09/getting-os-information-the-kuser_shared_data-structure/
-// Must read hi1, then lo, then hi2. The snapshot is valid if hi1 == hi2.
-#define _INTERRUPT_TIME 0x7ffe0008
-#define _SYSTEM_TIME 0x7ffe0014
-#define time_lo 0
-#define time_hi1 4
-#define time_hi2 8
-
 TEXT runtime·nanotime1(SB),NOSPLIT|NOFRAME,$0-8
 	MOVB	runtime·useQPCTime(SB), R0
 	CMP	$0, R0
@@ -432,62 +428,6 @@ loop:
 	RET
 useQPC:
 	B	runtime·nanotimeQPC(SB)		// tail call
-
-TEXT time·now(SB),NOSPLIT|NOFRAME,$0-24
-	MOVB    runtime·useQPCTime(SB), R0
-	CMP	$0, R0
-	BNE	useQPC
-	MOVD	$_INTERRUPT_TIME, R3
-loop:
-	MOVWU	time_hi1(R3), R1
-	MOVWU	time_lo(R3), R0
-	MOVWU	time_hi2(R3), R2
-	CMP	R1, R2
-	BNE	loop
-
-	// wintime = R1:R0, multiply by 100
-	ORR	R1<<32, R0
-	MOVD	$100, R1
-	MUL	R1, R0
-	MOVD	R0, mono+16(FP)
-
-	MOVD	$_SYSTEM_TIME, R3
-wall:
-	MOVWU	time_hi1(R3), R1
-	MOVWU	time_lo(R3), R0
-	MOVWU	time_hi2(R3), R2
-	CMP	R1, R2
-	BNE	wall
-
-	// w = R1:R0 in 100ns units
-	// convert to Unix epoch (but still 100ns units)
-	#define delta 116444736000000000
-	ORR	R1<<32, R0
-	SUB	$delta, R0
-
-	// Convert to nSec
-	MOVD	$100, R1
-	MUL	R1, R0
-
-	// Code stolen from compiler output for:
-	//
-	//	var x uint64
-	//	func f() (sec uint64, nsec uint32) { return x / 1000000000, uint32(x % 100000000) }
-	//
-	LSR	$1, R0, R1
-	MOVD	$-8543223759426509416, R2
-	UMULH	R2, R1, R1
-	LSR	$28, R1, R1
-	MOVD	R1, sec+0(FP)
-	MOVD	$-6067343680855748867, R1
-	UMULH	R0, R1, R1
-	LSR	$26, R1, R1
-	MOVD	$100000000, R2
-	MSUB	R1, R0, R2, R0
-	MOVW	R0, nsec+8(FP)
-	RET
-useQPC:
-	B	runtime·nowQPC(SB)		// tail call
 
 // This is called from rt0_go, which runs on the system stack
 // using the initial stack allocated by the OS.

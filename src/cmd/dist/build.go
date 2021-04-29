@@ -1590,7 +1590,7 @@ var cgoEnabled = map[string]bool{
 	"openbsd/amd64":   true,
 	"openbsd/arm":     true,
 	"openbsd/arm64":   true,
-	"openbsd/mips64":  false,
+	"openbsd/mips64":  true,
 	"plan9/386":       false,
 	"plan9/amd64":     false,
 	"plan9/arm":       false,
@@ -1598,7 +1598,7 @@ var cgoEnabled = map[string]bool{
 	"windows/386":     true,
 	"windows/amd64":   true,
 	"windows/arm":     false,
-	"windows/arm64":   false,
+	"windows/arm64":   true,
 }
 
 // List of platforms which are supported but not complete yet. These get
@@ -1775,8 +1775,6 @@ func IsRuntimePackagePath(pkgpath string) bool {
 	case "reflect":
 		rval = true
 	case "syscall":
-		rval = true
-	case "crypto/x509/internal/macos": // libc function wrappers need to be ABIInternal
 		rval = true
 	case "internal/bytealg":
 		rval = true

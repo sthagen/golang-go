@@ -222,11 +222,11 @@ var optab = []Optab{
 	{as: AMOVD, a1: C_ADDCON, a6: C_REG, type_: 3, size: 4},
 	{as: AMOVD, a1: C_ANDCON, a6: C_REG, type_: 3, size: 4},
 	{as: AMOVD, a1: C_UCON, a6: C_REG, type_: 3, size: 4},
-	{as: AMOVD, a1: C_SACON, a6: C_REG, type_: 3, size: 4},
-	{as: AMOVD, a1: C_ADDR, a6: C_REG, type_: 75, size: 8},
 	{as: AMOVD, a1: C_LCON, a6: C_REG, type_: 19, size: 8},
-	{as: AMOVD, a1: C_GOTADDR, a6: C_REG, type_: 81, size: 8},
+	{as: AMOVD, a1: C_SACON, a6: C_REG, type_: 3, size: 4},
 	{as: AMOVD, a1: C_LACON, a6: C_REG, type_: 26, size: 8},
+	{as: AMOVD, a1: C_ADDR, a6: C_REG, type_: 75, size: 8},
+	{as: AMOVD, a1: C_GOTADDR, a6: C_REG, type_: 81, size: 8},
 	{as: AMOVD, a1: C_SOREG, a6: C_REG, type_: 8, size: 4},
 	{as: AMOVD, a1: C_LOREG, a6: C_REG, type_: 36, size: 8},
 	{as: AMOVD, a1: C_TLS_LE, a6: C_REG, type_: 79, size: 8},
@@ -242,11 +242,11 @@ var optab = []Optab{
 	{as: AMOVW, a1: C_ADDCON, a6: C_REG, type_: 3, size: 4},
 	{as: AMOVW, a1: C_ANDCON, a6: C_REG, type_: 3, size: 4},
 	{as: AMOVW, a1: C_UCON, a6: C_REG, type_: 3, size: 4},
-	{as: AMOVW, a1: C_SACON, a6: C_REG, type_: 3, size: 4},
-	{as: AMOVW, a1: C_ADDR, a6: C_REG, type_: 75, size: 8},
 	{as: AMOVW, a1: C_LCON, a6: C_REG, type_: 19, size: 8},
-	{as: AMOVW, a1: C_CREG, a6: C_REG, type_: 68, size: 4},
+	{as: AMOVW, a1: C_SACON, a6: C_REG, type_: 3, size: 4},
 	{as: AMOVW, a1: C_LACON, a6: C_REG, type_: 26, size: 8},
+	{as: AMOVW, a1: C_ADDR, a6: C_REG, type_: 75, size: 8},
+	{as: AMOVW, a1: C_CREG, a6: C_REG, type_: 68, size: 4},
 	{as: AMOVW, a1: C_SOREG, a6: C_REG, type_: 8, size: 4},
 	{as: AMOVW, a1: C_LOREG, a6: C_REG, type_: 36, size: 8},
 	{as: AMOVW, a1: C_SPR, a6: C_REG, type_: 66, size: 4},
@@ -304,6 +304,7 @@ var optab = []Optab{
 	{as: AWORD, a1: C_LCON, type_: 40, size: 4},
 	{as: ADWORD, a1: C_LCON, type_: 31, size: 8},
 	{as: ADWORD, a1: C_DCON, type_: 31, size: 8},
+	{as: ADWORD, a1: C_LACON, type_: 31, size: 8},
 	{as: AADDME, a1: C_REG, a6: C_REG, type_: 47, size: 4},
 	{as: AEXTSB, a1: C_REG, a6: C_REG, type_: 48, size: 4},
 	{as: AEXTSB, a6: C_REG, type_: 48, size: 4},
@@ -877,11 +878,8 @@ func (c *ctxt9) aclass(a *obj.Addr) int {
 			if s == nil {
 				return C_GOK
 			}
-
 			c.instoffset = a.Offset
-
-			/* not sure why this barfs */
-			return C_LCON
+			return C_LACON
 
 		case obj.NAME_AUTO:
 			c.instoffset = int64(c.autosize) + a.Offset
@@ -1987,6 +1985,11 @@ func OPCC(o uint32, xo uint32, rc uint32) uint32 {
 	return OPVCC(o, xo, 0, rc)
 }
 
+/* Generate MD-form opcode */
+func OPMD(o, xo, rc uint32) uint32 {
+	return o<<26 | xo<<2 | rc&1
+}
+
 /* the order is dest, a/s, b/imm for both arithmetic and logical operations */
 func AOP_RRR(op uint32, d uint32, a uint32, b uint32) uint32 {
 	return op | (d&31)<<21 | (a&31)<<16 | (b&31)<<11
@@ -2770,13 +2773,8 @@ func (c *ctxt9) asmout(p *obj.Prog, o *Optab, out []uint32) {
 
 	case 19: /* mov $lcon,r ==> cau+or */
 		d := c.vregoff(&p.From)
-
-		if p.From.Sym == nil {
-			o1 = loadu32(int(p.To.Reg), d)
-			o2 = LOP_IRR(OP_ORI, uint32(p.To.Reg), uint32(p.To.Reg), uint32(int32(d)))
-		} else {
-			o1, o2 = c.symbolAccess(p.From.Sym, d, p.To.Reg, OP_ADDI)
-		}
+		o1 = loadu32(int(p.To.Reg), d)
+		o2 = LOP_IRR(OP_ORI, uint32(p.To.Reg), uint32(p.To.Reg), uint32(int32(d)))
 
 	case 20: /* add $ucon,,r | addis $addcon,r,r */
 		v := c.regoff(&p.From)
@@ -2894,16 +2892,21 @@ func (c *ctxt9) asmout(p *obj.Prog, o *Optab, out []uint32) {
 		}
 
 	case 26: /* mov $lsext/auto/oreg,,r2 ==> addis+addi */
-		if p.To.Reg == REGTMP {
-			c.ctxt.Diag("can't synthesize large constant\n%v", p)
-		}
-		v := c.regoff(&p.From)
+		v := c.vregoff(&p.From)
 		r := int(p.From.Reg)
-		if r == 0 {
-			r = c.getimpliedreg(&p.From, p)
+
+		switch p.From.Name {
+		case obj.NAME_EXTERN, obj.NAME_STATIC:
+			// Load a 32 bit constant, or relocation depending on if a symbol is attached
+			o1, o2 = c.symbolAccess(p.From.Sym, v, p.To.Reg, OP_ADDI)
+		default:
+			if r == 0 {
+				r = c.getimpliedreg(&p.From, p)
+			}
+			// Add a 32 bit offset to a register.
+			o1 = AOP_IRR(OP_ADDIS, REGTMP, uint32(r), uint32(high16adjusted(int32(v))))
+			o2 = AOP_IRR(OP_ADDI, uint32(p.To.Reg), REGTMP, uint32(v))
 		}
-		o1 = AOP_IRR(OP_ADDIS, REGTMP, uint32(r), uint32(high16adjusted(v)))
-		o2 = AOP_IRR(OP_ADDI, uint32(p.To.Reg), REGTMP, uint32(v))
 
 	case 27: /* subc ra,$simm,rd => subfic rd,ra,$simm */
 		v := c.regoff(p.GetFrom3())
@@ -4230,14 +4233,14 @@ func (c *ctxt9) oprrr(a obj.As) uint32 {
 	case ARLDICLCC:
 		return OPVCC(30, 0, 0, 1)
 	case ARLDICR:
-		return OPVCC(30, 0, 0, 0) | 2<<1 // rldicr
+		return OPMD(30, 1, 0) // rldicr
 	case ARLDICRCC:
-		return OPVCC(30, 0, 0, 1) | 2<<1 // rldicr.
+		return OPMD(30, 1, 1) // rldicr.
 
 	case ARLDIC:
-		return OPVCC(30, 0, 0, 0) | 4<<1 // rldic
+		return OPMD(30, 2, 0) // rldic
 	case ARLDICCC:
-		return OPVCC(30, 0, 0, 1) | 4<<1 // rldic.
+		return OPMD(30, 2, 1) // rldic.
 
 	case ASYSCALL:
 		return OPVCC(17, 1, 0, 0)
@@ -4895,30 +4898,30 @@ func (c *ctxt9) opirr(a obj.As) uint32 {
 	case ARLWMICC:
 		return OPVCC(20, 0, 0, 1)
 	case ARLDMI:
-		return OPVCC(30, 0, 0, 0) | 3<<2 /* rldimi */
+		return OPMD(30, 3, 0) /* rldimi */
 	case ARLDMICC:
-		return OPVCC(30, 0, 0, 1) | 3<<2
+		return OPMD(30, 3, 1) /* rldimi. */
 	case ARLDIMI:
-		return OPVCC(30, 0, 0, 0) | 3<<2 /* rldimi */
+		return OPMD(30, 3, 0) /* rldimi */
 	case ARLDIMICC:
-		return OPVCC(30, 0, 0, 1) | 3<<2
+		return OPMD(30, 3, 1) /* rldimi. */
 	case ARLWNM:
 		return OPVCC(21, 0, 0, 0) /* rlwinm */
 	case ARLWNMCC:
 		return OPVCC(21, 0, 0, 1)
 
 	case ARLDCL:
-		return OPVCC(30, 0, 0, 0) /* rldicl */
+		return OPMD(30, 0, 0) /* rldicl */
 	case ARLDCLCC:
-		return OPVCC(30, 0, 0, 1)
+		return OPMD(30, 0, 1) /* rldicl. */
 	case ARLDCR:
-		return OPVCC(30, 1, 0, 0) /* rldicr */
+		return OPMD(30, 1, 0) /* rldicr */
 	case ARLDCRCC:
-		return OPVCC(30, 1, 0, 1)
+		return OPMD(30, 1, 1) /* rldicr. */
 	case ARLDC:
-		return OPVCC(30, 0, 0, 0) | 2<<2
+		return OPMD(30, 2, 0) /* rldic */
 	case ARLDCCC:
-		return OPVCC(30, 0, 0, 1) | 2<<2
+		return OPMD(30, 2, 1) /* rldic. */
 
 	case ASRAW:
 		return OPVCC(31, 824, 0, 0)
