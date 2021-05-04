@@ -1161,39 +1161,51 @@ func (s *state) newValue4I(op ssa.Op, t *types.Type, aux int64, arg0, arg1, arg2
 	return s.curBlock.NewValue4I(s.peekPos(), op, t, aux, arg0, arg1, arg2, arg3)
 }
 
+func (s *state) entryBlock() *ssa.Block {
+	b := s.f.Entry
+	if base.Flag.N > 0 && s.curBlock != nil {
+		// If optimizations are off, allocate in current block instead. Since with -N
+		// we're not doing the CSE or tighten passes, putting lots of stuff in the
+		// entry block leads to O(n^2) entries in the live value map during regalloc.
+		// See issue 45897.
+		b = s.curBlock
+	}
+	return b
+}
+
 // entryNewValue0 adds a new value with no arguments to the entry block.
 func (s *state) entryNewValue0(op ssa.Op, t *types.Type) *ssa.Value {
-	return s.f.Entry.NewValue0(src.NoXPos, op, t)
+	return s.entryBlock().NewValue0(src.NoXPos, op, t)
 }
 
 // entryNewValue0A adds a new value with no arguments and an aux value to the entry block.
 func (s *state) entryNewValue0A(op ssa.Op, t *types.Type, aux ssa.Aux) *ssa.Value {
-	return s.f.Entry.NewValue0A(src.NoXPos, op, t, aux)
+	return s.entryBlock().NewValue0A(src.NoXPos, op, t, aux)
 }
 
 // entryNewValue1 adds a new value with one argument to the entry block.
 func (s *state) entryNewValue1(op ssa.Op, t *types.Type, arg *ssa.Value) *ssa.Value {
-	return s.f.Entry.NewValue1(src.NoXPos, op, t, arg)
+	return s.entryBlock().NewValue1(src.NoXPos, op, t, arg)
 }
 
 // entryNewValue1 adds a new value with one argument and an auxint value to the entry block.
 func (s *state) entryNewValue1I(op ssa.Op, t *types.Type, auxint int64, arg *ssa.Value) *ssa.Value {
-	return s.f.Entry.NewValue1I(src.NoXPos, op, t, auxint, arg)
+	return s.entryBlock().NewValue1I(src.NoXPos, op, t, auxint, arg)
 }
 
 // entryNewValue1A adds a new value with one argument and an aux value to the entry block.
 func (s *state) entryNewValue1A(op ssa.Op, t *types.Type, aux ssa.Aux, arg *ssa.Value) *ssa.Value {
-	return s.f.Entry.NewValue1A(src.NoXPos, op, t, aux, arg)
+	return s.entryBlock().NewValue1A(src.NoXPos, op, t, aux, arg)
 }
 
 // entryNewValue2 adds a new value with two arguments to the entry block.
 func (s *state) entryNewValue2(op ssa.Op, t *types.Type, arg0, arg1 *ssa.Value) *ssa.Value {
-	return s.f.Entry.NewValue2(src.NoXPos, op, t, arg0, arg1)
+	return s.entryBlock().NewValue2(src.NoXPos, op, t, arg0, arg1)
 }
 
 // entryNewValue2A adds a new value with two arguments and an aux value to the entry block.
 func (s *state) entryNewValue2A(op ssa.Op, t *types.Type, aux ssa.Aux, arg0, arg1 *ssa.Value) *ssa.Value {
-	return s.f.Entry.NewValue2A(src.NoXPos, op, t, aux, arg0, arg1)
+	return s.entryBlock().NewValue2A(src.NoXPos, op, t, aux, arg0, arg1)
 }
 
 // const* routines add a new const value to the entry block.
@@ -3196,6 +3208,12 @@ func (s *state) expr(n ir.Node) *ssa.Value {
 		n := n.(*ir.UnaryExpr)
 		return s.newObject(n.Type().Elem())
 
+	case ir.OUNSAFEADD:
+		n := n.(*ir.BinaryExpr)
+		ptr := s.expr(n.X)
+		len := s.expr(n.Y)
+		return s.newValue2(ssa.OpAddPtr, n.Type(), ptr, len)
+
 	default:
 		s.Fatalf("unhandled expr %v", n.Op())
 		return nil
@@ -4760,9 +4778,9 @@ func (s *state) openDeferSave(n ir.Node, t *types.Type, val *ssa.Value) *ssa.Val
 		// declared in the entry block, so that it will be live for the
 		// defer exit code (which will actually access it only if the
 		// associated defer call has been activated).
-		s.defvars[s.f.Entry.ID][memVar] = s.entryNewValue1A(ssa.OpVarDef, types.TypeMem, argTemp, s.defvars[s.f.Entry.ID][memVar])
-		s.defvars[s.f.Entry.ID][memVar] = s.entryNewValue1A(ssa.OpVarLive, types.TypeMem, argTemp, s.defvars[s.f.Entry.ID][memVar])
-		addrArgTemp = s.entryNewValue2A(ssa.OpLocalAddr, types.NewPtr(argTemp.Type()), argTemp, s.sp, s.defvars[s.f.Entry.ID][memVar])
+		s.defvars[s.f.Entry.ID][memVar] = s.f.Entry.NewValue1A(src.NoXPos, ssa.OpVarDef, types.TypeMem, argTemp, s.defvars[s.f.Entry.ID][memVar])
+		s.defvars[s.f.Entry.ID][memVar] = s.f.Entry.NewValue1A(src.NoXPos, ssa.OpVarLive, types.TypeMem, argTemp, s.defvars[s.f.Entry.ID][memVar])
+		addrArgTemp = s.f.Entry.NewValue2A(src.NoXPos, ssa.OpLocalAddr, types.NewPtr(argTemp.Type()), argTemp, s.sp, s.defvars[s.f.Entry.ID][memVar])
 	} else {
 		// Special case if we're still in the entry block. We can't use
 		// the above code, since s.defvars[s.f.Entry.ID] isn't defined
@@ -6557,14 +6575,26 @@ func (s *State) DebugFriendlySetPosFrom(v *ssa.Value) {
 }
 
 // emit argument info (locations on stack) for traceback.
-func emitArgInfo(e *ssafn, pp *objw.Progs) {
+func emitArgInfo(e *ssafn, f *ssa.Func, pp *objw.Progs) {
 	ft := e.curfn.Type()
 	if ft.NumRecvs() == 0 && ft.NumParams() == 0 {
 		return
 	}
 
-	x := base.Ctxt.Lookup(fmt.Sprintf("%s.arginfo%d", e.curfn.LSym.Name, e.curfn.LSym.ABI()))
+	x := EmitArgInfo(e.curfn, f.OwnAux.ABIInfo())
 	e.curfn.LSym.Func().ArgInfo = x
+
+	// Emit a funcdata pointing at the arg info data.
+	p := pp.Prog(obj.AFUNCDATA)
+	p.From.SetConst(objabi.FUNCDATA_ArgInfo)
+	p.To.Type = obj.TYPE_MEM
+	p.To.Name = obj.NAME_EXTERN
+	p.To.Sym = x
+}
+
+// emit argument info (locations on stack) of f for traceback.
+func EmitArgInfo(f *ir.Func, abiInfo *abi.ABIParamResultInfo) *obj.LSym {
+	x := base.Ctxt.Lookup(fmt.Sprintf("%s.arginfo%d", f.LSym.Name, f.ABI))
 
 	PtrSize := int64(types.PtrSize)
 
@@ -6690,27 +6720,19 @@ func emitArgInfo(e *ssafn, pp *objw.Progs) {
 	}
 
 	c := true
-outer:
-	for _, fs := range &types.RecvsParams {
-		for _, a := range fs(ft).Fields().Slice() {
-			if !c {
-				writebyte(_dotdotdot)
-				break outer
-			}
-			c = visitType(a.Offset, a.Type, 0)
+	for _, a := range abiInfo.InParams() {
+		if !c {
+			writebyte(_dotdotdot)
+			break
 		}
+		c = visitType(a.FrameOffset(abiInfo), a.Type, 0)
 	}
 	writebyte(_endSeq)
 	if wOff > maxLen {
 		base.Fatalf("ArgInfo too large")
 	}
 
-	// Emit a funcdata pointing at the arg info data.
-	p := pp.Prog(obj.AFUNCDATA)
-	p.From.SetConst(objabi.FUNCDATA_ArgInfo)
-	p.To.Type = obj.TYPE_MEM
-	p.To.Name = obj.NAME_EXTERN
-	p.To.Sym = x
+	return x
 }
 
 // genssa appends entries to pp for each instruction in f.
@@ -6721,7 +6743,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 	e := f.Frontend().(*ssafn)
 
 	s.livenessMap, s.partLiveArgs = liveness.Compute(e.curfn, f, e.stkptrsize, pp)
-	emitArgInfo(e, pp)
+	emitArgInfo(e, f, pp)
 
 	openDeferInfo := e.curfn.LSym.Func().OpenCodedDeferInfo
 	if openDeferInfo != nil {
@@ -7138,7 +7160,8 @@ func defframe(s *State, e *ssafn, f *ssa.Func) {
 	// keep track of which helper registers have been zeroed.
 	var state uint32
 
-	// Iterate through declarations. They are sorted in decreasing Xoffset order.
+	// Iterate through declarations. Autos are sorted in decreasing
+	// frame offset order.
 	for _, n := range e.curfn.Dcl {
 		if !n.Needzero() {
 			continue

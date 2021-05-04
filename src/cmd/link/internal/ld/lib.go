@@ -203,9 +203,6 @@ type Arch struct {
 	// are padded with zeros.
 	CodePad []byte
 
-	// Set to true to write all text blocks in with CodeBlkWrite
-	WriteTextBlocks bool
-
 	// Plan 9 variables.
 	Plan9Magic  uint32
 	Plan9_64Bit bool
@@ -503,10 +500,8 @@ func (ctxt *Link) loadlib() {
 	default:
 		log.Fatalf("invalid -strictdups flag value %d", *FlagStrictDups)
 	}
-	if !buildcfg.Experiment.RegabiWrappers || ctxt.linkShared {
+	if !buildcfg.Experiment.RegabiWrappers {
 		// Use ABI aliases if ABI wrappers are not used.
-		// TODO: for now we still use ABI aliases in shared linkage, even if
-		// the wrapper is enabled.
 		flags |= loader.FlagUseABIAlias
 	}
 	elfsetstring1 := func(str string, off int) { elfsetstring(ctxt, 0, str, off) }
@@ -2088,25 +2083,6 @@ func ldshlibsyms(ctxt *Link, shlib string) {
 		return
 	}
 
-	// collect text symbol ABI versions.
-	symabi := make(map[string]int) // map (unmangled) symbol name to version
-	if buildcfg.Experiment.RegabiWrappers {
-		for _, elfsym := range syms {
-			if elf.ST_TYPE(elfsym.Info) != elf.STT_FUNC {
-				continue
-			}
-			// Demangle the name. Keep in sync with symtab.go:putelfsym.
-			if strings.HasSuffix(elfsym.Name, ".abiinternal") {
-				// ABIInternal symbol has mangled name, so the primary symbol is ABI0.
-				symabi[strings.TrimSuffix(elfsym.Name, ".abiinternal")] = 0
-			}
-			if strings.HasSuffix(elfsym.Name, ".abi0") {
-				// ABI0 symbol has mangled name, so the primary symbol is ABIInternal.
-				symabi[strings.TrimSuffix(elfsym.Name, ".abi0")] = sym.SymVerABIInternal
-			}
-		}
-	}
-
 	for _, elfsym := range syms {
 		if elf.ST_TYPE(elfsym.Info) == elf.STT_NOTYPE || elf.ST_TYPE(elfsym.Info) == elf.STT_SECTION {
 			continue
@@ -2119,14 +2095,13 @@ func ldshlibsyms(ctxt *Link, shlib string) {
 		if elf.ST_TYPE(elfsym.Info) == elf.STT_FUNC && strings.HasPrefix(elfsym.Name, "type.") {
 			ver = sym.SymVerABIInternal
 		} else if buildcfg.Experiment.RegabiWrappers && elf.ST_TYPE(elfsym.Info) == elf.STT_FUNC {
+			// Demangle the ABI name. Keep in sync with symtab.go:mangleABIName.
 			if strings.HasSuffix(elfsym.Name, ".abiinternal") {
 				ver = sym.SymVerABIInternal
 				symname = strings.TrimSuffix(elfsym.Name, ".abiinternal")
 			} else if strings.HasSuffix(elfsym.Name, ".abi0") {
 				ver = 0
 				symname = strings.TrimSuffix(elfsym.Name, ".abi0")
-			} else if abi, ok := symabi[elfsym.Name]; ok {
-				ver = abi
 			}
 		}
 
@@ -2160,19 +2135,9 @@ func ldshlibsyms(ctxt *Link, shlib string) {
 			l.SetSymExtname(s, elfsym.Name)
 		}
 
-		// For function symbols, we don't know what ABI is
-		// available, so alias it under both ABIs.
-		//
-		// TODO(austin): This is almost certainly wrong once
-		// the ABIs are actually different. We might have to
-		// mangle Go function names in the .so to include the
-		// ABI.
-		if elf.ST_TYPE(elfsym.Info) == elf.STT_FUNC && ver == 0 {
-			if buildcfg.Experiment.RegabiWrappers {
-				if _, ok := symabi[symname]; ok {
-					continue // only use alias for functions w/o ABI wrappers
-				}
-			}
+		// For function symbols, if ABI wrappers are not used, we don't
+		// know what ABI is available, so alias it under both ABIs.
+		if !buildcfg.Experiment.RegabiWrappers && elf.ST_TYPE(elfsym.Info) == elf.STT_FUNC && ver == 0 {
 			alias := ctxt.loader.LookupOrCreateSym(symname, sym.SymVerABIInternal)
 			if l.SymType(alias) != 0 {
 				continue
