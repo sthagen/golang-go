@@ -25,8 +25,12 @@ Do not send CLs removing the interior tags from such phrases.
 
 <h2 id="language">Changes to the language</h2>
 
-<p>
-  TODO: complete this section
+<p><!-- CL 216424 -->
+  TODO: <a href="https://golang.org/cl/216424">https://golang.org/cl/216424</a>: allow conversion from slice to array ptr
+</p>
+
+<p><!-- CL 312212 -->
+  TODO: <a href="https://golang.org/cl/312212">https://golang.org/cl/312212</a>: add unsafe.Add and unsafe.Slice
 </p>
 
 <h2 id="ports">Ports</h2>
@@ -216,6 +220,13 @@ Do not send CLs removing the interior tags from such phrases.
   has no effect.
 </p>
 
+<p><!-- CL 289209 -->
+  When <a href="/pkg/crypto/tls#Config">Config.NextProtos</a> is set, servers now
+  enforce that there is an overlap between the configured protocols and the protocols
+  advertised by the client, if any. If there is no overlap the connection is closed
+  with the <code>no_application_protocol</code> alert, as required by RFC 7301.
+</p>
+
 <h3 id="runtime/cgo"><a href="/pkg/runtime/cgo">Cgo</a></h3>
 
 <p>
@@ -241,18 +252,34 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- archive/zip -->
 
-<dl id="bufio, bytes, strings"><dt><a href="/pkg/bufio, bytes, strings/">bufio, bytes, strings</a></dt>
+<dl id="bufio"><dt><a href="/pkg/bufio/">bufio</a></dt>
   <dd>
     <p><!-- CL 280492 -->
-      TODO: <a href="https://golang.org/cl/280492">https://golang.org/cl/280492</a>: handle negative runes in WriteRune
+      The <a href="/pkg/bufio/#Writer.WriteRune"><code>Writer.WriteRune</code></a> method
+      now writes the replacement character U+FFFD for negative rune values,
+      as it does for other invalid runes.
     </p>
   </dd>
-</dl><!-- bufio, bytes, strings -->
+</dl><!-- bufio -->
+
+<dl id="bytes"><dt><a href="/pkg/bytes/">bytes</a></dt>
+  <dd>
+    <p><!-- CL 280492 -->
+      The <a href="/pkg/bytes/#Buffer.WriteRune"><code>Buffer.WriteRune</code></a> method
+      now writes the replacement character U+FFFD for negative rune values,
+      as it does for other invalid runes.
+    </p>
+  </dd>
+</dl><!-- bytes -->
 
 <dl id="compress/lzw"><dt><a href="/pkg/compress/lzw/">compress/lzw</a></dt>
   <dd>
     <p><!-- CL 273667 -->
-      TODO: <a href="https://golang.org/cl/273667">https://golang.org/cl/273667</a>: add Reset method to Reader and Writer
+      The new
+      <a href="/pkg/compress/lzw/#Reader.Reset"><code>Reader.Reset</code></a>
+      and
+      <a href="/pkg/compress/lzw/#Writer.Reset"><code>Writer.Reset</code></a>
+      methods allow reuse of a <code>Reader</code> or <code>Writer</code>.
     </p>
   </dd>
 </dl><!-- compress/lzw -->
@@ -280,7 +307,10 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="encoding/binary"><dt><a href="/pkg/encoding/binary/">encoding/binary</a></dt>
   <dd>
     <p><!-- CL 299531 -->
-      TODO: <a href="https://golang.org/cl/299531">https://golang.org/cl/299531</a>: limit bytes read by Uvarint to &lt;= 10
+      <code>binary.Uvarint</code> will stop reading after <code>10 bytes</code> to avoid
+      wasted computations. If more than <code>10 bytes</code> are needed, the byte count returned is <code>-11</code>.
+      <br />
+      Previous Go versions could return larger negative counts when reading incorrectly encoded varints.
     </p>
   </dd>
 </dl><!-- encoding/binary -->
@@ -379,7 +409,13 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="reflect"><dt><a href="/pkg/reflect/">reflect</a></dt>
   <dd>
     <p><!-- CL 266197 -->
-      TODO: <a href="https://golang.org/cl/266197">https://golang.org/cl/266197</a>: add Method.IsExported and StructField.IsExported methods
+      The new
+      <a href="/pkg/reflect/#StructField.IsExported"><code>StructField.IsExported</code></a>
+      and
+      <a href="/pkg/reflect/#Method.IsExported"><code>Method.IsExported</code></a>
+      methods report whether a struct field or type method is exported.
+      They provide a more readable alternative to checking whether <code>PkgPath</code>
+      is empty.
     </p>
 
     <p><!-- CL 281233 -->
@@ -392,14 +428,6 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- reflect -->
 
-<dl id="spec"><dt><a href="/pkg/spec/">spec</a></dt>
-  <dd>
-    <p><!-- CL 216424 -->
-      TODO: <a href="https://golang.org/cl/216424">https://golang.org/cl/216424</a>: allow conversion from slice to array ptr
-    </p>
-  </dd>
-</dl><!-- spec -->
-
 <dl id="strconv"><dt><a href="/pkg/strconv/">strconv</a></dt>
   <dd>
     <p><!-- CL 170079 -->
@@ -411,10 +439,23 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
 
     <p><!-- CL 314775 -->
-      TODO: <a href="https://golang.org/cl/314775">https://golang.org/cl/314775</a>: add QuotedPrefix
+      The new <a href="/pkg/strconv/#QuotedPrefix"><code>QuotedPrefix</code></a> function
+      returns the quoted string (as understood by
+      <a href="/pkg/strconv/#Unquote"><code>Unquote</code></a>)
+      at the start of input.
     </p>
   </dd>
 </dl><!-- strconv -->
+
+<dl id="strings"><dt><a href="/pkg/strings/">strings</a></dt>
+  <dd>
+    <p><!-- CL 280492 -->
+      The <a href="/pkg/strings/#Builder.WriteRune"><code>Builder.WriteRune</code></a> method
+      now writes the replacement character U+FFFD for negative rune values,
+      as it does for other invalid runes.
+    </p>
+  </dd>
+</dl><!-- strings -->
 
 <dl id="sync/atomic"><dt><a href="/pkg/sync/atomic/">sync/atomic</a></dt>
   <dd>
@@ -477,7 +518,18 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="unicode"><dt><a href="/pkg/unicode/">unicode</a></dt>
   <dd>
     <p><!-- CL 280493 -->
-      TODO: <a href="https://golang.org/cl/280493">https://golang.org/cl/280493</a>: correctly handle negative runes
+      The <a href="/pkg/unicode/#Is"><code>Is</code></a>,
+      <a href="/pkg/unicode/#IsGraphic"><code>IsGraphic</code></a>,
+      <a href="/pkg/unicode/#IsLetter"><code>IsLetter</code></a>,
+      <a href="/pkg/unicode/#IsLower"><code>IsLower</code></a>,
+      <a href="/pkg/unicode/#IsMark"><code>IsMark</code></a>,
+      <a href="/pkg/unicode/#IsNumber"><code>IsNumber</code></a>,
+      <a href="/pkg/unicode/#IsPrint"><code>IsPrint</code></a>,
+      <a href="/pkg/unicode/#IsPunct"><code>IsPunct</code></a>,
+      <a href="/pkg/unicode/#IsSpace"><code>IsSpace</code></a>,
+      <a href="/pkg/unicode/#IsSymbol"><code>IsSymbol</code></a>, and
+      <a href="/pkg/unicode/#IsUpper"><code>IsUpper</code></a> functions
+      now return <code>false</code> on negative rune values, as they do for other invalid runes.
     </p>
   </dd>
 </dl><!-- unicode -->

@@ -1303,7 +1303,7 @@ func usesLibcall() bool {
 	case "aix", "darwin", "illumos", "ios", "solaris", "windows":
 		return true
 	case "openbsd":
-		return GOARCH == "386" || GOARCH == "amd64" || GOARCH == "arm64"
+		return GOARCH == "386" || GOARCH == "amd64" || GOARCH == "arm" || GOARCH == "arm64"
 	}
 	return false
 }
@@ -1316,7 +1316,7 @@ func mStackIsSystemAllocated() bool {
 		return true
 	case "openbsd":
 		switch GOARCH {
-		case "386", "amd64", "arm64":
+		case "386", "amd64", "arm", "arm64":
 			return true
 		}
 	}
@@ -3132,24 +3132,33 @@ func checkIdleGCNoP() (*p, *g) {
 		return nil, nil
 	}
 
-	// Work is available; we can start an idle GC worker only if
-	// there is an available P and available worker G.
+	// Work is available; we can start an idle GC worker only if there is
+	// an available P and available worker G.
 	//
-	// We can attempt to acquire these in either order. Workers are
-	// almost always available (see comment in findRunnableGCWorker
-	// for the one case there may be none). Since we're slightly
-	// less likely to find a P, check for that first.
+	// We can attempt to acquire these in either order, though both have
+	// synchronization concerns (see below). Workers are almost always
+	// available (see comment in findRunnableGCWorker for the one case
+	// there may be none). Since we're slightly less likely to find a P,
+	// check for that first.
+	//
+	// Synchronization: note that we must hold sched.lock until we are
+	// committed to keeping it. Otherwise we cannot put the unnecessary P
+	// back in sched.pidle without performing the full set of idle
+	// transition checks.
+	//
+	// If we were to check gcBgMarkWorkerPool first, we must somehow handle
+	// the assumption in gcControllerState.findRunnableGCWorker that an
+	// empty gcBgMarkWorkerPool is only possible if gcMarkDone is running.
 	lock(&sched.lock)
 	pp := pidleget()
-	unlock(&sched.lock)
 	if pp == nil {
+		unlock(&sched.lock)
 		return nil, nil
 	}
 
-	// Now that we own a P, gcBlackenEnabled can't change
-	// (as it requires STW).
+	// Now that we own a P, gcBlackenEnabled can't change (as it requires
+	// STW).
 	if gcBlackenEnabled == 0 {
-		lock(&sched.lock)
 		pidleput(pp)
 		unlock(&sched.lock)
 		return nil, nil
@@ -3157,11 +3166,12 @@ func checkIdleGCNoP() (*p, *g) {
 
 	node := (*gcBgMarkWorkerNode)(gcBgMarkWorkerPool.pop())
 	if node == nil {
-		lock(&sched.lock)
 		pidleput(pp)
 		unlock(&sched.lock)
 		return nil, nil
 	}
+
+	unlock(&sched.lock)
 
 	return pp, node.gp.ptr()
 }
