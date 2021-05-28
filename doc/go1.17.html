@@ -331,11 +331,16 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="compress/lzw"><dt><a href="/pkg/compress/lzw/">compress/lzw</a></dt>
   <dd>
     <p><!-- CL 273667 -->
-      The new
-      <a href="/pkg/compress/lzw/#Reader.Reset"><code>Reader.Reset</code></a>
-      and
-      <a href="/pkg/compress/lzw/#Writer.Reset"><code>Writer.Reset</code></a>
-      methods allow reuse of a <code>Reader</code> or <code>Writer</code>.
+      The <a href="/pkg/compress/lzw/#NewReader"><code>NewReader</code></a>
+      function is guaranteed to return a value of the new
+      type <a href="/pkg/compress/lzw/#Reader"><code>Reader</code></a>,
+      and similarly <a href="/pkg/compress/lzw/#NewWriter"><code>NewWriter</code></a>
+      is guaranteed to return a value of the new
+      type <a href="/pkg/compress/lzw/#Writer"><code>Writer</code></a>.
+      These new types both implement a <code>Reset</code> method
+      (<a href="/pkg/compress/lzw/#Reader.Reset"><code>Reader.Reset</code></a>,
+      <a href="/pkg/compress/lzw/#Writer.Reset"><code>Writer.Reset</code></a>)
+      that allows reuse of the <code>Reader</code> or <code>Writer</code>.
     </p>
   </dd>
 </dl><!-- compress/lzw -->
@@ -367,6 +372,15 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
   </dd>
 </dl><!-- database/sql -->
+
+<dl id="debug/elf"><dt><a href="/pkg/debug/elf/">debug/elf</a></dt>
+  <dd>
+    <p><!-- CL 239217 -->
+      The <a href="/pkg/debug/elf/#SHT_MIPS_ABIFLAGS"><code>SHT_MIPS_ABIFLAGS</code></a>
+      constant has been added.
+    </p>
+  </dd>
+</dl><!-- debug/elf -->
 
 <dl id="encoding/binary"><dt><a href="/pkg/encoding/binary/">encoding/binary</a></dt>
   <dd>
@@ -500,11 +514,13 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
 
     <p><!-- CL 281233 -->
-      TODO: <a href="https://golang.org/cl/281233">https://golang.org/cl/281233</a>: add VisibleFields function
+      The new <a href="/pkg/reflect/#VisibleFields"><code>VisibleFields</code></a> function
+      returns all the visible fields in a struct type, including fields inside anonymous struct members.
     </p>
 
     <p><!-- CL 284136 -->
-      TODO: <a href="https://golang.org/cl/284136">https://golang.org/cl/284136</a>: panic if ArrayOf is called with negative length
+      The <a href="/pkg/reflect/#ArrayOf"><code>ArrayOf</code></a> function now panics when
+      called with a negative length.
     </p>
   </dd>
 </dl><!-- reflect -->
