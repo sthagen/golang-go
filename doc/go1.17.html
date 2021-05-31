@@ -393,6 +393,18 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- encoding/binary -->
 
+<dl id="encoding/csv"><dt><a href="/pkg/encoding/csv/">encoding/csv</a></dt>
+  <dd>
+    <p><!-- CL 291290 -->
+      The new
+      <a href="/pkg/encoding/csv/#Reader.FieldPos"><code>Reader.FieldPos</code></a>
+      method returns the line and column corresponding to the start of
+      a given field in the record most recently returned by
+      <a href="/pkg/encoding/csv/#Reader.Read"><code>Read</code></a>.
+    </p>
+  </dd>
+</dl><!-- encoding/csv -->
+
 <dl id="flag"><dt><a href="/pkg/flag/">flag</a></dt>
   <dd>
     <p><!-- CL 271788 -->
@@ -400,6 +412,17 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
   </dd>
 </dl><!-- flag -->
+
+<dl id="go/build"><dt><a href="/pkg/go/build/">go/build</a></dt>
+  <dd>
+    <p><!-- CL 310732 -->
+      The new
+      <a href="/pkg/go/build/#Context.ToolTags"><code>Context.ToolTags</code></a>
+      field holds the build tags appropriate to the current Go
+      toolchain configuration.
+    </p>
+  </dd>
+</dl><!-- go/build -->
 
 <dl id="io/fs"><dt><a href="/pkg/io/fs/">io/fs</a></dt>
   <dd>
@@ -588,6 +611,20 @@ Do not send CLs removing the interior tags from such phrases.
       On Unix-like systems, the process group of a child process is now set with signals blocked.
       This avoids sending a <code>SIGTTOU</code> to the child when the parent is in a background process group.
     </p>
+
+    <p><!-- CL 288298, CL 288300 -->
+      The Windows version of
+      <a href="/pkg/syscall/#SysProcAttr"><code>SysProcAttr</code></a>
+      has two new fields. <code>AdditionalInheritedHandles</code> is
+      a list of additional handles to be inherited by the new child
+      process. <code>ParentProcess</code> permits specifying the
+      parent process of the new process.
+
+    <p><!-- CL 311570 -->
+      The constant <code>MSG_CMSG_CLOEXEC</code> is now defined on
+      DragonFly and all OpenBSD systems (it was already defined on
+      some OpenBSD systems and all FreeBSD, NetBSD, and Linux systems).
+    </p>
   </dd>
 </dl><!-- syscall -->
 
@@ -596,13 +633,22 @@ Do not send CLs removing the interior tags from such phrases.
     <p><!-- CL 310033 -->
       TODO: <a href="https://golang.org/cl/310033">https://golang.org/cl/310033</a>: add -shuffle=off|on|N to alter the execution order of tests and benchmarks
     </p>
+
+    <p><!-- CL 260577 -->
+      The new
+      <a href="/pkg/testing/#T.Setenv"><code>T.Setenv</code></a>
+      and <a href="/pkg/testing/#B.Setenv"><code>B.Setenv</code></a>
+      methods support setting an environment variable for the duration
+      of the test or benchmark.
+    </p>
   </dd>
 </dl><!-- testing -->
 
 <dl id="text/template/parse"><dt><a href="/pkg/text/template/parse/">text/template/parse</a></dt>
   <dd>
     <p><!-- CL 301493 -->
-      TODO: <a href="https://golang.org/cl/301493">https://golang.org/cl/301493</a>: add a mode to skip func-check on parsing
+      The new <a href="/pkg/text/template/parse/#Mode"><code>SkipFuncCheck</code></a> <a href=><code>Mode</code></a>
+      value changes the template parser to not verify that functions are defined.
     </p>
   </dd>
 </dl><!-- text/template/parse -->
@@ -626,6 +672,11 @@ Do not send CLs removing the interior tags from such phrases.
 
     <p><!-- CL 300996 -->
       TODO: <a href="https://golang.org/cl/300996">https://golang.org/cl/300996</a>: support &#34;,&#34; as separator for fractional seconds
+    </p>
+
+    <p><!-- CL 320252 -->
+      The new constant <a href="/pkg/time/#Layout"><code>Layout</code></a>
+      defines the reference time.
     </p>
   </dd>
 </dl><!-- time -->
