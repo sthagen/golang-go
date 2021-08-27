@@ -90,6 +90,26 @@ func expandiface(t *Type) {
 		methods = append(methods, m)
 	}
 
+	{
+		methods := t.Methods().Slice()
+		sort.SliceStable(methods, func(i, j int) bool {
+			mi, mj := methods[i], methods[j]
+
+			// Sort embedded types by type name (if any).
+			if mi.Sym == nil && mj.Sym == nil {
+				return mi.Type.Sym().Less(mj.Type.Sym())
+			}
+
+			// Sort methods before embedded types.
+			if mi.Sym == nil || mj.Sym == nil {
+				return mi.Sym != nil
+			}
+
+			// Sort methods by symbol name.
+			return mi.Sym.Less(mj.Sym)
+		})
+	}
+
 	for _, m := range t.Methods().Slice() {
 		if m.Sym == nil {
 			continue
@@ -104,8 +124,17 @@ func expandiface(t *Type) {
 			continue
 		}
 
+		if m.Type.IsUnion() {
+			continue
+		}
+
+		// In 1.18, embedded types can be anything. In Go 1.17, we disallow
+		// embedding anything other than interfaces.
 		if !m.Type.IsInterface() {
-			base.ErrorfAt(m.Pos, "interface contains embedded non-interface %v", m.Type)
+			if AllowsGoVersion(t.Pkg(), 1, 18) {
+				continue
+			}
+			base.ErrorfAt(m.Pos, "interface contains embedded non-interface, non-union %v", m.Type)
 			m.SetBroke(true)
 			t.SetBroke(true)
 			// Add to fields so that error messages
@@ -120,10 +149,15 @@ func expandiface(t *Type) {
 		// (including broken ones, if any) and add to t's
 		// method set.
 		for _, t1 := range m.Type.AllMethods().Slice() {
-			// Use m.Pos rather than t1.Pos to preserve embedding position.
 			f := NewField(m.Pos, t1.Sym, t1.Type)
 			addMethod(f, false)
+
+			// Clear position after typechecking, for consistency with types2.
+			f.Pos = src.NoXPos
 		}
+
+		// Clear position after typechecking, for consistency with types2.
+		m.Pos = src.NoXPos
 	}
 
 	sort.Sort(MethodsByName(methods))
@@ -405,6 +439,12 @@ func CalcSize(t *Type) {
 		t.Align = uint8(PtrSize)
 		expandiface(t)
 
+	case TUNION:
+		// Always part of an interface for now, so size/align don't matter.
+		// Pretend a union is represented like an interface.
+		w = 2 * int64(PtrSize)
+		t.Align = uint8(PtrSize)
+
 	case TCHAN: // implemented as pointer
 		w = int64(PtrSize)
 
@@ -486,7 +526,7 @@ func CalcSize(t *Type) {
 		w = calcStructOffset(t1, t1.Recvs(), 0, 0)
 		w = calcStructOffset(t1, t1.Params(), w, RegSize)
 		w = calcStructOffset(t1, t1.Results(), w, RegSize)
-		t1.Extra.(*Func).Argwid = w
+		t1.extra.(*Func).Argwid = w
 		if w%int64(RegSize) != 0 {
 			base.Warn("bad type %v %d\n", t1, w)
 		}
@@ -520,6 +560,14 @@ func CalcSize(t *Type) {
 // even if size calculation is otherwise disabled.
 func CalcStructSize(s *Type) {
 	s.Width = calcStructOffset(s, s, 0, 1) // sets align
+}
+
+// RecalcSize is like CalcSize, but recalculates t's size even if it
+// has already been calculated before. It does not recalculate other
+// types.
+func RecalcSize(t *Type) {
+	t.Align = 0
+	CalcSize(t)
 }
 
 // when a type's width should be known, we call CheckSize

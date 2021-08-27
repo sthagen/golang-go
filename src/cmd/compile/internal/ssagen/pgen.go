@@ -75,7 +75,22 @@ func (s byStackVar) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 // allocate space. In particular, it excludes arguments and results, which are in
 // the callers frame.
 func needAlloc(n *ir.Name) bool {
-	return n.Class == ir.PAUTO || n.Class == ir.PPARAMOUT && n.IsOutputParamInRegisters()
+	if n.Op() != ir.ONAME {
+		base.FatalfAt(n.Pos(), "%v has unexpected Op %v", n, n.Op())
+	}
+
+	switch n.Class {
+	case ir.PAUTO:
+		return true
+	case ir.PPARAM:
+		return false
+	case ir.PPARAMOUT:
+		return n.IsOutputParamInRegisters()
+
+	default:
+		base.FatalfAt(n.Pos(), "%v has unexpected Class %v", n, n.Class)
+		return false
+	}
 }
 
 func (s *ssafn) AllocFrame(f *ssa.Func) {
@@ -114,7 +129,10 @@ func (s *ssafn) AllocFrame(f *ssa.Func) {
 		}
 	}
 
-	sort.Sort(byStackVar(fn.Dcl))
+	// Use sort.Stable instead of sort.Sort so stack layout (and thus
+	// compiler output) is less sensitive to frontend changes that
+	// introduce or remove unused variables.
+	sort.Stable(byStackVar(fn.Dcl))
 
 	// Reassign stack offsets of the locals that are used.
 	lastHasPtr := false
