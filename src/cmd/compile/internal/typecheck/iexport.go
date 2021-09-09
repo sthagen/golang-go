@@ -566,6 +566,14 @@ func (p *iexporter) doDecl(n *ir.Name) {
 			// for predeclared objects).
 			underlying = types.ErrorType
 		}
+		if underlying == types.ComparableType.Underlying() {
+			// Do same for ComparableType as for ErrorType.
+			underlying = types.ComparableType
+		}
+		if base.Flag.G > 0 && underlying == types.AnyType.Underlying() {
+			// Do same for AnyType as for ErrorType.
+			underlying = types.AnyType
+		}
 		w.typ(underlying)
 
 		t := n.Type()
@@ -878,7 +886,7 @@ func (w *exportWriter) startType(k itag) {
 
 func (w *exportWriter) doTyp(t *types.Type) {
 	s := t.Sym()
-	if s != nil && t.OrigSym != nil {
+	if s != nil && t.OrigSym() != nil {
 		assert(base.Flag.G > 0)
 		// This is an instantiated type - could be a re-instantiation like
 		// Value[T2] or a full instantiation like Value[int].
@@ -895,7 +903,7 @@ func (w *exportWriter) doTyp(t *types.Type) {
 		// types or existing typeparams from the function/method header.
 		w.typeList(t.RParams())
 		// Export a reference to the base type.
-		baseType := t.OrigSym.Def.(*ir.Name).Type()
+		baseType := t.OrigSym().Def.(*ir.Name).Type()
 		w.typ(baseType)
 		return
 	}
@@ -1684,6 +1692,7 @@ func (w *exportWriter) expr(n ir.Node) {
 		isBuiltin := n.BuiltinOp != ir.OXXX
 		w.bool(isBuiltin)
 		if isBuiltin {
+			w.bool(n.Sym().Pkg == types.UnsafePkg)
 			w.string(n.Sym().Name)
 			break
 		}

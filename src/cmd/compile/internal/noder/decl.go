@@ -102,15 +102,19 @@ func (g *irgen) funcDecl(out *ir.Nodes, decl *syntax.FuncDecl) {
 		// the Fields to represent the receiver's method set.
 		if recv := fn.Type().Recv(); recv != nil {
 			typ := types.ReceiverBaseType(recv.Type)
-			if typ.OrigSym != nil {
+			if typ.OrigSym() != nil {
 				// For a generic method, we mark the methods on the
 				// base generic type, since those are the methods
 				// that will be stenciled.
-				typ = typ.OrigSym.Def.Type()
+				typ = typ.OrigSym().Def.Type()
 			}
 			meth := typecheck.Lookdot1(fn, typecheck.Lookup(decl.Name.Value), typ, typ.Methods(), 0)
 			meth.SetNointerface(true)
 		}
+	}
+
+	if decl.Body != nil && fn.Pragma&ir.Noescape != 0 {
+		base.ErrorfAt(fn.Pos(), "can only use //go:noescape with external func implementations")
 	}
 
 	if decl.Name.Value == "init" && decl.Recv == nil {
@@ -186,7 +190,7 @@ func (g *irgen) typeDecl(out *ir.Nodes, decl *syntax.TypeDecl) {
 	// object to new type pragmas.]
 	ntyp.SetUnderlying(g.typeExpr(decl.Type))
 
-	tparams := otyp.(*types2.Named).TParams()
+	tparams := otyp.(*types2.Named).TypeParams()
 	if n := tparams.Len(); n > 0 {
 		rparams := make([]*types.Type, n)
 		for i := range rparams {

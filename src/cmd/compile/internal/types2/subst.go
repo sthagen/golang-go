@@ -6,10 +6,7 @@
 
 package types2
 
-import (
-	"bytes"
-	"cmd/compile/internal/syntax"
-)
+import "cmd/compile/internal/syntax"
 
 type substMap map[*TypeParam]Type
 
@@ -40,8 +37,8 @@ func (m substMap) lookup(tpar *TypeParam) Type {
 // incoming type. If a substitution took place, the result type is different
 // from the incoming type.
 //
-// If the given typMap is non-nil, it is used in lieu of check.typMap.
-func (check *Checker) subst(pos syntax.Pos, typ Type, smap substMap, typMap map[string]*Named) Type {
+// If the given environment is non-nil, it is used in lieu of check.env.
+func (check *Checker) subst(pos syntax.Pos, typ Type, smap substMap, env *Environment) Type {
 	if smap.empty() {
 		return typ
 	}
@@ -61,27 +58,27 @@ func (check *Checker) subst(pos syntax.Pos, typ Type, smap substMap, typMap map[
 
 	if check != nil {
 		subst.check = check
-		if typMap == nil {
-			typMap = check.typMap
+		if env == nil {
+			env = check.conf.Environment
 		}
 	}
-	if typMap == nil {
+	if env == nil {
 		// If we don't have a *Checker and its global type map,
 		// use a local version. Besides avoiding duplicate work,
 		// the type map prevents infinite recursive substitution
 		// for recursive types (example: type T[P any] *T[P]).
-		typMap = make(map[string]*Named)
+		env = NewEnvironment()
 	}
-	subst.typMap = typMap
+	subst.env = env
 
 	return subst.typ(typ)
 }
 
 type subster struct {
-	pos    syntax.Pos
-	smap   substMap
-	check  *Checker // nil if called via Instantiate
-	typMap map[string]*Named
+	pos   syntax.Pos
+	smap  substMap
+	check *Checker // nil if called via Instantiate
+	env   *Environment
 }
 
 func (subst *subster) typ(typ Type) Type {
@@ -182,13 +179,13 @@ func (subst *subster) typ(typ Type) Type {
 			}
 		}
 
-		if t.TParams().Len() == 0 {
+		if t.TypeParams().Len() == 0 {
 			dump(">>> %s is not parameterized", t)
 			return t // type is not parameterized
 		}
 
 		var newTArgs []Type
-		assert(t.targs.Len() == t.TParams().Len())
+		assert(t.targs.Len() == t.TypeParams().Len())
 
 		// already instantiated
 		dump(">>> %s already instantiated", t)
@@ -201,7 +198,7 @@ func (subst *subster) typ(typ Type) Type {
 			if new_targ != targ {
 				dump(">>> substituted %d targ %s => %s", i, targ, new_targ)
 				if newTArgs == nil {
-					newTArgs = make([]Type, t.TParams().Len())
+					newTArgs = make([]Type, t.TypeParams().Len())
 					copy(newTArgs, t.targs.list())
 				}
 				newTArgs[i] = new_targ
@@ -214,25 +211,25 @@ func (subst *subster) typ(typ Type) Type {
 		}
 
 		// before creating a new named type, check if we have this one already
-		h := instantiatedHash(t, newTArgs)
+		h := subst.env.typeHash(t.orig, newTArgs)
 		dump(">>> new type hash: %s", h)
-		if named, found := subst.typMap[h]; found {
+		if named := subst.env.typeForHash(h, nil); named != nil {
 			dump(">>> found %s", named)
 			return named
 		}
 
-		// Create a new named type and populate typMap to avoid endless recursion.
-		// The position used here is irrelevant because validation only occurs on t
-		// (we don't call validType on named), but we use subst.pos to help with
-		// debugging.
+		// Create a new named type and populate the environment to avoid endless
+		// recursion. The position used here is irrelevant because validation only
+		// occurs on t (we don't call validType on named), but we use subst.pos to
+		// help with debugging.
 		tname := NewTypeName(subst.pos, t.obj.pkg, t.obj.name, nil)
 		t.load()
 		// It's ok to provide a nil *Checker because the newly created type
 		// doesn't need to be (lazily) expanded; it's expanded below.
 		named := (*Checker)(nil).newNamed(tname, t.orig, nil, t.tparams, t.methods) // t is loaded, so tparams and methods are available
 		named.targs = NewTypeList(newTArgs)
-		subst.typMap[h] = named
-		t.expand(subst.typMap) // must happen after typMap update to avoid infinite recursion
+		subst.env.typeForHash(h, named)
+		t.expand(subst.env) // must happen after env update to avoid infinite recursion
 
 		// do the substitution
 		dump(">>> subst %s with %s (new: %s)", t.underlying, subst.smap, newTArgs)
@@ -251,34 +248,6 @@ func (subst *subster) typ(typ Type) Type {
 	}
 
 	return typ
-}
-
-var instanceHashing = 0
-
-func instantiatedHash(typ *Named, targs []Type) string {
-	assert(instanceHashing == 0)
-	instanceHashing++
-	var buf bytes.Buffer
-	writeTypeName(&buf, typ.obj, nil)
-	buf.WriteByte('[')
-	writeTypeList(&buf, targs, nil, nil)
-	buf.WriteByte(']')
-	instanceHashing--
-
-	// With respect to the represented type, whether a
-	// type is fully expanded or stored as instance
-	// does not matter - they are the same types.
-	// Remove the instanceMarkers printed for instances.
-	res := buf.Bytes()
-	i := 0
-	for _, b := range res {
-		if b != instanceMarker {
-			res[i] = b
-			i++
-		}
-	}
-
-	return string(res[:i])
 }
 
 // typOrNil is like typ but if the argument is nil it is replaced with Typ[Invalid].

@@ -5,7 +5,6 @@
 package noder
 
 import (
-	"bytes"
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/typecheck"
@@ -72,29 +71,12 @@ func (g *irgen) typ1(typ types2.Type) *types.Type {
 
 // instTypeName2 creates a name for an instantiated type, base on the type args
 // (given as types2 types).
-func instTypeName2(name string, targs *types2.TypeList) string {
-	b := bytes.NewBufferString(name)
-	b.WriteByte('[')
-	n := targs.Len()
-	for i := 0; i < n; i++ {
-		targ := targs.At(i)
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		// Include package names for all types, including typeparams, to
-		// make sure type arguments are uniquely specified.
-		tname := types2.TypeString(targ,
-			func(pkg *types2.Package) string { return pkg.Name() })
-		if strings.Index(tname, ", ") >= 0 {
-			// types2.TypeString puts spaces after a comma in a type
-			// list, but we don't want spaces in our actual type names
-			// and method/function names derived from them.
-			tname = strings.Replace(tname, ", ", ",", -1)
-		}
-		b.WriteString(tname)
+func (g *irgen) instTypeName2(name string, targs *types2.TypeList) string {
+	rparams := make([]*types.Type, targs.Len())
+	for i := range rparams {
+		rparams[i] = g.typ(targs.At(i))
 	}
-	b.WriteByte(']')
-	return b.String()
+	return typecheck.InstTypeName(name, rparams)
 }
 
 // typ0 converts a types2.Type to a types.Type, but doesn't do the caching check
@@ -109,7 +91,7 @@ func (g *irgen) typ0(typ types2.Type) *types.Type {
 		// since that is the only use of a generic type that doesn't
 		// involve instantiation. We just translate the named type in the
 		// normal way below using g.obj().
-		if typ.TParams() != nil && typ.TArgs() != nil {
+		if typ.TypeParams() != nil && typ.TypeArgs() != nil {
 			// typ is an instantiation of a defined (named) generic type.
 			// This instantiation should also be a defined (named) type.
 			// types2 gives us the substituted type in t.Underlying()
@@ -119,7 +101,7 @@ func (g *irgen) typ0(typ types2.Type) *types.Type {
 			//
 			// When converted to types.Type, typ has a unique name,
 			// based on the names of the type arguments.
-			instName := instTypeName2(typ.Obj().Name(), typ.TArgs())
+			instName := g.instTypeName2(typ.Obj().Name(), typ.TypeArgs())
 			s := g.pkg(typ.Obj().Pkg()).Lookup(instName)
 			if s.Def != nil {
 				// We have already encountered this instantiation.
@@ -153,7 +135,7 @@ func (g *irgen) typ0(typ types2.Type) *types.Type {
 			// non-generic types used to instantiate this type. We'll
 			// use these when instantiating the methods of the
 			// instantiated type.
-			targs := typ.TArgs()
+			targs := typ.TypeArgs()
 			rparams := make([]*types.Type, targs.Len())
 			for i := range rparams {
 				rparams[i] = g.typ1(targs.At(i))
@@ -162,7 +144,7 @@ func (g *irgen) typ0(typ types2.Type) *types.Type {
 			//fmt.Printf("Saw new type %v %v\n", instName, ntyp.HasTParam())
 
 			// Save the symbol for the base generic type.
-			ntyp.OrigSym = g.pkg(typ.Obj().Pkg()).Lookup(typ.Obj().Name())
+			ntyp.SetOrigSym(g.pkg(typ.Obj().Pkg()).Lookup(typ.Obj().Name()))
 			ntyp.SetUnderlying(g.typ1(typ.Underlying()))
 			if typ.NumMethods() != 0 {
 				// Save a delayed call to g.fillinMethods() (once
@@ -290,7 +272,7 @@ func (g *irgen) typ0(typ types2.Type) *types.Type {
 // instantiated types, and for actually generating the methods for instantiated
 // types.
 func (g *irgen) fillinMethods(typ *types2.Named, ntyp *types.Type) {
-	targs2 := typ.TArgs()
+	targs2 := typ.TypeArgs()
 	targs := make([]*types.Type, targs2.Len())
 	for i := range targs {
 		targs[i] = g.typ1(targs2.At(i))
@@ -314,7 +296,7 @@ func (g *irgen) fillinMethods(typ *types2.Named, ntyp *types.Type) {
 			// generic type, so we have to do a substitution to get
 			// the name/type of the method of the instantiated type,
 			// using m.Type().RParams() and typ.TArgs()
-			inst2 := instTypeName2("", typ.TArgs())
+			inst2 := g.instTypeName2("", typ.TypeArgs())
 			name := meth.Sym().Name
 			i1 := strings.Index(name, "[")
 			i2 := strings.Index(name[i1:], "]")
@@ -339,10 +321,6 @@ func (g *irgen) fillinMethods(typ *types2.Named, ntyp *types.Type) {
 				}
 				// Do the substitution of the type
 				meth2.SetType(ts.Typ(meth.Type()))
-				// Add any new fully instantiated types
-				// seen during the substitution to
-				// g.instTypeList.
-				g.instTypeList = append(g.instTypeList, ts.InstTypeList...)
 				newsym.Def = meth2
 			}
 			meth = meth2
@@ -353,12 +331,12 @@ func (g *irgen) fillinMethods(typ *types2.Named, ntyp *types.Type) {
 	ntyp.Methods().Set(methods)
 	if !ntyp.HasTParam() && !ntyp.HasShape() {
 		// Generate all the methods for a new fully-instantiated type.
-		g.instTypeList = append(g.instTypeList, ntyp)
+		typecheck.NeedInstType(ntyp)
 	}
 }
 
 func (g *irgen) signature(recv *types.Field, sig *types2.Signature) *types.Type {
-	tparams2 := sig.TParams()
+	tparams2 := sig.TypeParams()
 	tparams := make([]*types.Field, tparams2.Len())
 	for i := range tparams {
 		tp := tparams2.At(i).Obj()

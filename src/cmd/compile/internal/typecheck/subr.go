@@ -740,9 +740,16 @@ func implements(t, iface *types.Type, m, samename **types.Field, ptr *int) bool 
 
 	if t.IsInterface() || t.IsTypeParam() {
 		if t.IsTypeParam() {
-			// A typeparam satisfies an interface if its type bound
-			// has all the methods of that interface.
-			t = t.Bound()
+			// If t is a simple type parameter T, its type and underlying is the same.
+			// If t is a type definition:'type P[T any] T', its type is P[T] and its
+			// underlying is T. Therefore we use 't.Underlying() != t' to distinguish them.
+			if t.Underlying() != t {
+				CalcMethods(t)
+			} else {
+				// A typeparam satisfies an interface if its type bound
+				// has all the methods of that interface.
+				t = t.Bound()
+			}
 		}
 		i := 0
 		tms := t.AllMethods().Slice()
@@ -985,6 +992,22 @@ func assert(p bool) {
 	base.Assert(p)
 }
 
+// List of newly fully-instantiated types who should have their methods generated.
+var instTypeList []*types.Type
+
+// NeedInstType adds a new fully-instantied type to instTypeList.
+func NeedInstType(t *types.Type) {
+	instTypeList = append(instTypeList, t)
+}
+
+// GetInstTypeList returns the current contents of instTypeList, and sets
+// instTypeList to nil.
+func GetInstTypeList() []*types.Type {
+	r := instTypeList
+	instTypeList = nil
+	return r
+}
+
 // General type substituter, for replacing typeparams with type args.
 type Tsubster struct {
 	Tparams []*types.Type
@@ -992,8 +1015,6 @@ type Tsubster struct {
 	// If non-nil, the substitution map from name nodes in the generic function to the
 	// name nodes in the new stenciled function.
 	Vars map[*ir.Name]*ir.Name
-	// New fully-instantiated generic types whose methods should be instantiated.
-	InstTypeList []*types.Type
 	// If non-nil, function to substitute an incomplete (TFORW) type.
 	SubstForwFunc func(*types.Type) *types.Type
 }
@@ -1081,8 +1102,8 @@ func (ts *Tsubster) typ1(t *types.Type) *types.Type {
 		forw.SetRParams(neededTargs)
 		// Copy the OrigSym from the re-instantiated type (which is the sym of
 		// the base generic type).
-		assert(t.OrigSym != nil)
-		forw.OrigSym = t.OrigSym
+		assert(t.OrigSym() != nil)
+		forw.SetOrigSym(t.OrigSym())
 	}
 
 	var newt *types.Type
@@ -1163,8 +1184,8 @@ func (ts *Tsubster) typ1(t *types.Type) *types.Type {
 		}
 
 	case types.TINTER:
-		newt = ts.tinter(t)
-		if newt == t && !targsChanged {
+		newt = ts.tinter(t, targsChanged)
+		if newt == t {
 			newt = nil
 		}
 
@@ -1189,7 +1210,7 @@ func (ts *Tsubster) typ1(t *types.Type) *types.Type {
 		}
 	case types.TINT, types.TINT8, types.TINT16, types.TINT32, types.TINT64,
 		types.TUINT, types.TUINT8, types.TUINT16, types.TUINT32, types.TUINT64,
-		types.TUINTPTR, types.TBOOL, types.TSTRING, types.TFLOAT32, types.TFLOAT64, types.TCOMPLEX64, types.TCOMPLEX128:
+		types.TUINTPTR, types.TBOOL, types.TSTRING, types.TFLOAT32, types.TFLOAT64, types.TCOMPLEX64, types.TCOMPLEX128, types.TUNSAFEPTR:
 		newt = t.Underlying()
 	case types.TUNION:
 		nt := t.NumTerms()
@@ -1222,7 +1243,7 @@ func (ts *Tsubster) typ1(t *types.Type) *types.Type {
 		newt = forw
 	}
 
-	if !newt.HasTParam() {
+	if !newt.HasTParam() && !newt.IsFuncArgStruct() {
 		// Calculate the size of any new types created. These will be
 		// deferred until the top-level ts.Typ() or g.typ() (if this is
 		// called from g.fillinMethods()).
@@ -1251,7 +1272,8 @@ func (ts *Tsubster) typ1(t *types.Type) *types.Type {
 		newt.Methods().Set(newfields)
 		if !newt.HasTParam() && !newt.HasShape() {
 			// Generate all the methods for a new fully-instantiated type.
-			ts.InstTypeList = append(ts.InstTypeList, newt)
+
+			NeedInstType(newt)
 		}
 	}
 	return newt
@@ -1317,18 +1339,29 @@ func (ts *Tsubster) tstruct(t *types.Type, force bool) *types.Type {
 		}
 	}
 	if newfields != nil {
-		return types.NewStruct(t.Pkg(), newfields)
+		news := types.NewStruct(t.Pkg(), newfields)
+		news.StructType().Funarg = t.StructType().Funarg
+		return news
 	}
 	return t
 
 }
 
 // tinter substitutes type params in types of the methods of an interface type.
-func (ts *Tsubster) tinter(t *types.Type) *types.Type {
+func (ts *Tsubster) tinter(t *types.Type, force bool) *types.Type {
 	if t.Methods().Len() == 0 {
+		if t.HasTParam() {
+			// For an empty interface, we need to return a new type,
+			// since it may now be fully instantiated (HasTParam
+			// becomes false).
+			return types.NewInterface(t.Pkg(), nil)
+		}
 		return t
 	}
 	var newfields []*types.Field
+	if force {
+		newfields = make([]*types.Field, t.Methods().Len())
+	}
 	for i, f := range t.Methods().Slice() {
 		t2 := ts.typ1(f.Type)
 		if (t2 != f.Type || f.Nname != nil) && newfields == nil {

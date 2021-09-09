@@ -151,7 +151,7 @@ func (g *irgen) stencil() {
 				targs := deref(meth.Type().Recv().Type).RParams()
 
 				t := meth.X.Type()
-				baseSym := deref(t).OrigSym
+				baseSym := deref(t).OrigSym()
 				baseType := baseSym.Def.(*ir.Name).Type()
 				var gf *ir.Name
 				for _, m := range baseType.Methods().Slice() {
@@ -309,7 +309,7 @@ func (g *irgen) buildClosure(outer *ir.Func, x ir.Node) ir.Node {
 			// actually generic, so no need to build a closure.
 			return x
 		}
-		baseType := recv.OrigSym.Def.Type()
+		baseType := recv.OrigSym().Def.Type()
 		var gf *ir.Name
 		for _, m := range baseType.Methods().Slice() {
 			if se.Sel == m.Sym {
@@ -481,39 +481,43 @@ func (g *irgen) buildClosure(outer *ir.Func, x ir.Node) ir.Node {
 }
 
 // instantiateMethods instantiates all the methods (and associated dictionaries) of
-// all fully-instantiated generic types that have been added to g.instTypeList.
+// all fully-instantiated generic types that have been added to typecheck.instTypeList.
+// It continues until no more types are added to typecheck.instTypeList.
 func (g *irgen) instantiateMethods() {
-	for i := 0; i < len(g.instTypeList); i++ {
-		typ := g.instTypeList[i]
-		assert(!typ.HasShape())
-		// Mark runtime type as needed, since this ensures that the
-		// compiler puts out the needed DWARF symbols, when this
-		// instantiated type has a different package from the local
-		// package.
-		typecheck.NeedRuntimeType(typ)
-		// Lookup the method on the base generic type, since methods may
-		// not be set on imported instantiated types.
-		baseSym := typ.OrigSym
-		baseType := baseSym.Def.(*ir.Name).Type()
-		for j, _ := range typ.Methods().Slice() {
-			if baseType.Methods().Slice()[j].Nointerface() {
-				typ.Methods().Slice()[j].SetNointerface(true)
+	for {
+		instTypeList := typecheck.GetInstTypeList()
+		if len(instTypeList) == 0 {
+			break
+		}
+		for _, typ := range instTypeList {
+			assert(!typ.HasShape())
+			// Mark runtime type as needed, since this ensures that the
+			// compiler puts out the needed DWARF symbols, when this
+			// instantiated type has a different package from the local
+			// package.
+			typecheck.NeedRuntimeType(typ)
+			// Lookup the method on the base generic type, since methods may
+			// not be set on imported instantiated types.
+			baseSym := typ.OrigSym()
+			baseType := baseSym.Def.(*ir.Name).Type()
+			for j, _ := range typ.Methods().Slice() {
+				if baseType.Methods().Slice()[j].Nointerface() {
+					typ.Methods().Slice()[j].SetNointerface(true)
+				}
+				baseNname := baseType.Methods().Slice()[j].Nname.(*ir.Name)
+				// Eagerly generate the instantiations and dictionaries that implement these methods.
+				// We don't use the instantiations here, just generate them (and any
+				// further instantiations those generate, etc.).
+				// Note that we don't set the Func for any methods on instantiated
+				// types. Their signatures don't match so that would be confusing.
+				// Direct method calls go directly to the instantiations, implemented above.
+				// Indirect method calls use wrappers generated in reflectcall. Those wrappers
+				// will use these instantiations if they are needed (for interface tables or reflection).
+				_ = g.getInstantiation(baseNname, typ.RParams(), true)
+				_ = g.getDictionarySym(baseNname, typ.RParams(), true)
 			}
-			baseNname := baseType.Methods().Slice()[j].Nname.(*ir.Name)
-			// Eagerly generate the instantiations and dictionaries that implement these methods.
-			// We don't use the instantiations here, just generate them (and any
-			// further instantiations those generate, etc.).
-			// Note that we don't set the Func for any methods on instantiated
-			// types. Their signatures don't match so that would be confusing.
-			// Direct method calls go directly to the instantiations, implemented above.
-			// Indirect method calls use wrappers generated in reflectcall. Those wrappers
-			// will use these instantiations if they are needed (for interface tables or reflection).
-			_ = g.getInstantiation(baseNname, typ.RParams(), true)
-			_ = g.getDictionarySym(baseNname, typ.RParams(), true)
 		}
 	}
-	g.instTypeList = nil
-
 }
 
 // getInstNameNode returns the name node for the method or function being instantiated, and a bool which is true if a method is being instantiated.
@@ -627,6 +631,9 @@ type subster struct {
 	newf     *ir.Func // Func node for the new stenciled function
 	ts       typecheck.Tsubster
 	info     *instInfo // Place to put extra info in the instantiation
+
+	// Map from non-nil, non-ONAME node n to slice of all m, where m.Defn = n
+	defnMap map[ir.Node][]**ir.Name
 }
 
 // genericSubst returns a new function with name newsym. The function is an
@@ -675,6 +682,7 @@ func (g *irgen) genericSubst(newsym *types.Sym, nameNode *ir.Name, shapes []*typ
 			Targs:   shapes,
 			Vars:    make(map[*ir.Name]*ir.Name),
 		},
+		defnMap: make(map[ir.Node][]**ir.Name),
 	}
 
 	newf.Dcl = make([]*ir.Name, 0, len(gf.Dcl)+1)
@@ -726,10 +734,11 @@ func (g *irgen) genericSubst(newsym *types.Sym, nameNode *ir.Name, shapes []*typ
 	// to many->1 shape to concrete mapping.
 	// newf.Body.Prepend(subst.checkDictionary(dictionaryName, shapes)...)
 
+	if len(subst.defnMap) > 0 {
+		base.Fatalf("defnMap is not empty")
+	}
+
 	ir.CurFunc = savef
-	// Add any new, fully instantiated types seen during the substitution to
-	// g.instTypeList.
-	g.instTypeList = append(g.instTypeList, subst.ts.InstTypeList...)
 
 	if doubleCheck {
 		ir.Visit(newf, func(n ir.Node) {
@@ -737,7 +746,7 @@ func (g *irgen) genericSubst(newsym *types.Sym, nameNode *ir.Name, shapes []*typ
 				return
 			}
 			c := n.(*ir.ConvExpr)
-			if c.X.Type().HasShape() {
+			if c.X.Type().HasShape() && !c.X.Type().IsInterface() {
 				ir.Dump("BAD FUNCTION", newf)
 				ir.Dump("BAD CONVERSION", c)
 				base.Fatalf("converting shape type to interface")
@@ -764,6 +773,25 @@ func (subst *subster) localvar(name *ir.Name) *ir.Name {
 	m.Func = name.Func
 	subst.ts.Vars[name] = m
 	m.SetTypecheck(1)
+	if name.Defn != nil {
+		if name.Defn.Op() == ir.ONAME {
+			// This is a closure variable, so its Defn is the outer
+			// captured variable, which has already been substituted.
+			m.Defn = subst.node(name.Defn)
+		} else {
+			// The other values of Defn are nodes in the body of the
+			// function, so just remember the mapping so we can set Defn
+			// properly in node() when we create the new body node. We
+			// always call localvar() on all the local variables before
+			// we substitute the body.
+			slice := subst.defnMap[name.Defn]
+			subst.defnMap[name.Defn] = append(slice, &m)
+		}
+	}
+	if name.Outer != nil {
+		m.Outer = subst.node(name.Outer).(*ir.Name)
+	}
+
 	return m
 }
 
@@ -871,6 +899,18 @@ func (subst *subster) node(n ir.Node) ir.Node {
 			}
 		}
 		m := ir.Copy(x)
+
+		slice, ok := subst.defnMap[x]
+		if ok {
+			// We just copied a non-ONAME node which was the Defn value
+			// of a local variable. Set the Defn value of the copied
+			// local variable to this new Defn node.
+			for _, ptr := range slice {
+				(*ptr).Defn = m
+			}
+			delete(subst.defnMap, x)
+		}
+
 		if _, isExpr := m.(ir.Expr); isExpr {
 			t := x.Type()
 			if t == nil {
@@ -927,6 +967,7 @@ func (subst *subster) node(n ir.Node) ir.Node {
 					// of zeroing assignment of a dcl (rhs[0] is nil).
 					lhs, rhs := []ir.Node{as.X}, []ir.Node{as.Y}
 					transformAssign(as, lhs, rhs)
+					as.X, as.Y = lhs[0], rhs[0]
 				}
 
 			case ir.OASOP:
@@ -1055,6 +1096,9 @@ func (subst *subster) node(n ir.Node) ir.Node {
 				// or channel receive to compute function value.
 				transformCall(call)
 
+			case ir.OCALL, ir.OCALLFUNC, ir.OCALLMETH, ir.OCALLINTER, ir.ODYNAMICDOTTYPE:
+				transformCall(call)
+
 			case ir.OFUNCINST:
 				// A call with an OFUNCINST will get transformed
 				// in stencil() once we have created & attached the
@@ -1135,7 +1179,7 @@ func (subst *subster) node(n ir.Node) ir.Node {
 			x := x.(*ir.ConvExpr)
 			// Note: x's argument is still typed as a type parameter.
 			// m's argument now has an instantiated type.
-			if x.X.Type().HasTParam() {
+			if x.X.Type().HasTParam() || (x.X.Type().IsInterface() && x.Type().HasTParam()) {
 				m = convertUsingDictionary(subst.info, subst.info.dictParam, m.Pos(), m.(*ir.ConvExpr).X, x, m.Type(), x.X.Type())
 			}
 		case ir.ODOTTYPE, ir.ODOTTYPE2:
@@ -1231,8 +1275,51 @@ func findDictType(info *instInfo, t *types.Type) int {
 // CONVIFACE node or XDOT node (for a bound method call) that is causing the
 // conversion.
 func convertUsingDictionary(info *instInfo, dictParam *ir.Name, pos src.XPos, v ir.Node, gn ir.Node, dst, src *types.Type) ir.Node {
-	assert(src.HasTParam())
+	assert(src.HasTParam() || src.IsInterface() && gn.Type().HasTParam())
 	assert(dst.IsInterface())
+
+	if v.Type().IsInterface() {
+		// Converting from an interface. The shape-ness of the source doesn't really matter, as
+		// we'll be using the concrete type from the first interface word.
+		if dst.IsEmptyInterface() {
+			// Converting I2E. OCONVIFACE does that for us, and doesn't depend
+			// on what the empty interface was instantiated with. No dictionary entry needed.
+			v = ir.NewConvExpr(pos, ir.OCONVIFACE, dst, v)
+			v.SetTypecheck(1)
+			return v
+		}
+		gdst := gn.Type() // pre-stenciled destination type
+		if !gdst.HasTParam() {
+			// Regular OCONVIFACE works if the destination isn't parameterized.
+			v = ir.NewConvExpr(pos, ir.OCONVIFACE, dst, v)
+			v.SetTypecheck(1)
+			return v
+		}
+
+		// We get the destination interface type from the dictionary and the concrete
+		// type from the argument's itab. Call runtime.convI2I to get the new itab.
+		tmp := typecheck.Temp(v.Type())
+		as := ir.NewAssignStmt(pos, tmp, v)
+		as.SetTypecheck(1)
+		itab := ir.NewUnaryExpr(pos, ir.OITAB, tmp)
+		typed(types.Types[types.TUINTPTR].PtrTo(), itab)
+		idata := ir.NewUnaryExpr(pos, ir.OIDATA, tmp)
+		typed(types.Types[types.TUNSAFEPTR], idata)
+
+		fn := typecheck.LookupRuntime("convI2I")
+		fn.SetTypecheck(1)
+		types.CalcSize(fn.Type())
+		call := ir.NewCallExpr(pos, ir.OCALLFUNC, fn, nil)
+		typed(types.Types[types.TUINT8].PtrTo(), call)
+		ix := findDictType(info, gdst)
+		assert(ix >= 0)
+		inter := getDictionaryType(info, dictParam, pos, ix)
+		call.Args = []ir.Node{inter, itab}
+		i := ir.NewBinaryExpr(pos, ir.OEFACE, call, idata)
+		typed(dst, i)
+		i.PtrInit().Append(as)
+		return i
+	}
 
 	var rt ir.Node
 	if !dst.IsEmptyInterface() {
@@ -1248,11 +1335,6 @@ func convertUsingDictionary(info *instInfo, dictParam *ir.Name, pos src.XPos, v 
 		}
 		assert(ix >= 0)
 		rt = getDictionaryEntry(pos, dictParam, ix, info.dictLen)
-	} else if v.Type().IsInterface() {
-		ta := ir.NewTypeAssertExpr(pos, v, nil)
-		ta.SetType(dst)
-		ta.SetTypecheck(1)
-		return ta
 	} else {
 		ix := findDictType(info, src)
 		assert(ix >= 0)
@@ -1261,31 +1343,19 @@ func convertUsingDictionary(info *instInfo, dictParam *ir.Name, pos src.XPos, v 
 	}
 
 	// Figure out what the data field of the interface will be.
-	var data ir.Node
-	if v.Type().IsInterface() {
-		data = ir.NewUnaryExpr(pos, ir.OIDATA, v)
-	} else {
-		data = ir.NewConvExpr(pos, ir.OCONVIDATA, nil, v)
-	}
+	data := ir.NewConvExpr(pos, ir.OCONVIDATA, nil, v)
 	typed(types.Types[types.TUNSAFEPTR], data)
 
 	// Build an interface from the type and data parts.
 	var i ir.Node = ir.NewBinaryExpr(pos, ir.OEFACE, rt, data)
 	typed(dst, i)
 	return i
-
 }
 
 func (subst *subster) namelist(l []*ir.Name) []*ir.Name {
 	s := make([]*ir.Name, len(l))
 	for i, n := range l {
 		s[i] = subst.localvar(n)
-		if n.Defn != nil {
-			s[i].Defn = subst.node(n.Defn)
-		}
-		if n.Outer != nil {
-			s[i].Outer = subst.node(n.Outer).(*ir.Name)
-		}
 	}
 	return s
 }
@@ -1433,7 +1503,7 @@ func (g *irgen) getDictionarySym(gf *ir.Name, targs []*types.Type, isMeth bool) 
 					// instantiated type, so we need a
 					// sub-dictionary.
 					targs := recvType.RParams()
-					genRecvType := recvType.OrigSym.Def.Type()
+					genRecvType := recvType.OrigSym().Def.Type()
 					nameNode = typecheck.Lookdot1(call.X, se.Sel, genRecvType, genRecvType.Methods(), 1).Nname.(*ir.Name)
 					sym = g.getDictionarySym(nameNode, targs, true)
 				} else {
@@ -1504,7 +1574,6 @@ func (g *irgen) getDictionarySym(gf *ir.Name, targs []*types.Type, isMeth bool) 
 		off:   off,
 	}
 	g.dictSymsToFinalize = append(g.dictSymsToFinalize, delay)
-	g.instTypeList = append(g.instTypeList, subst.InstTypeList...)
 	return sym
 }
 
@@ -1557,7 +1626,7 @@ func (g *irgen) finalizeSyms() {
 			default:
 				base.Fatalf("itab entry with unknown op %s", n.Op())
 			}
-			if srctype.IsInterface() {
+			if srctype.IsInterface() || dsttype.IsEmptyInterface() {
 				// No itab is wanted if src type is an interface. We
 				// will use a type assert instead.
 				d.off = objw.Uintptr(lsym, d.off, 0)
@@ -1571,8 +1640,6 @@ func (g *irgen) finalizeSyms() {
 
 		objw.Global(lsym, int32(d.off), obj.DUPOK|obj.RODATA)
 		infoPrint("=== Finalized dictionary %s\n", d.sym.Name)
-
-		g.instTypeList = append(g.instTypeList, subst.InstTypeList...)
 	}
 	g.dictSymsToFinalize = nil
 }
@@ -1852,7 +1919,7 @@ func parameterizedBy1(t *types.Type, params []*types.Type, visited map[*types.Ty
 
 	case types.TINT, types.TINT8, types.TINT16, types.TINT32, types.TINT64,
 		types.TUINT, types.TUINT8, types.TUINT16, types.TUINT32, types.TUINT64,
-		types.TUINTPTR, types.TBOOL, types.TSTRING, types.TFLOAT32, types.TFLOAT64, types.TCOMPLEX64, types.TCOMPLEX128:
+		types.TUINTPTR, types.TBOOL, types.TSTRING, types.TFLOAT32, types.TFLOAT64, types.TCOMPLEX64, types.TCOMPLEX128, types.TUNSAFEPTR:
 		return true
 
 	case types.TUNION:

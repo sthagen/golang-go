@@ -195,7 +195,7 @@ func transformCompare(n *ir.BinaryExpr) {
 			aop, _ := typecheck.Assignop(lt, rt)
 			if aop != ir.OXXX {
 				types.CalcSize(lt)
-				if lt.HasTParam() || rt.IsInterface() == lt.IsInterface() || lt.Width >= 1<<16 {
+				if lt.HasTParam() || rt.IsInterface() == lt.IsInterface() || lt.Size() >= 1<<16 {
 					l = ir.NewConvExpr(base.Pos, aop, rt, l)
 					l.SetTypecheck(1)
 				}
@@ -208,7 +208,7 @@ func transformCompare(n *ir.BinaryExpr) {
 			aop, _ := typecheck.Assignop(rt, lt)
 			if aop != ir.OXXX {
 				types.CalcSize(rt)
-				if rt.HasTParam() || rt.IsInterface() == lt.IsInterface() || rt.Width >= 1<<16 {
+				if rt.HasTParam() || rt.IsInterface() == lt.IsInterface() || rt.Size() >= 1<<16 {
 					r = ir.NewConvExpr(base.Pos, aop, lt, r)
 					r.SetTypecheck(1)
 				}
@@ -365,6 +365,59 @@ assignOK:
 	}
 }
 
+// Version of transformAssign that can run on generic code that adds CONVIFACE calls
+// as needed (and rewrites multi-value calls).
+func earlyTransformAssign(stmt ir.Node, lhs, rhs []ir.Node) {
+	cr := len(rhs)
+	if len(rhs) == 1 {
+		if rtyp := rhs[0].Type(); rtyp != nil && rtyp.IsFuncArgStruct() {
+			cr = rtyp.NumFields()
+		}
+	}
+
+	// x,y,z = f()
+	_, isCallExpr := rhs[0].(*ir.CallExpr)
+	if isCallExpr && cr > len(rhs) {
+		stmt := stmt.(*ir.AssignListStmt)
+		stmt.SetOp(ir.OAS2FUNC)
+		r := rhs[0].(*ir.CallExpr)
+		rtyp := r.Type()
+
+		mismatched := false
+		failed := false
+		for i := range lhs {
+			result := rtyp.Field(i).Type
+
+			if lhs[i].Type() == nil || result == nil {
+				failed = true
+			} else if lhs[i] != ir.BlankNode && !types.Identical(lhs[i].Type(), result) {
+				mismatched = true
+			}
+		}
+		if mismatched && !failed {
+			typecheck.RewriteMultiValueCall(stmt, r)
+		}
+		return
+	}
+
+	// x, ok = y
+	if len(lhs) != len(rhs) {
+		assert(len(lhs) == 2 && len(rhs) == 1)
+		// TODO(danscales): deal with case where x or ok is an interface
+		// type. We want to add CONVIFACE now, but that is tricky, because
+		// the rhs may be AS2MAPR, AS2RECV, etc. which has two result values,
+		// and that is not rewritten until the order phase (o.stmt, as2ok).
+		return
+	}
+
+	// Check for interface conversion on each assignment
+	for i, r := range rhs {
+		if lhs[i].Type() != nil && lhs[i].Type().IsInterface() {
+			rhs[i] = assignconvfn(r, lhs[i].Type())
+		}
+	}
+}
+
 // Corresponds to typecheck.typecheckargs.  Really just deals with multi-value calls.
 func transformArgs(n ir.InitNode) {
 	var list []ir.Node
@@ -493,10 +546,15 @@ func transformSelect(sel *ir.SelectStmt) {
 		if ncase.Comm != nil {
 			n := ncase.Comm
 			oselrecv2 := func(dst, recv ir.Node, def bool) {
-				n := ir.NewAssignListStmt(n.Pos(), ir.OSELRECV2, []ir.Node{dst, ir.BlankNode}, []ir.Node{recv})
-				n.Def = def
-				n.SetTypecheck(1)
-				ncase.Comm = n
+				selrecv := ir.NewAssignListStmt(n.Pos(), ir.OSELRECV2, []ir.Node{dst, ir.BlankNode}, []ir.Node{recv})
+				if dst.Op() == ir.ONAME && dst.(*ir.Name).Defn == n {
+					// Must fix Defn for dst, since we are
+					// completely changing the node.
+					dst.(*ir.Name).Defn = selrecv
+				}
+				selrecv.Def = def
+				selrecv.SetTypecheck(1)
+				ncase.Comm = selrecv
 			}
 			switch n.Op() {
 			case ir.OAS:

@@ -126,13 +126,15 @@ func (g *irgen) expr0(typ types2.Type, expr syntax.Expr) ir.Node {
 				targs[i] = ir.TypeNode(g.typ(inferred.TArgs.At(i)))
 			}
 			if fun.Op() == ir.OFUNCINST {
-				// Replace explicit type args with the full list that
-				// includes the additional inferred type args.
-				// Substitute the type args for the type params in
-				// the generic function's type.
-				fun.(*ir.InstExpr).Targs = targs
-				newt := g.substType(fun.Type(), fun.Type().TParams(), targs)
-				typed(newt, fun)
+				if len(fun.(*ir.InstExpr).Targs) < len(targs) {
+					// Replace explicit type args with the full list that
+					// includes the additional inferred type args.
+					// Substitute the type args for the type params in
+					// the generic function's type.
+					fun.(*ir.InstExpr).Targs = targs
+					newt := g.substType(fun.(*ir.InstExpr).X.Type(), fun.(*ir.InstExpr).X.Type().TParams(), targs)
+					typed(newt, fun)
+				}
 			} else {
 				// Create a function instantiation here, given there
 				// are only inferred type args (e.g. min(5,6), where
@@ -235,7 +237,6 @@ func (g *irgen) substType(typ *types.Type, tparams *types.Type, targs []ir.Node)
 		Targs:   targs1,
 	}
 	newt := ts.Typ(typ)
-	g.instTypeList = append(g.instTypeList, ts.InstTypeList...)
 	return newt
 }
 
@@ -270,7 +271,7 @@ func (g *irgen) selectorExpr(pos src.XPos, typ types2.Type, expr *syntax.Selecto
 		if types2.AsInterface(recvType.Underlying()) != nil {
 			fieldType := n.X.Type()
 			for _, ix := range index[:len(index)-1] {
-				fieldType = fieldType.Field(ix).Type
+				fieldType = deref(fieldType).Field(ix).Type
 			}
 			if fieldType.Kind() == types.TTYPEPARAM {
 				n.Selection = fieldType.Bound().AllMethods().Index(last)
@@ -343,7 +344,7 @@ func (g *irgen) selectorExpr(pos src.XPos, typ types2.Type, expr *syntax.Selecto
 			if wantPtr {
 				recvType2Base = types2.AsPointer(recvType2).Elem()
 			}
-			if types2.AsNamed(recvType2Base).TParams().Len() > 0 {
+			if types2.AsNamed(recvType2Base).TypeParams().Len() > 0 {
 				// recvType2 is the original generic type that is
 				// instantiated for this method call.
 				// selinfo.Recv() is the instantiated type
@@ -359,12 +360,10 @@ func (g *irgen) selectorExpr(pos src.XPos, typ types2.Type, expr *syntax.Selecto
 				n.(*ir.SelectorExpr).Selection.Nname = method
 				typed(method.Type(), n)
 
-				// selinfo.Targs() are the types used to
-				// instantiate the type of receiver
-				targs2 := getTargs(selinfo)
-				targs := make([]ir.Node, targs2.Len())
+				xt := deref(x.Type())
+				targs := make([]ir.Node, len(xt.RParams()))
 				for i := range targs {
-					targs[i] = ir.TypeNode(g.typ(targs2.At(i)))
+					targs[i] = ir.TypeNode(xt.RParams()[i])
 				}
 
 				// Create function instantiation with the type
@@ -385,16 +384,6 @@ func (g *irgen) selectorExpr(pos src.XPos, typ types2.Type, expr *syntax.Selecto
 		base.FatalfAt(pos, "bad Sym: have %v, want %v", have, want)
 	}
 	return n
-}
-
-// getTargs gets the targs associated with the receiver of a selected method
-func getTargs(selinfo *types2.Selection) *types2.TypeList {
-	r := deref2(selinfo.Recv())
-	n := types2.AsNamed(r)
-	if n == nil {
-		base.Fatalf("Incorrect type for selinfo %v", selinfo)
-	}
-	return n.TArgs()
 }
 
 func (g *irgen) exprList(expr syntax.Expr) []ir.Node {

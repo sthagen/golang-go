@@ -76,16 +76,17 @@ type tparamsList struct {
 // String returns a string representation for a tparamsList. For debugging.
 func (d *tparamsList) String() string {
 	var buf bytes.Buffer
-	buf.WriteByte('[')
+	w := newTypeWriter(&buf, nil)
+	w.byte('[')
 	for i, tpar := range d.tparams {
 		if i > 0 {
-			buf.WriteString(", ")
+			w.string(", ")
 		}
-		writeType(&buf, tpar, nil, nil)
-		buf.WriteString(": ")
-		writeType(&buf, d.at(i), nil, nil)
+		w.typ(tpar)
+		w.string(": ")
+		w.typ(d.at(i))
 	}
-	buf.WriteByte(']')
+	w.byte(']')
 	return buf.String()
 }
 
@@ -433,6 +434,9 @@ func (u *unifier) nify(x, y Type, p *ifacePair) bool {
 			xargs := x.targs.list()
 			yargs := y.targs.list()
 
+			// TODO(gri) This is not always correct: two types may have the same names
+			//           in the same package if one of them is nested in a function.
+			//           Extremely unlikely but we need an always correct solution.
 			if x.obj.pkg == y.obj.pkg && x.obj.name == y.obj.name {
 				assert(len(xargs) == len(yargs))
 				for i, x := range xargs {

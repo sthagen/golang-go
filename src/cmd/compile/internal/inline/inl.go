@@ -398,10 +398,14 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 		n := n.(*ir.IfStmt)
 		if ir.IsConst(n.Cond, constant.Bool) {
 			// This if and the condition cost nothing.
-			// TODO(rsc): It seems strange that we visit the dead branch.
-			return doList(n.Init(), v.do) ||
-				doList(n.Body, v.do) ||
-				doList(n.Else, v.do)
+			if doList(n.Init(), v.do) {
+				return true
+			}
+			if ir.BoolVal(n.Cond) {
+				return doList(n.Body, v.do)
+			} else {
+				return doList(n.Else, v.do)
+			}
 		}
 
 	case ir.ONAME:
@@ -1061,6 +1065,8 @@ func (subst *inlsubst) clovar(n *ir.Name) *ir.Name {
 		m.Defn = &subst.defnMarker
 	case *ir.TypeSwitchGuard:
 		// TODO(mdempsky): Set m.Defn properly. See discussion on #45743.
+	case *ir.RangeStmt:
+		// TODO: Set m.Defn properly if we support inlining range statement in the future.
 	default:
 		base.FatalfAt(n.Pos(), "unexpected Defn: %+v", defn)
 	}

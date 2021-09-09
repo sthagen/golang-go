@@ -34,10 +34,13 @@ func checkFiles(noders []*noder) (posMap, *types2.Package, *types2.Info) {
 	}
 
 	// typechecking
+	env := types2.NewEnvironment()
 	importer := gcimports{
-		packages: make(map[string]*types2.Package),
+		env:      env,
+		packages: map[string]*types2.Package{"unsafe": types2.Unsafe},
 	}
 	conf := types2.Config{
+		Environment:           env,
 		GoVersion:             base.Flag.Lang,
 		IgnoreLabels:          true, // parser already checked via syntax.CheckBranches mode
 		CompilerErrorMessages: true, // use error strings matching existing compiler errors
@@ -60,9 +63,7 @@ func checkFiles(noders []*noder) (posMap, *types2.Package, *types2.Info) {
 		// expand as needed
 	}
 
-	pkg := types2.NewPackage(base.Ctxt.Pkgpath, "")
-	importer.check = types2.NewChecker(&conf, pkg, info)
-	err := importer.check.Files(files)
+	pkg, err := conf.Check(base.Ctxt.Pkgpath, files, info)
 
 	base.ExitIfErrors()
 	if err != nil {
@@ -151,9 +152,6 @@ type irgen struct {
 
 	// types which we need to finish, by doing g.fillinMethods.
 	typesToFinalize []*typeDelayInfo
-
-	// Fully-instantiated generic types whose methods should be instantiated
-	instTypeList []*types.Type
 
 	dnum int // for generating unique dictionary variables
 
@@ -272,12 +270,6 @@ Outer:
 		}
 	}
 
-	// Check for unusual case where noder2 encounters a type error that types2
-	// doesn't check for (e.g. notinheap incompatibility).
-	base.ExitIfErrors()
-
-	typecheck.DeclareUniverse()
-
 	for _, p := range noders {
 		// Process linkname and cgo pragmas.
 		p.processPragmas()
@@ -289,6 +281,22 @@ Outer:
 			return false
 		})
 	}
+
+	if base.Flag.Complete {
+		for _, n := range g.target.Decls {
+			if fn, ok := n.(*ir.Func); ok {
+				if fn.Body == nil && fn.Nname.Sym().Linkname == "" {
+					base.ErrorfAt(fn.Pos(), "missing function body")
+				}
+			}
+		}
+	}
+
+	// Check for unusual case where noder2 encounters a type error that types2
+	// doesn't check for (e.g. notinheap incompatibility).
+	base.ExitIfErrors()
+
+	typecheck.DeclareUniverse()
 
 	// Create any needed stencils of generic functions
 	g.stencil()

@@ -714,7 +714,7 @@ func (p *iimporter) typAt(off uint64) *types.Type {
 		// No need to calc sizes for re-instantiated generic types, and
 		// they are not necessarily resolved until the top-level type is
 		// defined (because of recursive types).
-		if t.OrigSym == nil || !t.HasTParam() {
+		if t.OrigSym() == nil || !t.HasTParam() {
 			types.CheckSize(t)
 		}
 		p.typCache[off] = t
@@ -1269,7 +1269,11 @@ func (r *importReader) node() ir.Node {
 	case ir.ONAME:
 		isBuiltin := r.bool()
 		if isBuiltin {
-			return types.BuiltinPkg.Lookup(r.string()).Def.(*ir.Name)
+			pkg := types.BuiltinPkg
+			if r.bool() {
+				pkg = types.UnsafePkg
+			}
+			return pkg.Lookup(r.string()).Def.(*ir.Name)
 		}
 		return r.localName()
 
@@ -1395,7 +1399,7 @@ func (r *importReader) node() ir.Node {
 					} else {
 						genType := types.ReceiverBaseType(n1.X.Type())
 						if genType.IsInstantiatedGeneric() {
-							genType = genType.OrigSym.Def.Type()
+							genType = genType.OrigSym().Def.Type()
 						}
 						m = Lookdot1(n1, sel, genType, genType.Methods(), 1)
 					}
@@ -1404,12 +1408,14 @@ func (r *importReader) node() ir.Node {
 				}
 			case ir.ODOT, ir.ODOTPTR, ir.ODOTINTER:
 				n.Selection = r.exoticField()
-			case ir.ODOTMETH, ir.OMETHVALUE, ir.OMETHEXPR:
+			case ir.OMETHEXPR:
+				n = typecheckMethodExpr(n).(*ir.SelectorExpr)
+			case ir.ODOTMETH, ir.OMETHVALUE:
 				// These require a Lookup to link to the correct declaration.
 				rcvrType := expr.Type()
 				typ := n.Type()
 				n.Selection = Lookdot(n, rcvrType, 1)
-				if op == ir.OMETHVALUE || op == ir.OMETHEXPR {
+				if op == ir.OMETHVALUE {
 					// Lookdot clobbers the opcode and type, undo that.
 					n.SetOp(op)
 					n.SetType(typ)
@@ -1751,7 +1757,10 @@ func builtinCall(pos src.XPos, op ir.Op) *ir.CallExpr {
 }
 
 // NewIncompleteNamedType returns a TFORW type t with name specified by sym, such
-// that t.nod and sym.Def are set correctly.
+// that t.nod and sym.Def are set correctly. If there are any RParams for the type,
+// they should be set soon after creating the TFORW type, before creating the
+// underlying type. That ensures that the HasTParam and HasShape flags will be set
+// properly, in case this type is part of some mutually recursive type.
 func NewIncompleteNamedType(pos src.XPos, sym *types.Sym) *types.Type {
 	name := ir.NewDeclNameAt(pos, ir.OTYPE, sym)
 	forw := types.NewNamed(name)
@@ -1778,7 +1787,7 @@ func Instantiate(pos src.XPos, baseType *types.Type, targs []*types.Type) *types
 
 	t := NewIncompleteNamedType(baseType.Pos(), instSym)
 	t.SetRParams(targs)
-	t.OrigSym = baseSym
+	t.SetOrigSym(baseSym)
 
 	// baseType may still be TFORW or its methods may not be fully filled in
 	// (since we are in the middle of importing it). So, delay call to
@@ -1803,7 +1812,7 @@ func resumeDoInst() {
 		for len(deferredInstStack) > 0 {
 			t := deferredInstStack[0]
 			deferredInstStack = deferredInstStack[1:]
-			substInstType(t, t.OrigSym.Def.(*ir.Name).Type(), t.RParams())
+			substInstType(t, t.OrigSym().Def.(*ir.Name).Type(), t.RParams())
 		}
 	}
 	deferInst--
@@ -1814,7 +1823,7 @@ func resumeDoInst() {
 // during a type substitution for an instantiation. This is needed for
 // instantiations of mutually recursive types.
 func doInst(t *types.Type) *types.Type {
-	return Instantiate(t.Pos(), t.OrigSym.Def.(*ir.Name).Type(), t.RParams())
+	return Instantiate(t.Pos(), t.OrigSym().Def.(*ir.Name).Type(), t.RParams())
 }
 
 // substInstType completes the instantiation of a generic type by doing a
@@ -1865,4 +1874,8 @@ func substInstType(t *types.Type, baseType *types.Type, targs []*types.Type) {
 		newfields[i].Nname = nname
 	}
 	t.Methods().Set(newfields)
+	if !t.HasTParam() && t.Kind() != types.TINTER && t.Methods().Len() > 0 {
+		// Generate all the methods for a new fully-instantiated type.
+		NeedInstType(t)
+	}
 }

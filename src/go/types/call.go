@@ -17,6 +17,10 @@ import (
 // funcInst type-checks a function instantiation inst and returns the result in x.
 // The operand x must be the evaluation of inst.X and its type must be a signature.
 func (check *Checker) funcInst(x *operand, ix *typeparams.IndexExpr) {
+	if !check.allowVersion(check.pkg, 1, 18) {
+		check.softErrorf(inNode(ix.Orig, ix.Lbrack), _Todo, "function instantiation requires go1.18 or later")
+	}
+
 	targs := check.typeList(ix.Indices)
 	if targs == nil {
 		x.mode = invalid
@@ -27,7 +31,7 @@ func (check *Checker) funcInst(x *operand, ix *typeparams.IndexExpr) {
 
 	// check number of type arguments (got) vs number of type parameters (want)
 	sig := x.typ.(*Signature)
-	got, want := len(targs), sig.TParams().Len()
+	got, want := len(targs), sig.TypeParams().Len()
 	if got > want {
 		check.errorf(ix.Indices[got-1], _Todo, "got %d type arguments but want %d", got, want)
 		x.mode = invalid
@@ -39,7 +43,7 @@ func (check *Checker) funcInst(x *operand, ix *typeparams.IndexExpr) {
 	inferred := false
 
 	if got < want {
-		targs = check.infer(ix.Orig, sig.TParams().list(), targs, nil, nil, true)
+		targs = check.infer(ix.Orig, sig.TypeParams().list(), targs, nil, nil, true)
 		if targs == nil {
 			// error was already reported
 			x.mode = invalid
@@ -61,7 +65,7 @@ func (check *Checker) funcInst(x *operand, ix *typeparams.IndexExpr) {
 
 	// instantiate function signature
 	res := check.instantiate(x.Pos(), sig, targs, poslist).(*Signature)
-	assert(res.TParams().Len() == 0) // signature is not generic anymore
+	assert(res.TypeParams().Len() == 0) // signature is not generic anymore
 	if inferred {
 		check.recordInferred(ix.Orig, targs, res)
 	}
@@ -85,8 +89,9 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 		check.record(x)
 
 	} else {
-		check.exprOrType(x, call.Fun)
+		check.exprOrType(x, call.Fun, true)
 	}
+	// x.typ map be generic
 
 	switch x.mode {
 	case invalid:
@@ -96,6 +101,10 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 
 	case typexpr:
 		// conversion
+		check.nonGeneric(x)
+		if x.mode == invalid {
+			return conversion
+		}
 		T := x.typ
 		x.mode = invalid
 		switch n := len(call.Args); n {
@@ -124,6 +133,7 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 		return conversion
 
 	case builtin:
+		// no need to check for non-genericity here
 		id := x.id
 		if !check.builtin(x, call, id) {
 			x.mode = invalid
@@ -137,6 +147,7 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 	}
 
 	// ordinary function/method call
+	// signature may be generic
 	cgocall := x.mode == cgofunc
 
 	sig := asSignature(x.typ)
@@ -160,7 +171,7 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 		assert(len(targs) == len(ix.Indices))
 
 		// check number of type arguments (got) vs number of type parameters (want)
-		got, want := len(targs), sig.TParams().Len()
+		got, want := len(targs), sig.TypeParams().Len()
 		if got > want {
 			check.errorf(ix.Indices[want], _Todo, "got %d type arguments but want %d", got, want)
 			check.use(call.Args...)
@@ -194,7 +205,7 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 
 	// if type inference failed, a parametrized result must be invalidated
 	// (operands cannot have a parametrized type)
-	if x.mode == value && sig.TParams().Len() > 0 && isParameterized(sig.TParams().list(), x.typ) {
+	if x.mode == value && sig.TypeParams().Len() > 0 && isParameterized(sig.TypeParams().list(), x.typ) {
 		x.mode = invalid
 	}
 
@@ -323,24 +334,33 @@ func (check *Checker) arguments(call *ast.CallExpr, sig *Signature, targs []Type
 	}
 
 	// infer type arguments and instantiate signature if necessary
-	if sig.TParams().Len() > 0 {
+	if sig.TypeParams().Len() > 0 {
+		if !check.allowVersion(check.pkg, 1, 18) {
+			switch call.Fun.(type) {
+			case *ast.IndexExpr, *ast.IndexListExpr:
+				ix := typeparams.UnpackIndexExpr(call.Fun)
+				check.softErrorf(inNode(call.Fun, ix.Lbrack), _Todo, "function instantiation requires go1.18 or later")
+			default:
+				check.softErrorf(inNode(call, call.Lparen), _Todo, "implicit function instantiation requires go1.18 or later")
+			}
+		}
 		// TODO(gri) provide position information for targs so we can feed
 		//           it to the instantiate call for better error reporting
-		targs := check.infer(call, sig.TParams().list(), targs, sigParams, args, true)
+		targs := check.infer(call, sig.TypeParams().list(), targs, sigParams, args, true)
 		if targs == nil {
 			return // error already reported
 		}
 
 		// compute result signature
 		rsig = check.instantiate(call.Pos(), sig, targs, nil).(*Signature)
-		assert(rsig.TParams().Len() == 0) // signature is not generic anymore
+		assert(rsig.TypeParams().Len() == 0) // signature is not generic anymore
 		check.recordInferred(call, targs, rsig)
 
 		// Optimization: Only if the parameter list was adjusted do we
 		// need to compute it from the adjusted list; otherwise we can
 		// simply use the result signature's parameter list.
 		if adjusted {
-			sigParams = check.subst(call.Pos(), sigParams, makeSubstMap(sig.TParams().list(), targs), nil).(*Tuple)
+			sigParams = check.subst(call.Pos(), sigParams, makeSubstMap(sig.TypeParams().list(), targs), nil).(*Tuple)
 		} else {
 			sigParams = rsig.params
 		}
@@ -465,12 +485,10 @@ func (check *Checker) selector(x *operand, e *ast.SelectorExpr) {
 		}
 	}
 
-	check.exprOrType(x, e.X)
+	check.exprOrType(x, e.X, false)
 	if x.mode == invalid {
 		goto Error
 	}
-
-	check.instantiatedOperand(x)
 
 	obj, index, indirect = LookupFieldOrMethod(x.typ, x.mode == variable, check.pkg, sel)
 	if obj == nil {
@@ -707,7 +725,7 @@ func (check *Checker) use(arg ...ast.Expr) {
 		// The nil check below is necessary since certain AST fields
 		// may legally be nil (e.g., the ast.SliceExpr.High field).
 		if e != nil {
-			check.rawExpr(&x, e, nil)
+			check.rawExpr(&x, e, nil, false)
 		}
 	}
 }
@@ -739,17 +757,9 @@ func (check *Checker) useLHS(arg ...ast.Expr) {
 				}
 			}
 		}
-		check.rawExpr(&x, e, nil)
+		check.rawExpr(&x, e, nil, false)
 		if v != nil {
 			v.used = v_used // restore v.used
 		}
-	}
-}
-
-// instantiatedOperand reports an error of x is an uninstantiated (generic) type and sets x.typ to Typ[Invalid].
-func (check *Checker) instantiatedOperand(x *operand) {
-	if x.mode == typexpr && isGeneric(x.typ) {
-		check.errorf(x, _Todo, "cannot use generic type %s without instantiation", x.typ)
-		x.typ = Typ[Invalid]
 	}
 }

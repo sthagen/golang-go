@@ -475,8 +475,8 @@ func writeObject(buf *bytes.Buffer, obj Object, qf Qualifier) {
 		if _, ok := typ.(*Basic); ok {
 			return
 		}
-		if named, _ := typ.(*Named); named != nil && named.TParams().Len() > 0 {
-			writeTParamList(buf, named.TParams().list(), qf, nil)
+		if named, _ := typ.(*Named); named != nil && named.TypeParams().Len() > 0 {
+			newTypeWriter(buf, qf).tParamList(named.TypeParams().list())
 		}
 		if tname.IsAlias() {
 			buf.WriteString(" =")

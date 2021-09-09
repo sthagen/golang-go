@@ -101,6 +101,8 @@ func (g *irgen) stmt(stmt syntax.Stmt) ir.Node {
 			n.Def = initDefn(n, names)
 
 			if delay {
+				earlyTransformAssign(n, lhs, rhs)
+				n.X, n.Y = lhs[0], rhs[0]
 				n.SetTypecheck(3)
 				return n
 			}
@@ -115,6 +117,7 @@ func (g *irgen) stmt(stmt syntax.Stmt) ir.Node {
 		n := ir.NewAssignListStmt(g.pos(stmt), ir.OAS2, lhs, rhs)
 		n.Def = initDefn(n, names)
 		if delay {
+			earlyTransformAssign(n, lhs, rhs)
 			n.SetTypecheck(3)
 			return n
 		}
@@ -327,6 +330,8 @@ func (g *irgen) switchStmt(stmt *syntax.SwitchStmt) ir.Node {
 		if obj, ok := g.info.Implicits[clause]; ok {
 			cv = g.obj(obj)
 			cv.SetPos(g.makeXPos(clause.Colon))
+			assert(expr.Op() == ir.OTYPESW)
+			cv.Defn = expr
 		}
 		body[i] = ir.NewCaseStmt(g.pos(clause), g.exprList(clause.Cases), g.stmts(clause.Body))
 		body[i].Var = cv

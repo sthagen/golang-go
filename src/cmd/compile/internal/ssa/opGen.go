@@ -962,7 +962,6 @@ const (
 	OpAMD64MOVQstore
 	OpAMD64MOVOload
 	OpAMD64MOVOstore
-	OpAMD64MOVOstorezero
 	OpAMD64MOVBloadidx1
 	OpAMD64MOVWloadidx1
 	OpAMD64MOVWloadidx2
@@ -983,6 +982,7 @@ const (
 	OpAMD64MOVWstoreconst
 	OpAMD64MOVLstoreconst
 	OpAMD64MOVQstoreconst
+	OpAMD64MOVOstoreconst
 	OpAMD64MOVBstoreconstidx1
 	OpAMD64MOVWstoreconstidx1
 	OpAMD64MOVWstoreconstidx2
@@ -1029,6 +1029,8 @@ const (
 	OpAMD64ANDLlock
 	OpAMD64ORBlock
 	OpAMD64ORLlock
+	OpAMD64PrefetchT0
+	OpAMD64PrefetchNTA
 
 	OpARMADD
 	OpARMADDconst
@@ -1610,6 +1612,7 @@ const (
 	OpARM64LoweredPanicBoundsA
 	OpARM64LoweredPanicBoundsB
 	OpARM64LoweredPanicBoundsC
+	OpARM64PRFM
 
 	OpMIPSADD
 	OpMIPSADDconst
@@ -2174,6 +2177,10 @@ const (
 	OpRISCV64FSUBD
 	OpRISCV64FMULD
 	OpRISCV64FDIVD
+	OpRISCV64FMADDD
+	OpRISCV64FMSUBD
+	OpRISCV64FNMADDD
+	OpRISCV64FNMSUBD
 	OpRISCV64FSQRTD
 	OpRISCV64FNEGD
 	OpRISCV64FMVDX
@@ -2914,6 +2921,8 @@ const (
 	OpAtomicOr32Variant
 	OpClobber
 	OpClobberReg
+	OpPrefetchCache
+	OpPrefetchCacheStreamed
 )
 
 var opcodeTable = [...]opInfo{
@@ -12626,19 +12635,6 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
-		name:           "MOVOstorezero",
-		auxType:        auxSymOff,
-		argLen:         2,
-		faultOnNilArg0: true,
-		symEffect:      SymWrite,
-		asm:            x86.AMOVUPS,
-		reg: regInfo{
-			inputs: []inputInfo{
-				{0, 4295016447}, // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 R15 SB
-			},
-		},
-	},
-	{
 		name:        "MOVBloadidx1",
 		auxType:     auxSymOff,
 		argLen:      3,
@@ -12948,6 +12944,19 @@ var opcodeTable = [...]opInfo{
 		faultOnNilArg0: true,
 		symEffect:      SymWrite,
 		asm:            x86.AMOVQ,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 4295032831}, // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 g R15 SB
+			},
+		},
+	},
+	{
+		name:           "MOVOstoreconst",
+		auxType:        auxSymValAndOff,
+		argLen:         2,
+		faultOnNilArg0: true,
+		symEffect:      SymWrite,
+		asm:            x86.AMOVUPS,
 		reg: regInfo{
 			inputs: []inputInfo{
 				{0, 4295032831}, // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 g R15 SB
@@ -13551,6 +13560,28 @@ var opcodeTable = [...]opInfo{
 		reg: regInfo{
 			inputs: []inputInfo{
 				{1, 49151},      // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 R15
+				{0, 4295032831}, // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 g R15 SB
+			},
+		},
+	},
+	{
+		name:           "PrefetchT0",
+		argLen:         2,
+		hasSideEffects: true,
+		asm:            x86.APREFETCHT0,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 4295032831}, // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 g R15 SB
+			},
+		},
+	},
+	{
+		name:           "PrefetchNTA",
+		argLen:         2,
+		hasSideEffects: true,
+		asm:            x86.APREFETCHNTA,
+		reg: regInfo{
+			inputs: []inputInfo{
 				{0, 4295032831}, // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 g R15 SB
 			},
 		},
@@ -21447,6 +21478,18 @@ var opcodeTable = [...]opInfo{
 			},
 		},
 	},
+	{
+		name:           "PRFM",
+		auxType:        auxInt64,
+		argLen:         2,
+		hasSideEffects: true,
+		asm:            arm64.APRFM,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 9223372038733561855}, // R0 R1 R2 R3 R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R19 R20 R21 R22 R23 R24 R25 R26 g R30 SP SB
+			},
+		},
+	},
 
 	{
 		name:        "ADD",
@@ -29055,6 +29098,70 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:        "FMADDD",
+		argLen:      3,
+		commutative: true,
+		asm:         riscv.AFMADDD,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+				{1, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+				{2, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+			outputs: []outputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+		},
+	},
+	{
+		name:        "FMSUBD",
+		argLen:      3,
+		commutative: true,
+		asm:         riscv.AFMSUBD,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+				{1, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+				{2, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+			outputs: []outputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+		},
+	},
+	{
+		name:        "FNMADDD",
+		argLen:      3,
+		commutative: true,
+		asm:         riscv.AFNMADDD,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+				{1, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+				{2, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+			outputs: []outputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+		},
+	},
+	{
+		name:        "FNMSUBD",
+		argLen:      3,
+		commutative: true,
+		asm:         riscv.AFNMSUBD,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+				{1, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+				{2, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+			outputs: []outputInfo{
+				{0, 9223372034707292160}, // F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12 F13 F14 F15 F16 F17 F18 F19 F20 F21 F22 F23 F24 F25 F26 F27 F28 F29 F30 F31
+			},
+		},
+	},
+	{
 		name:   "FSQRTD",
 		argLen: 1,
 		asm:    riscv.AFSQRTD,
@@ -36244,6 +36351,18 @@ var opcodeTable = [...]opInfo{
 		name:    "ClobberReg",
 		argLen:  0,
 		generic: true,
+	},
+	{
+		name:           "PrefetchCache",
+		argLen:         2,
+		hasSideEffects: true,
+		generic:        true,
+	},
+	{
+		name:           "PrefetchCacheStreamed",
+		argLen:         2,
+		hasSideEffects: true,
+		generic:        true,
 	},
 }
 
