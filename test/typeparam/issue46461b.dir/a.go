@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package p
+package a
 
-// don't crash
-func T /* ERROR missing */ [P] /* ERROR missing */ m /* ERROR unexpected */ () /* ERROR \) */ { /* ERROR { */ } /* ERROR } */
+type T[U interface{ M() T[U] }] int

@@ -4,5 +4,7 @@
 
 package p
 
-// don't crash
-func T /* ERROR missing */ [P] /* ERROR missing */ m /* ERROR unexpected */ () /* ERROR \) */ { /* ERROR { */ } /* ERROR } */
+type Builder[T interface{ struct{ Builder[T] } }] struct{}
+type myBuilder struct {
+	Builder[myBuilder /* ERROR myBuilder does not satisfy */]
+}
