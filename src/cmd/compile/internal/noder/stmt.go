@@ -37,7 +37,7 @@ func (g *irgen) stmt(stmt syntax.Stmt) ir.Node {
 	case *syntax.BlockStmt:
 		return ir.NewBlockStmt(g.pos(stmt), g.blockStmt(stmt))
 	case *syntax.ExprStmt:
-		return g.expr(stmt.X)
+		return wrapname(g.pos(stmt.X), g.expr(stmt.X))
 	case *syntax.SendStmt:
 		n := ir.NewSendStmt(g.pos(stmt), g.expr(stmt.Chan), g.expr(stmt.Value))
 		if n.Chan.Type().HasTParam() || n.Value.Type().HasTParam() {
@@ -84,13 +84,13 @@ func (g *irgen) stmt(stmt syntax.Stmt) ir.Node {
 		// to know the types of the left and right sides in various cases.
 		delay := false
 		for _, e := range lhs {
-			if e.Typecheck() == 3 {
+			if e.Type().HasTParam() || e.Typecheck() == 3 {
 				delay = true
 				break
 			}
 		}
 		for _, e := range rhs {
-			if e.Typecheck() == 3 {
+			if e.Type().HasTParam() || e.Typecheck() == 3 {
 				delay = true
 				break
 			}
@@ -101,8 +101,6 @@ func (g *irgen) stmt(stmt syntax.Stmt) ir.Node {
 			n.Def = initDefn(n, names)
 
 			if delay {
-				earlyTransformAssign(n, lhs, rhs)
-				n.X, n.Y = lhs[0], rhs[0]
 				n.SetTypecheck(3)
 				return n
 			}
@@ -117,7 +115,6 @@ func (g *irgen) stmt(stmt syntax.Stmt) ir.Node {
 		n := ir.NewAssignListStmt(g.pos(stmt), ir.OAS2, lhs, rhs)
 		n.Def = initDefn(n, names)
 		if delay {
-			earlyTransformAssign(n, lhs, rhs)
 			n.SetTypecheck(3)
 			return n
 		}
@@ -135,12 +132,6 @@ func (g *irgen) stmt(stmt syntax.Stmt) ir.Node {
 			if e.Type().HasTParam() {
 				// Delay transforming the return statement if any of the
 				// return values have a type param.
-				if !ir.HasNamedResults(ir.CurFunc) {
-					transformArgs(n)
-					// But add CONVIFACE nodes where needed if
-					// any of the return values have interface type.
-					typecheckaste(ir.ORETURN, nil, false, ir.CurFunc.Type().Results(), n.Results, true)
-				}
 				n.SetTypecheck(3)
 				return n
 			}
@@ -154,8 +145,20 @@ func (g *irgen) stmt(stmt syntax.Stmt) ir.Node {
 		return g.forStmt(stmt)
 	case *syntax.SelectStmt:
 		n := g.selectStmt(stmt)
-		transformSelect(n.(*ir.SelectStmt))
-		n.SetTypecheck(1)
+
+		delay := false
+		for _, ncase := range n.(*ir.SelectStmt).Cases {
+			if ncase.Comm != nil && ncase.Comm.Typecheck() == 3 {
+				delay = true
+				break
+			}
+		}
+		if delay {
+			n.SetTypecheck(3)
+		} else {
+			transformSelect(n.(*ir.SelectStmt))
+			n.SetTypecheck(1)
+		}
 		return n
 	case *syntax.SwitchStmt:
 		return g.switchStmt(stmt)
