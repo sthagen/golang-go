@@ -68,7 +68,7 @@ func (check *Checker) objDecl(obj Object, def *Named) {
 	// Funcs with m.instRecv set have not yet be completed. Complete them now
 	// so that they have a type when objDecl exits.
 	if m, _ := obj.(*Func); m != nil && m.instRecv != nil {
-		check.completeMethod(check.conf.Environment, m)
+		check.completeMethod(check.conf.Context, m)
 	}
 
 	// Checking the declaration of obj means inferring its type
@@ -314,6 +314,13 @@ func (check *Checker) validType(typ Type, path []Object) typeInfo {
 			}
 		}
 
+	case *Union:
+		for _, t := range t.terms {
+			if check.validType(t.typ, path) == invalid {
+				return invalid
+			}
+		}
+
 	case *Interface:
 		for _, etyp := range t.embeddeds {
 			if check.validType(etyp, path) == invalid {
@@ -322,7 +329,7 @@ func (check *Checker) validType(typ Type, path []Object) typeInfo {
 		}
 
 	case *Named:
-		t.resolve(check.conf.Environment)
+		t.resolve(check.conf.Context)
 		// don't touch the type if it is from a different package or the Universe scope
 		// (doing so would lead to a race condition - was issue #35049)
 		if t.obj.pkg != check.pkg {
@@ -668,27 +675,18 @@ func (check *Checker) collectTypeParams(dst **TypeParamList, list *ast.FieldList
 	*dst = bindTParams(tparams)
 
 	index := 0
-	var bound Type
 	var bounds []Type
 	var posns []positioner // bound positions
 	for _, f := range list.List {
-		if f.Type == nil {
-			goto next
+		// TODO(rfindley) we should be able to rely on f.Type != nil at this point
+		if f.Type != nil {
+			bound := check.typ(f.Type)
+			bounds = append(bounds, bound)
+			posns = append(posns, f.Type)
+			for i := range f.Names {
+				tparams[index+i].bound = bound
+			}
 		}
-		// The predeclared identifier "any" is visible only as a type bound in a type parameter list.
-		// If we allow "any" for general use, this if-statement can be removed (issue #33232).
-		if name, _ := unparen(f.Type).(*ast.Ident); name != nil && name.Name == "any" && check.lookup("any") == universeAny {
-			bound = universeAny.Type()
-		} else {
-			bound = check.typ(f.Type)
-		}
-		bounds = append(bounds, bound)
-		posns = append(posns, f.Type)
-		for i := range f.Names {
-			tparams[index+i].bound = bound
-		}
-
-	next:
 		index += len(f.Names)
 	}
 

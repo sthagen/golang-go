@@ -34,7 +34,18 @@ type Signature struct {
 // and results, either of which may be nil. If variadic is set, the function
 // is variadic, it must have at least one parameter, and the last parameter
 // must be of unnamed slice type.
+//
+// Deprecated: Use NewSignatureType instead which allows for type parameters.
 func NewSignature(recv *Var, params, results *Tuple, variadic bool) *Signature {
+	return NewSignatureType(recv, nil, nil, params, results, variadic)
+}
+
+// NewSignatureType creates a new function type for the given receiver,
+// receiver type parameters, type parameters, parameters, and results. If
+// variadic is set, params must hold at least one parameter and the last
+// parameter must be of unnamed slice type. If recv is non-nil, typeParams must
+// be empty. If recvTypeParams is non-empty, recv must be non-nil.
+func NewSignatureType(recv *Var, recvTypeParams, typeParams []*TypeParam, params, results *Tuple, variadic bool) *Signature {
 	if variadic {
 		n := params.Len()
 		if n == 0 {
@@ -44,7 +55,20 @@ func NewSignature(recv *Var, params, results *Tuple, variadic bool) *Signature {
 			panic("variadic parameter must be of unnamed slice type")
 		}
 	}
-	return &Signature{recv: recv, params: params, results: results, variadic: variadic}
+	sig := &Signature{recv: recv, params: params, results: results, variadic: variadic}
+	if len(recvTypeParams) != 0 {
+		if recv == nil {
+			panic("function with receiver type parameters must have a receiver")
+		}
+		sig.rparams = bindTParams(recvTypeParams)
+	}
+	if len(typeParams) != 0 {
+		if recv != nil {
+			panic("function with type parameters cannot have a receiver")
+		}
+		sig.tparams = bindTParams(typeParams)
+	}
+	return sig
 }
 
 // Recv returns the receiver of signature s (if a method), or nil if a
@@ -200,7 +224,7 @@ func (check *Checker) funcType(sig *Signature, recvPar *ast.FieldList, ftyp *ast
 			var err string
 			switch T := rtyp.(type) {
 			case *Named:
-				T.resolve(check.conf.Environment)
+				T.resolve(check.conf.Context)
 				// The receiver type may be an instantiated type referred to
 				// by an alias (which cannot have receiver parameters for now).
 				if T.TypeArgs() != nil && sig.RecvTypeParams() == nil {

@@ -680,10 +680,10 @@ func schedinit() {
 	moduledataverify()
 	stackinit()
 	mallocinit()
+	cpuinit()      // must run before alginit
+	alginit()      // maps, hash, fastrand must not be used before this call
 	fastrandinit() // must run before mcommoninit
 	mcommoninit(_g_.m, -1)
-	cpuinit()       // must run before alginit
-	alginit()       // maps must not be used before this call
 	modulesinit()   // provides activeModules
 	typelinksinit() // uses maps, activeModules
 	itabsinit()     // uses activeModules
@@ -787,11 +787,8 @@ func mcommoninit(mp *m, id int64) {
 		mp.id = mReserveID()
 	}
 
-	mp.fastrand[0] = uint32(int64Hash(uint64(mp.id), fastrandseed))
-	mp.fastrand[1] = uint32(int64Hash(uint64(cputicks()), ^fastrandseed))
-	if mp.fastrand[0]|mp.fastrand[1] == 0 {
-		mp.fastrand[1] = 1
-	}
+	// cputicks is not very random in startup virtual machine
+	mp.fastrand = uint64(int64Hash(uint64(mp.id), fastrandseed^uintptr(cputicks())))
 
 	mpreinit(mp)
 	if mp.gsignal != nil {
@@ -4706,45 +4703,6 @@ func sigprof(pc, sp, lr uintptr, gp *g, mp *m) {
 		cpuprof.add(gp, stk[:n])
 	}
 	getg().m.mallocing--
-}
-
-// If the signal handler receives a SIGPROF signal on a non-Go thread,
-// it tries to collect a traceback into sigprofCallers.
-// sigprofCallersUse is set to non-zero while sigprofCallers holds a traceback.
-var sigprofCallers cgoCallers
-var sigprofCallersUse uint32
-
-// sigprofNonGo is called if we receive a SIGPROF signal on a non-Go thread,
-// and the signal handler collected a stack trace in sigprofCallers.
-// When this is called, sigprofCallersUse will be non-zero.
-// g is nil, and what we can do is very limited.
-//go:nosplit
-//go:nowritebarrierrec
-func sigprofNonGo() {
-	if prof.hz != 0 {
-		n := 0
-		for n < len(sigprofCallers) && sigprofCallers[n] != 0 {
-			n++
-		}
-		cpuprof.addNonGo(sigprofCallers[:n])
-	}
-
-	atomic.Store(&sigprofCallersUse, 0)
-}
-
-// sigprofNonGoPC is called when a profiling signal arrived on a
-// non-Go thread and we have a single PC value, not a stack trace.
-// g is nil, and what we can do is very limited.
-//go:nosplit
-//go:nowritebarrierrec
-func sigprofNonGoPC(pc uintptr) {
-	if prof.hz != 0 {
-		stk := []uintptr{
-			pc,
-			abi.FuncPCABIInternal(_ExternalCode) + sys.PCQuantum,
-		}
-		cpuprof.addNonGo(stk)
-	}
 }
 
 // setcpuprofilerate sets the CPU profiling rate to hz times per second.

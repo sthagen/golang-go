@@ -8,7 +8,6 @@ package types
 
 import (
 	"bytes"
-	"fmt"
 	"go/token"
 	"strconv"
 	"unicode/utf8"
@@ -69,26 +68,41 @@ type typeWriter struct {
 	buf  *bytes.Buffer
 	seen map[Type]bool
 	qf   Qualifier
-	env  *Environment // if non-nil, we are type hashing
+	ctxt *Context // if non-nil, we are type hashing
 }
 
 func newTypeWriter(buf *bytes.Buffer, qf Qualifier) *typeWriter {
 	return &typeWriter{buf, make(map[Type]bool), qf, nil}
 }
 
-func newTypeHasher(buf *bytes.Buffer, env *Environment) *typeWriter {
-	assert(env != nil)
-	return &typeWriter{buf, make(map[Type]bool), nil, env}
+func newTypeHasher(buf *bytes.Buffer, ctxt *Context) *typeWriter {
+	assert(ctxt != nil)
+	return &typeWriter{buf, make(map[Type]bool), nil, ctxt}
 }
 
-func (w *typeWriter) byte(b byte)                               { w.buf.WriteByte(b) }
-func (w *typeWriter) string(s string)                           { w.buf.WriteString(s) }
-func (w *typeWriter) writef(format string, args ...interface{}) { fmt.Fprintf(w.buf, format, args...) }
+func (w *typeWriter) byte(b byte) {
+	if w.ctxt != nil {
+		if b == ' ' {
+			b = '#'
+		}
+		w.buf.WriteByte(b)
+		return
+	}
+	w.buf.WriteByte(b)
+	if b == ',' || b == ';' {
+		w.buf.WriteByte(' ')
+	}
+}
+
+func (w *typeWriter) string(s string) {
+	w.buf.WriteString(s)
+}
+
 func (w *typeWriter) error(msg string) {
-	if w.env != nil {
+	if w.ctxt != nil {
 		panic(msg)
 	}
-	w.string("<" + msg + ">")
+	w.buf.WriteString("<" + msg + ">")
 }
 
 func (w *typeWriter) typ(typ Type) {
@@ -115,7 +129,9 @@ func (w *typeWriter) typ(typ Type) {
 		w.string(t.name)
 
 	case *Array:
-		w.writef("[%d]", t.len)
+		w.byte('[')
+		w.string(strconv.FormatInt(t.len, 10))
+		w.byte(']')
 		w.typ(t.elem)
 
 	case *Slice:
@@ -126,7 +142,7 @@ func (w *typeWriter) typ(typ Type) {
 		w.string("struct{")
 		for i, f := range t.fields {
 			if i > 0 {
-				w.string("; ")
+				w.byte(';')
 			}
 			// This doesn't do the right thing for embedded type
 			// aliases where we should print the alias name, not
@@ -137,7 +153,11 @@ func (w *typeWriter) typ(typ Type) {
 			}
 			w.typ(f.typ)
 			if tag := t.Tag(i); tag != "" {
-				w.writef(" %q", tag)
+				w.byte(' ')
+				// TODO(rfindley) If tag contains blanks, replacing them with '#'
+				//                in Context.TypeHash may produce another tag
+				//                accidentally.
+				w.string(strconv.Quote(tag))
 			}
 		}
 		w.byte('}')
@@ -175,7 +195,7 @@ func (w *typeWriter) typ(typ Type) {
 		first := true
 		for _, m := range t.methods {
 			if !first {
-				w.string("; ")
+				w.byte(';')
 			}
 			first = false
 			w.string(m.name)
@@ -183,7 +203,7 @@ func (w *typeWriter) typ(typ Type) {
 		}
 		for _, typ := range t.embeddeds {
 			if !first {
-				w.string("; ")
+				w.byte(';')
 			}
 			first = false
 			w.typ(typ)
@@ -228,7 +248,7 @@ func (w *typeWriter) typ(typ Type) {
 		if t.targs != nil {
 			// instantiated type
 			w.typeList(t.targs.list())
-		} else if w.env == nil && t.TypeParams().Len() != 0 { // For type hashing, don't need to format the TypeParams
+		} else if w.ctxt == nil && t.TypeParams().Len() != 0 { // For type hashing, don't need to format the TypeParams
 			// parameterized type
 			w.tParamList(t.TypeParams().list())
 		}
@@ -257,12 +277,12 @@ func (w *typeWriter) typ(typ Type) {
 	}
 }
 
-// If w.env is non-nil, typePrefix writes a unique prefix for the named type t
-// based on the types already observed by w.env. If w.env is nil, it does
+// If w.ctxt is non-nil, typePrefix writes a unique prefix for the named type t
+// based on the types already observed by w.ctxt. If w.ctxt is nil, it does
 // nothing.
 func (w *typeWriter) typePrefix(t *Named) {
-	if w.env != nil {
-		w.string(strconv.Itoa(w.env.idForType(t)))
+	if w.ctxt != nil {
+		w.string(strconv.Itoa(w.ctxt.idForType(t)))
 	}
 }
 
@@ -270,7 +290,7 @@ func (w *typeWriter) typeList(list []Type) {
 	w.byte('[')
 	for i, typ := range list {
 		if i > 0 {
-			w.string(", ")
+			w.byte(',')
 		}
 		w.typ(typ)
 	}
@@ -294,7 +314,7 @@ func (w *typeWriter) tParamList(list []*TypeParam) {
 				w.byte(' ')
 				w.typ(prev)
 			}
-			w.string(", ")
+			w.byte(',')
 		}
 		prev = tpar.bound
 		w.typ(tpar)
@@ -318,10 +338,10 @@ func (w *typeWriter) tuple(tup *Tuple, variadic bool) {
 	if tup != nil {
 		for i, v := range tup.vars {
 			if i > 0 {
-				w.string(", ")
+				w.byte(',')
 			}
 			// parameter names are ignored for type identity and thus type hashes
-			if w.env == nil && v.name != "" {
+			if w.ctxt == nil && v.name != "" {
 				w.string(v.name)
 				w.byte(' ')
 			}
@@ -362,7 +382,7 @@ func (w *typeWriter) signature(sig *Signature) {
 	}
 
 	w.byte(' ')
-	if n == 1 && (w.env != nil || sig.results.vars[0].name == "") {
+	if n == 1 && (w.ctxt != nil || sig.results.vars[0].name == "") {
 		// single unnamed result (if type hashing, name must be ignored)
 		w.typ(sig.results.vars[0].typ)
 		return

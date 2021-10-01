@@ -428,10 +428,10 @@ func init() {
 		{name: "LoweredRound32F", argLength: 1, reg: fp11, resultInArg0: true, zeroWidth: true},
 		{name: "LoweredRound64F", argLength: 1, reg: fp11, resultInArg0: true, zeroWidth: true},
 
-		{name: "CALLstatic", argLength: 1, reg: regInfo{clobbers: callerSave}, aux: "CallOff", clobberFlags: true, call: true},                                       // call static function aux.(*obj.LSym).  arg0=mem, auxint=argsize, returns mem
-		{name: "CALLtail", argLength: 1, reg: regInfo{clobbers: callerSave}, aux: "CallOff", clobberFlags: true, call: true},                                         // tail call static function aux.(*obj.LSym).  arg0=mem, auxint=argsize, returns mem
-		{name: "CALLclosure", argLength: 3, reg: regInfo{inputs: []regMask{callptr, ctxt, 0}, clobbers: callerSave}, aux: "CallOff", clobberFlags: true, call: true}, // call function via closure.  arg0=codeptr, arg1=closure, arg2=mem, auxint=argsize, returns mem
-		{name: "CALLinter", argLength: 2, reg: regInfo{inputs: []regMask{callptr}, clobbers: callerSave}, aux: "CallOff", clobberFlags: true, call: true},            // call fn by pointer.  arg0=codeptr, arg1=mem, auxint=argsize, returns mem
+		{name: "CALLstatic", argLength: -1, reg: regInfo{clobbers: callerSave}, aux: "CallOff", clobberFlags: true, call: true},                                       // call static function aux.(*obj.LSym).  arg0=mem, auxint=argsize, returns mem
+		{name: "CALLtail", argLength: -1, reg: regInfo{clobbers: callerSave}, aux: "CallOff", clobberFlags: true, call: true},                                         // tail call static function aux.(*obj.LSym).  arg0=mem, auxint=argsize, returns mem
+		{name: "CALLclosure", argLength: -1, reg: regInfo{inputs: []regMask{callptr, ctxt, 0}, clobbers: callerSave}, aux: "CallOff", clobberFlags: true, call: true}, // call function via closure.  arg0=codeptr, arg1=closure, arg2=mem, auxint=argsize, returns mem
+		{name: "CALLinter", argLength: -1, reg: regInfo{inputs: []regMask{callptr}, clobbers: callerSave}, aux: "CallOff", clobberFlags: true, call: true},            // call fn by pointer.  arg0=codeptr, arg1=mem, auxint=argsize, returns mem
 
 		// large or unaligned zeroing
 		// arg0 = address of memory to zero (in R3, changed as side effect)
@@ -705,15 +705,17 @@ func init() {
 	}
 
 	archs = append(archs, arch{
-		name:            "PPC64",
-		pkg:             "cmd/internal/obj/ppc64",
-		genfile:         "../../ppc64/ssa.go",
-		ops:             ops,
-		blocks:          blocks,
-		regnames:        regNamesPPC64,
-		gpregmask:       gp,
-		fpregmask:       fp,
-		framepointerreg: int8(num["SP"]),
-		linkreg:         -1, // not used
+		name:               "PPC64",
+		pkg:                "cmd/internal/obj/ppc64",
+		genfile:            "../../ppc64/ssa.go",
+		ops:                ops,
+		blocks:             blocks,
+		regnames:           regNamesPPC64,
+		ParamIntRegNames:   "R3 R4 R5 R6 R7 R8 R9 R10 R14 R15 R16 R17",
+		ParamFloatRegNames: "F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 F11 F12",
+		gpregmask:          gp,
+		fpregmask:          fp,
+		framepointerreg:    -1,
+		linkreg:            -1, // not used
 	})
 }

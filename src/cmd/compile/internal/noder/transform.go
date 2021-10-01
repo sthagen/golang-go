@@ -132,7 +132,9 @@ func transformConvCall(n *ir.CallExpr) ir.Node {
 // transformCall transforms a normal function/method call. Corresponds to last half
 // (non-conversion, non-builtin part) of typecheck.tcCall. This code should work even
 // in the case of OCALL/OFUNCINST.
-func transformCall(n *ir.CallExpr) {
+// The dict parameter is used for OCALLINTER nodes to ensure that the called method
+// is retained by the linker.
+func transformCall(n *ir.CallExpr, dict *ir.Name) {
 	// n.Type() can be nil for calls with no return value
 	assert(n.Typecheck() == 1)
 	transformArgs(n)
@@ -142,6 +144,17 @@ func transformCall(n *ir.CallExpr) {
 	switch l.Op() {
 	case ir.ODOTINTER:
 		n.SetOp(ir.OCALLINTER)
+		if n.X.(*ir.SelectorExpr).X.Type().HasShape() {
+			if dict == nil {
+				base.Fatalf("calls on shape interfaces need a dictionary reference")
+			}
+			dict.SetAddrtaken(true)
+			// KeepAlive isn't exactly the right thing here, as we only
+			// need to keep the dictionary live in the linker-deadcode
+			// sense, not the at-runtime sense. But the at-runtime sense
+			// is stronger, so it works. See issue 48047.
+			n.KeepAlive = append(n.KeepAlive, dict)
+		}
 
 	case ir.ODOTMETH:
 		l := l.(*ir.SelectorExpr)
@@ -177,6 +190,12 @@ func transformCall(n *ir.CallExpr) {
 	}
 }
 
+// transformEarlyCall transforms the arguments of a call with an OFUNCINST node.
+func transformEarlyCall(n *ir.CallExpr) {
+	transformArgs(n)
+	typecheckaste(ir.OCALL, n.X, n.IsDDD, n.X.Type().Params(), n.Args)
+}
+
 // transformCompare transforms a compare operation (currently just equals/not
 // equals). Corresponds to the "comparison operators" case in
 // typecheck.typecheck1, including tcArith.
@@ -195,7 +214,7 @@ func transformCompare(n *ir.BinaryExpr) {
 			aop, _ := typecheck.Assignop(lt, rt)
 			if aop != ir.OXXX {
 				types.CalcSize(lt)
-				if lt.HasTParam() || rt.IsInterface() == lt.IsInterface() || lt.Size() >= 1<<16 {
+				if lt.HasShape() || rt.IsInterface() == lt.IsInterface() || lt.Size() >= 1<<16 {
 					l = ir.NewConvExpr(base.Pos, aop, rt, l)
 					l.SetTypecheck(1)
 				}
@@ -431,9 +450,18 @@ func Assignop(src, dst *types.Type) (ir.Op, string) {
 		return ir.OXXX, ""
 	}
 
-	// 1. src type is identical to dst.
-	if types.IdenticalStrict(src, dst) {
-		return ir.OCONVNOP, ""
+	// 1. src type is identical to dst (taking shapes into account)
+	if types.Identical(src, dst) {
+		// We already know from assignconvfn above that IdenticalStrict(src,
+		// dst) is false, so the types are not exactly the same and one of
+		// src or dst is a shape. If dst is an interface (which means src is
+		// an interface too), we need a real OCONVIFACE op; otherwise we need a
+		// OCONVNOP. See issue #48453.
+		if dst.IsInterface() {
+			return ir.OCONVIFACE, ""
+		} else {
+			return ir.OCONVNOP, ""
+		}
 	}
 	return typecheck.Assignop1(src, dst)
 }

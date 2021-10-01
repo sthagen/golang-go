@@ -821,7 +821,7 @@ func (r *importReader) typ1() *types.Type {
 		}
 		return n.Type()
 
-	case instType:
+	case instanceType:
 		if r.p.exportVersion < iexportVersionGenerics {
 			base.Fatalf("unexpected instantiation type")
 		}
@@ -1515,7 +1515,7 @@ func (r *importReader) node() ir.Node {
 		if go117ExportTypes {
 			n.SetOp(op)
 		}
-		*n.PtrInit() = init
+		n.SetInit(init)
 		n.IsDDD = r.bool()
 		if go117ExportTypes {
 			n.SetType(r.exoticType())
@@ -1660,26 +1660,28 @@ func (r *importReader) node() ir.Node {
 	case ir.OIF:
 		pos, init := r.pos(), r.stmtList()
 		n := ir.NewIfStmt(pos, r.expr(), r.stmtList(), r.stmtList())
-		*n.PtrInit() = init
+		n.SetInit(init)
 		return n
 
 	case ir.OFOR:
 		pos, init := r.pos(), r.stmtList()
 		cond, post := r.exprsOrNil()
 		n := ir.NewForStmt(pos, nil, cond, post, r.stmtList())
-		*n.PtrInit() = init
+		n.SetInit(init)
 		return n
 
 	case ir.ORANGE:
-		pos := r.pos()
+		pos, init := r.pos(), r.stmtList()
 		k, v := r.exprsOrNil()
-		return ir.NewRangeStmt(pos, k, v, r.expr(), r.stmtList())
+		n := ir.NewRangeStmt(pos, k, v, r.expr(), r.stmtList())
+		n.SetInit(init)
+		return n
 
 	case ir.OSELECT:
 		pos := r.pos()
 		init := r.stmtList()
 		n := ir.NewSelectStmt(pos, r.commList())
-		*n.PtrInit() = init
+		n.SetInit(init)
 		return n
 
 	case ir.OSWITCH:
@@ -1687,7 +1689,7 @@ func (r *importReader) node() ir.Node {
 		init := r.stmtList()
 		x, _ := r.exprsOrNil()
 		n := ir.NewSwitchStmt(pos, x, r.caseList(x))
-		*n.PtrInit() = init
+		n.SetInit(init)
 		return n
 
 	// case OCASE:
@@ -1888,21 +1890,23 @@ func substInstType(t *types.Type, baseType *types.Type, targs []*types.Type) {
 		}
 		t2 := msubst.Typ(f.Type)
 		oldsym := f.Nname.Sym()
-		newsym := MakeFuncInstSym(oldsym, targs, true)
+		newsym := MakeFuncInstSym(oldsym, targs, true, true)
 		var nname *ir.Name
 		if newsym.Def != nil {
 			nname = newsym.Def.(*ir.Name)
 		} else {
 			nname = ir.NewNameAt(f.Pos, newsym)
 			nname.SetType(t2)
+			ir.MarkFunc(nname)
 			newsym.Def = nname
 		}
 		newfields[i] = types.NewField(f.Pos, f.Sym, t2)
 		newfields[i].Nname = nname
 	}
 	t.Methods().Set(newfields)
-	if !t.HasTParam() && t.Kind() != types.TINTER && t.Methods().Len() > 0 {
-		// Generate all the methods for a new fully-instantiated type.
+	if !t.HasTParam() && !t.HasShape() && t.Kind() != types.TINTER && t.Methods().Len() > 0 {
+		// Generate all the methods for a new fully-instantiated,
+		// non-interface, non-shape type.
 		NeedInstType(t)
 	}
 }

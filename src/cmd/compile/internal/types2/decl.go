@@ -66,6 +66,12 @@ func (check *Checker) objDecl(obj Object, def *Named) {
 		}()
 	}
 
+	// Funcs with m.instRecv set have not yet be completed. Complete them now
+	// so that they have a type when objDecl exits.
+	if m, _ := obj.(*Func); m != nil && m.instRecv != nil {
+		check.completeMethod(check.conf.Context, m)
+	}
+
 	// Checking the declaration of obj means inferring its type
 	// (and possibly its value, for constants).
 	// An object's type (and thus the object) may be in one of
@@ -309,6 +315,13 @@ func (check *Checker) validType(typ Type, path []Object) typeInfo {
 			}
 		}
 
+	case *Union:
+		for _, t := range t.terms {
+			if check.validType(t.typ, path) == invalid {
+				return invalid
+			}
+		}
+
 	case *Interface:
 		for _, etyp := range t.embeddeds {
 			if check.validType(etyp, path) == invalid {
@@ -317,7 +330,7 @@ func (check *Checker) validType(typ Type, path []Object) typeInfo {
 		}
 
 	case *Named:
-		t.resolve(check.conf.Environment)
+		t.resolve(check.conf.Context)
 
 		// don't touch the type if it is from a different package or the Universe scope
 		// (doing so would lead to a race condition - was issue #35049)
@@ -521,7 +534,7 @@ func (check *Checker) isImportedConstraint(typ Type) bool {
 		return false
 	}
 	u, _ := named.under().(*Interface)
-	return u != nil && u.IsConstraint()
+	return u != nil && !u.IsMethodSet()
 }
 
 func (check *Checker) typeDecl(obj *TypeName, tdecl *syntax.TypeDecl, def *Named) {
@@ -619,13 +632,7 @@ func (check *Checker) collectTypeParams(dst **TypeParamList, list []*syntax.Fiel
 		// This also preserves the grouped output of type parameter lists
 		// when printing type strings.
 		if i == 0 || f.Type != list[i-1].Type {
-			// The predeclared identifier "any" is visible only as a type bound in a type parameter list.
-			// If we allow "any" for general use, this if-statement can be removed (issue #33232).
-			if name, _ := unparen(f.Type).(*syntax.Name); name != nil && name.Value == "any" && check.lookup("any") == universeAny {
-				bound = universeAny.Type()
-			} else {
-				bound = check.typ(f.Type)
-			}
+			bound = check.typ(f.Type)
 		}
 		tparams[i].bound = bound
 	}

@@ -1019,7 +1019,7 @@ func (check *Checker) binary(x *operand, e syntax.Expr, lhs, rhs syntax.Expr, op
 		// only report an error if we have valid types
 		// (otherwise we had an error reported elsewhere already)
 		if x.typ != Typ[Invalid] && y.typ != Typ[Invalid] {
-			check.errorf(x, invalidOp+"mismatched types %s and %s", x.typ, y.typ)
+			check.errorf(x, invalidOp+"%s (mismatched types %s and %s)", e, x.typ, y.typ)
 		}
 		x.mode = invalid
 		return
@@ -1689,7 +1689,11 @@ func (check *Checker) singleValue(x *operand) {
 		// tuple types are never named - no need for underlying type below
 		if t, ok := x.typ.(*Tuple); ok {
 			assert(t.Len() != 1)
-			check.errorf(x, "%d-valued %s where single value is expected", t.Len(), x)
+			if check.conf.CompilerErrorMessages {
+				check.errorf(x, "multiple-value %s in single-value context", x)
+			} else {
+				check.errorf(x, "%d-valued %s where single value is expected", t.Len(), x)
+			}
 			x.mode = invalid
 		}
 	}

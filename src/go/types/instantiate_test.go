@@ -22,12 +22,12 @@ func TestInstantiateEquality(t *testing.T) {
 
 	// Instantiating the same type twice should result in pointer-equivalent
 	// instances.
-	env := NewEnvironment()
-	res1, err := Instantiate(env, T, []Type{Typ[Int]}, false)
+	ctxt := NewContext()
+	res1, err := Instantiate(ctxt, T, []Type{Typ[Int]}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	res2, err := Instantiate(env, T, []Type{Typ[Int]}, false)
+	res2, err := Instantiate(ctxt, T, []Type{Typ[Int]}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,16 +50,16 @@ func TestInstantiateNonEquality(t *testing.T) {
 	}
 
 	// We consider T1 and T2 to be distinct types, so their instances should not
-	// be deduplicated by the environment.
+	// be deduplicated by the context.
 	T1 := pkg1.Scope().Lookup("T").Type().(*Named)
 	T2 := pkg2.Scope().Lookup("T").Type().(*Named)
 
-	env := NewEnvironment()
-	res1, err := Instantiate(env, T1, []Type{Typ[Int]}, false)
+	ctxt := NewContext()
+	res1, err := Instantiate(ctxt, T1, []Type{Typ[Int]}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	res2, err := Instantiate(env, T2, []Type{Typ[Int]}, false)
+	res2, err := Instantiate(ctxt, T2, []Type{Typ[Int]}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ var X T[int]
 	}{
 		{"func (r T[P]) m() P", "func (T[int]).m() int"},
 		{"func (r T[P]) m(P)", "func (T[int]).m(int)"},
-		{"func (r T[P]) m() func() P", "func (T[int]).m() func() int"},
+		{"func (r *T[P]) m(P)", "func (*T[int]).m(int)"},
 		{"func (r T[P]) m() T[P]", "func (T[int]).m() T[int]"},
 		{"func (r T[P]) m(T[P])", "func (T[int]).m(T[int])"},
 		{"func (r T[P]) m(T[P], P, string)", "func (T[int]).m(T[int], int, string)"},
@@ -99,7 +99,7 @@ var X T[int]
 		if err != nil {
 			t.Fatal(err)
 		}
-		typ := pkg.Scope().Lookup("X").Type().(*Named)
+		typ := NewPointer(pkg.Scope().Lookup("X").Type())
 		obj, _, _ := LookupFieldOrMethod(typ, false, pkg, "m")
 		m, _ := obj.(*Func)
 		if m == nil {

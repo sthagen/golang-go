@@ -124,7 +124,7 @@ func (g *irgen) stencil() {
 				// it before installing the instantiation, so we are
 				// checking against non-shape param types in
 				// typecheckaste.
-				transformCall(call)
+				transformCall(call, nil)
 
 				// Replace the OFUNCINST with a direct reference to the
 				// new stenciled function
@@ -162,7 +162,7 @@ func (g *irgen) stencil() {
 
 				// Transform the Call now, which changes OCALL
 				// to OCALLFUNC and does typecheckaste/assignconvfn.
-				transformCall(call)
+				transformCall(call, nil)
 
 				st := g.getInstantiation(gf, targs, true).fun
 				dictValue, usingSubdict := g.getDictOrSubdict(declInfo, n, gf, targs, true)
@@ -258,7 +258,7 @@ func (g *irgen) stencil() {
 	assert(l == len(g.instInfoMap))
 }
 
-// buildClosure makes a closure to implement x, a OFUNCINST or OMETHEXPR
+// buildClosure makes a closure to implement x, a OFUNCINST or OMETHEXPR/OMETHVALUE
 // of generic type. outer is the containing function (or nil if closure is
 // in a global assignment instead of a function).
 func (g *irgen) buildClosure(outer *ir.Func, x ir.Node) ir.Node {
@@ -401,10 +401,7 @@ func (g *irgen) buildClosure(outer *ir.Func, x ir.Node) ir.Node {
 	var dictVar *ir.Name
 	var dictAssign *ir.AssignStmt
 	if outer != nil {
-		// Note: for now this is a compile-time constant, so we don't really need a closure
-		// to capture it (a wrapper function would work just as well). But eventually it
-		// will be a read of a subdictionary from the parent dictionary.
-		dictVar = ir.NewNameAt(pos, typecheck.LookupNum(".dict", g.dnum))
+		dictVar = ir.NewNameAt(pos, typecheck.LookupNum(typecheck.LocalDictName, g.dnum))
 		g.dnum++
 		dictVar.Class = ir.PAUTO
 		typed(types.Types[types.TUINTPTR], dictVar)
@@ -613,23 +610,18 @@ func (g *irgen) getInstantiation(nameNode *ir.Name, shapes []*types.Type, isMeth
 	// number of instantiations we have to generate. You can actually have a mix
 	// of shape and non-shape arguments, because of inferred or explicitly
 	// specified concrete type args.
-	var s1 []*types.Type
+	s1 := make([]*types.Type, len(shapes))
 	for i, t := range shapes {
 		if !t.IsShape() {
-			if s1 == nil {
-				s1 = make([]*types.Type, len(shapes))
-				copy(s1[0:i], shapes[0:i])
-			}
 			s1[i] = typecheck.Shapify(t, i)
-		} else if s1 != nil {
-			s1[i] = shapes[i]
+		} else {
+			// Already a shape, but make sure it has the correct index.
+			s1[i] = typecheck.Shapify(shapes[i].Underlying(), i)
 		}
 	}
-	if s1 != nil {
-		shapes = s1
-	}
+	shapes = s1
 
-	sym := typecheck.MakeFuncInstSym(nameNode.Sym(), shapes, isMeth)
+	sym := typecheck.MakeFuncInstSym(nameNode.Sym(), shapes, false, isMeth)
 	info := g.instInfoMap[sym]
 	if info == nil {
 		// If instantiation doesn't exist yet, create it and add
@@ -723,7 +715,7 @@ func (g *irgen) genericSubst(newsym *types.Sym, nameNode *ir.Name, shapes []*typ
 	newf.Dcl = make([]*ir.Name, 0, len(gf.Dcl)+1)
 
 	// Create the needed dictionary param
-	dictionarySym := newsym.Pkg.Lookup(".dict")
+	dictionarySym := newsym.Pkg.Lookup(typecheck.LocalDictName)
 	dictionaryType := types.Types[types.TUINTPTR]
 	dictionaryName := ir.NewNameAt(gf.Pos(), dictionarySym)
 	typed(dictionaryType, dictionaryName)
@@ -731,7 +723,7 @@ func (g *irgen) genericSubst(newsym *types.Sym, nameNode *ir.Name, shapes []*typ
 	dictionaryName.Curfn = newf
 	newf.Dcl = append(newf.Dcl, dictionaryName)
 	for _, n := range gf.Dcl {
-		if n.Sym().Name == ".dict" {
+		if n.Sym().Name == typecheck.LocalDictName {
 			panic("already has dictionary")
 		}
 		newf.Dcl = append(newf.Dcl, subst.localvar(n))
@@ -915,6 +907,12 @@ func (subst *subster) node(n ir.Node) ir.Node {
 			if v := subst.ts.Vars[x.(*ir.Name)]; v != nil {
 				return v
 			}
+			if ir.IsBlank(x) {
+				// Special case, because a blank local variable is
+				// not in the fn.Dcl list.
+				m := ir.NewNameAt(x.Pos(), ir.BlankNode.Sym())
+				return typed(subst.ts.Typ(x.Type()), m)
+			}
 			return x
 		case ir.ONONAME:
 			// This handles the identifier in a type switch guard
@@ -1050,14 +1048,14 @@ func (subst *subster) node(n ir.Node) ir.Node {
 				// transform the call.
 				call.X.(*ir.SelectorExpr).SetOp(ir.OXDOT)
 				transformDot(call.X.(*ir.SelectorExpr), true)
-				transformCall(call)
+				transformCall(call, subst.info.dictParam)
 
 			case ir.ODOT, ir.ODOTPTR:
 				// An OXDOT for a generic receiver was resolved to
 				// an access to a field which has a function
 				// value. Transform the call to that function, now
 				// that the OXDOT was resolved.
-				transformCall(call)
+				transformCall(call, subst.info.dictParam)
 
 			case ir.ONAME:
 				name := call.X.Name()
@@ -1074,26 +1072,33 @@ func (subst *subster) node(n ir.Node) ir.Node {
 					// This is the case of a function value that was a
 					// type parameter (implied to be a function via a
 					// structural constraint) which is now resolved.
-					transformCall(call)
+					transformCall(call, subst.info.dictParam)
 				}
 
 			case ir.OCLOSURE:
-				transformCall(call)
+				transformCall(call, subst.info.dictParam)
 
 			case ir.ODEREF, ir.OINDEX, ir.OINDEXMAP, ir.ORECV:
 				// Transform a call that was delayed because of the
 				// use of typeparam inside an expression that required
 				// a pointer dereference, array indexing, map indexing,
 				// or channel receive to compute function value.
-				transformCall(call)
+				transformCall(call, subst.info.dictParam)
 
 			case ir.OCALL, ir.OCALLFUNC, ir.OCALLMETH, ir.OCALLINTER:
-				transformCall(call)
+				transformCall(call, subst.info.dictParam)
+
+			case ir.OCONVNOP:
+				transformCall(call, subst.info.dictParam)
 
 			case ir.OFUNCINST:
 				// A call with an OFUNCINST will get transformed
 				// in stencil() once we have created & attached the
 				// instantiation to be called.
+				// We must transform the arguments of the call now, though,
+				// so that any needed CONVIFACE nodes are exposed,
+				// so the dictionary format is correct
+				transformEarlyCall(call)
 
 			case ir.OXDOT, ir.ODOTTYPE, ir.ODOTTYPE2:
 			default:
@@ -1127,7 +1132,7 @@ func (subst *subster) node(n ir.Node) ir.Node {
 			// Copy that closure variable to a local one.
 			// Note: this allows the dictionary to be captured by child closures.
 			// See issue 47723.
-			ldict := ir.NewNameAt(x.Pos(), newfn.Sym().Pkg.Lookup(".dict"))
+			ldict := ir.NewNameAt(x.Pos(), newfn.Sym().Pkg.Lookup(typecheck.LocalDictName))
 			typed(types.Types[types.TUINTPTR], ldict)
 			ldict.Class = ir.PAUTO
 			ldict.Curfn = newfn
@@ -1223,7 +1228,13 @@ func (g *irgen) dictPass(info *instInfo) {
 			op := m.(*ir.CallExpr).X.Op()
 			if op != ir.OFUNCINST {
 				assert(op == ir.OMETHVALUE || op == ir.OCLOSURE || op == ir.ODYNAMICDOTTYPE || op == ir.ODYNAMICDOTTYPE2)
-				transformCall(m.(*ir.CallExpr))
+				if op == ir.OMETHVALUE {
+					// Redo the transformation of OXDOT, now that we
+					// know the method value is being called.
+					m.(*ir.CallExpr).X.(*ir.SelectorExpr).SetOp(ir.OXDOT)
+					transformDot(m.(*ir.CallExpr).X.(*ir.SelectorExpr), true)
+				}
+				transformCall(m.(*ir.CallExpr), info.dictParam)
 			}
 
 		case ir.OCONVIFACE:
@@ -1479,6 +1490,7 @@ func markTypeUsed(t *types.Type, lsym *obj.LSym) {
 	} else {
 		// TODO: This is somewhat overkill, we really only need it
 		// for types that are put into interfaces.
+		// Note: this relocation is also used in cmd/link/internal/ld/dwarf.go
 		reflectdata.MarkTypeUsedInInterface(t, lsym)
 	}
 }

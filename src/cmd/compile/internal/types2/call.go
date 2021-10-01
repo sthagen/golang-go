@@ -38,10 +38,8 @@ func (check *Checker) funcInst(x *operand, inst *syntax.IndexExpr) {
 		return
 	}
 
-	// if we don't have enough type arguments, try type inference
-	inferred := false
 	if got < want {
-		targs = check.infer(inst.Pos(), sig.TypeParams().list(), targs, nil, nil, true)
+		targs = check.infer(inst.Pos(), sig.TypeParams().list(), targs, nil, nil)
 		if targs == nil {
 			// error was already reported
 			x.mode = invalid
@@ -49,7 +47,6 @@ func (check *Checker) funcInst(x *operand, inst *syntax.IndexExpr) {
 			return
 		}
 		got = len(targs)
-		inferred = true
 	}
 	assert(got == want)
 
@@ -62,9 +59,7 @@ func (check *Checker) funcInst(x *operand, inst *syntax.IndexExpr) {
 	// instantiate function signature
 	res := check.instantiate(x.Pos(), sig, targs, poslist).(*Signature)
 	assert(res.TypeParams().Len() == 0) // signature is not generic anymore
-	if inferred {
-		check.recordInferred(inst, targs, res)
-	}
+	check.recordInstance(inst.X, targs, res)
 	x.typ = res
 	x.mode = value
 	x.expr = inst
@@ -108,7 +103,7 @@ func (check *Checker) callExpr(x *operand, call *syntax.CallExpr) exprKind {
 			check.expr(x, call.ArgList[0])
 			if x.mode != invalid {
 				if t := asInterface(T); t != nil {
-					if t.IsConstraint() {
+					if !t.IsMethodSet() {
 						check.errorf(call, "cannot use interface %s in conversion (contains type list or is comparable)", T)
 						break
 					}
@@ -338,7 +333,7 @@ func (check *Checker) arguments(call *syntax.CallExpr, sig *Signature, targs []T
 		}
 		// TODO(gri) provide position information for targs so we can feed
 		//           it to the instantiate call for better error reporting
-		targs := check.infer(call.Pos(), sig.TypeParams().list(), targs, sigParams, args, true)
+		targs := check.infer(call.Pos(), sig.TypeParams().list(), targs, sigParams, args)
 		if targs == nil {
 			return // error already reported
 		}
@@ -346,7 +341,7 @@ func (check *Checker) arguments(call *syntax.CallExpr, sig *Signature, targs []T
 		// compute result signature
 		rsig = check.instantiate(call.Pos(), sig, targs, nil).(*Signature)
 		assert(rsig.TypeParams().Len() == 0) // signature is not generic anymore
-		check.recordInferred(call, targs, rsig)
+		check.recordInstance(call.Fun, targs, rsig)
 
 		// Optimization: Only if the parameter list was adjusted do we
 		// need to compute it from the adjusted list; otherwise we can
@@ -528,58 +523,7 @@ func (check *Checker) selector(x *operand, e *syntax.SelectorExpr) {
 
 	// methods may not have a fully set up signature yet
 	if m, _ := obj.(*Func); m != nil {
-		// check.dump("### found method %s", m)
 		check.objDecl(m, nil)
-		// If m has a parameterized receiver type, infer the type arguments from
-		// the actual receiver provided and then substitute the type parameters in
-		// the signature accordingly.
-		// TODO(gri) factor this code out
-		sig := m.typ.(*Signature)
-		if sig.RecvTypeParams().Len() > 0 {
-			// For inference to work, we must use the receiver type
-			// matching the receiver in the actual method declaration.
-			// If the method is embedded, the matching receiver is the
-			// embedded struct or interface that declared the method.
-			// Traverse the embedding to find that type (issue #44688).
-			recv := x.typ
-			for i := 0; i < len(index)-1; i++ {
-				// The embedded type is either a struct or a pointer to
-				// a struct except for the last one (which we don't need).
-				recv = asStruct(derefStructPtr(recv)).Field(index[i]).typ
-			}
-			//check.dump("### recv = %s", recv)
-			//check.dump("### method = %s rparams = %s tparams = %s", m, sig.rparams, sig.tparams)
-			// The method may have a pointer receiver, but the actually provided receiver
-			// may be a (hopefully addressable) non-pointer value, or vice versa. Here we
-			// only care about inferring receiver type parameters; to make the inference
-			// work, match up pointer-ness of receiver and argument.
-			if ptrRecv := isPointer(sig.recv.typ); ptrRecv != isPointer(recv) {
-				if ptrRecv {
-					recv = NewPointer(recv)
-				} else {
-					recv = recv.(*Pointer).base
-				}
-			}
-			// Disable reporting of errors during inference below. If we're unable to infer
-			// the receiver type arguments here, the receiver must be be otherwise invalid
-			// and an error has been reported elsewhere.
-			arg := operand{mode: variable, expr: x.expr, typ: recv}
-			targs := check.infer(m.pos, sig.RecvTypeParams().list(), nil, NewTuple(sig.recv), []*operand{&arg}, false /* no error reporting */)
-			//check.dump("### inferred targs = %s", targs)
-			if targs == nil {
-				// We may reach here if there were other errors (see issue #40056).
-				goto Error
-			}
-			// Don't modify m. Instead - for now - make a copy of m and use that instead.
-			// (If we modify m, some tests will fail; possibly because the m is in use.)
-			// TODO(gri) investigate and provide a correct explanation here
-			copy := *m
-			copy.typ = check.subst(e.Pos(), m.typ, makeSubstMap(sig.RecvTypeParams().list(), targs), nil)
-			obj = &copy
-		}
-		// TODO(gri) we also need to do substitution for parameterized interface methods
-		//           (this breaks code in testdata/linalg.go2 at the moment)
-		//           12/20/2019: Is this TODO still correct?
 	}
 
 	if x.mode == typexpr {
@@ -678,48 +622,20 @@ Error:
 func (check *Checker) use(arg ...syntax.Expr) {
 	var x operand
 	for _, e := range arg {
-		// Certain AST fields may legally be nil (e.g., the ast.SliceExpr.High field).
-		if e == nil {
+		switch n := e.(type) {
+		case nil:
+			// some AST fields may be nil (e.g., elements of syntax.SliceExpr.Index)
+			// TODO(gri) can those fields really make it here?
 			continue
-		}
-		if l, _ := e.(*syntax.ListExpr); l != nil {
-			check.use(l.ElemList...)
-			continue
-		}
-		check.rawExpr(&x, e, nil, false)
-	}
-}
-
-// useLHS is like use, but doesn't "use" top-level identifiers.
-// It should be called instead of use if the arguments are
-// expressions on the lhs of an assignment.
-// The arguments must not be nil.
-func (check *Checker) useLHS(arg ...syntax.Expr) {
-	var x operand
-	for _, e := range arg {
-		// If the lhs is an identifier denoting a variable v, this assignment
-		// is not a 'use' of v. Remember current value of v.used and restore
-		// after evaluating the lhs via check.rawExpr.
-		var v *Var
-		var v_used bool
-		if ident, _ := unparen(e).(*syntax.Name); ident != nil {
-			// never type-check the blank name on the lhs
-			if ident.Value == "_" {
+		case *syntax.Name:
+			// don't report an error evaluating blank
+			if n.Value == "_" {
 				continue
 			}
-			if _, obj := check.scope.LookupParent(ident.Value, nopos); obj != nil {
-				// It's ok to mark non-local variables, but ignore variables
-				// from other packages to avoid potential race conditions with
-				// dot-imported variables.
-				if w, _ := obj.(*Var); w != nil && w.pkg == check.pkg {
-					v = w
-					v_used = v.used
-				}
-			}
+		case *syntax.ListExpr:
+			check.use(n.ElemList...)
+			continue
 		}
 		check.rawExpr(&x, e, nil, false)
-		if v != nil {
-			v.used = v_used // restore v.used
-		}
 	}
 }

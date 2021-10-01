@@ -34,13 +34,13 @@ func checkFiles(noders []*noder) (posMap, *types2.Package, *types2.Info) {
 	}
 
 	// typechecking
-	env := types2.NewEnvironment()
+	ctxt := types2.NewContext()
 	importer := gcimports{
-		env:      env,
+		ctxt:     ctxt,
 		packages: map[string]*types2.Package{"unsafe": types2.Unsafe},
 	}
 	conf := types2.Config{
-		Environment:           env,
+		Context:               ctxt,
 		GoVersion:             base.Flag.Lang,
 		IgnoreLabels:          true, // parser already checked via syntax.CheckBranches mode
 		CompilerErrorMessages: true, // use error strings matching existing compiler errors
@@ -59,7 +59,7 @@ func checkFiles(noders []*noder) (posMap, *types2.Package, *types2.Info) {
 		Selections: make(map[*syntax.SelectorExpr]*types2.Selection),
 		Implicits:  make(map[syntax.Node]types2.Object),
 		Scopes:     make(map[syntax.Node]*types2.Scope),
-		Inferred:   make(map[syntax.Expr]types2.Inferred),
+		Instances:  make(map[*syntax.Name]types2.Instance),
 		// expand as needed
 	}
 
@@ -318,4 +318,10 @@ Outer:
 func (g *irgen) unhandled(what string, p poser) {
 	base.FatalfAt(g.pos(p), "unhandled %s: %T", what, p)
 	panic("unreachable")
+}
+
+// delayTransform returns true if we should delay all transforms, because we are
+// creating the nodes for a generic function/method.
+func (g *irgen) delayTransform() bool {
+	return g.topFuncIsGeneric
 }

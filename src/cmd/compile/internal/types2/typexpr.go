@@ -38,15 +38,9 @@ func (check *Checker) ident(x *operand, e *syntax.Name, def *Named, wantType boo
 		}
 		return
 	case universeAny, universeComparable:
-		// complain if necessary
 		if !check.allowVersion(check.pkg, 1, 18) {
 			check.errorf(e, "undeclared name: %s (requires version go1.18 or later)", e.Value)
 			return // avoid follow-on errors
-		}
-		if obj == universeAny {
-			// If we allow "any" for general use, this if-statement can be removed (issue #33232).
-			check.softErrorf(e, "cannot use any outside constraint position")
-			// ok to continue
 		}
 	}
 	check.recordUse(e, obj)
@@ -149,7 +143,7 @@ func (check *Checker) varType(e syntax.Expr) Type {
 		if t := asInterface(typ); t != nil {
 			pos := syntax.StartPos(e)
 			tset := computeInterfaceTypeSet(check, pos, t) // TODO(gri) is this the correct position?
-			if tset.IsConstraint() {
+			if !tset.IsMethodSet() {
 				if tset.comparable {
 					check.softErrorf(pos, "interface is (or embeds) comparable")
 				} else {
@@ -414,6 +408,7 @@ func (check *Checker) instantiatedType(x syntax.Expr, targsx []syntax.Expr, def 
 
 	typ := check.instantiate(x.Pos(), base, targs, posList)
 	def.setUnderlying(typ)
+	check.recordInstance(x, targs, typ)
 
 	// make sure we check instantiation works at least once
 	// and that the resulting type is valid

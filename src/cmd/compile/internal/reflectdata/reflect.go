@@ -356,6 +356,13 @@ func methods(t *types.Type) []*typeSig {
 
 // imethods returns the methods of the interface type t, sorted by name.
 func imethods(t *types.Type) []*typeSig {
+	if t.HasShape() && !t.IsInterface() {
+		// Non-interface shape types have no methods. (There are
+		// corresponding functions (created by getInstantiation) that take
+		// the dictionary and the receiver of shape type as the first two
+		// arguments.)
+		return nil
+	}
 	var methods []*typeSig
 	for _, f := range t.AllMethods().Slice() {
 		if f.Type.Kind() != types.TFUNC || f.Sym == nil {
@@ -1920,7 +1927,7 @@ func methodWrapper(rcvr *types.Type, method *types.Field, forItab bool) *obj.LSy
 			}
 			targs = targs2
 
-			sym := typecheck.MakeFuncInstSym(ir.MethodSym(methodrcvr, method.Sym), targs, true)
+			sym := typecheck.MakeFuncInstSym(ir.MethodSym(methodrcvr, method.Sym), targs, false, true)
 			if sym.Def == nil {
 				// Currently we make sure that we have all the instantiations
 				// we need by generating them all in ../noder/stencil.go:instantiateMethods
@@ -1999,6 +2006,9 @@ func MarkUsedIfaceMethod(n *ir.CallExpr) {
 	}
 	dot := n.X.(*ir.SelectorExpr)
 	ityp := dot.X.Type()
+	if ityp.HasShape() {
+		base.Fatalf("marking method of shape type used %+v %s", ityp, dot.Sel.Name)
+	}
 	tsym := TypeLinksym(ityp)
 	r := obj.Addrel(ir.CurFunc.LSym)
 	r.Sym = tsym

@@ -3206,6 +3206,11 @@ func (s *state) exprCheckPtr(n ir.Node, checkPtrOK bool) *ssa.Value {
 		n := n.(*ir.BinaryExpr)
 		ptr := s.expr(n.X)
 		len := s.expr(n.Y)
+
+		// Force len to uintptr to prevent misuse of garbage bits in the
+		// upper part of the register (#48536).
+		len = s.conv(n, len, len.Type, types.Types[types.TUINTPTR])
+
 		return s.newValue2(ssa.OpAddPtr, n.Type(), ptr, len)
 
 	default:
@@ -4498,7 +4503,7 @@ func InitTables() {
 		sys.AMD64, sys.ARM64, sys.S390X, sys.PPC64, sys.Wasm)
 	alias("math/bits", "RotateLeft", "math/bits", "RotateLeft64", p8...)
 
-	makeOnesCountAMD64 := func(op64 ssa.Op, op32 ssa.Op) func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
+	makeOnesCountAMD64 := func(op ssa.Op) func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 		return func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			v := s.entryNewValue0A(ssa.OpHasCPUFeature, types.Types[types.TBOOL], ir.Syms.X86HasPOPCNT)
 			b := s.endBlock()
@@ -4513,10 +4518,6 @@ func InitTables() {
 
 			// We have the intrinsic - use it directly.
 			s.startBlock(bTrue)
-			op := op64
-			if s.config.PtrSize == 4 {
-				op = op32
-			}
 			s.vars[n] = s.newValue1(op, types.Types[types.TINT], args[0])
 			s.endBlock().AddEdgeTo(bEnd)
 
@@ -4531,7 +4532,7 @@ func InitTables() {
 		}
 	}
 	addF("math/bits", "OnesCount64",
-		makeOnesCountAMD64(ssa.OpPopCount64, ssa.OpPopCount64),
+		makeOnesCountAMD64(ssa.OpPopCount64),
 		sys.AMD64)
 	addF("math/bits", "OnesCount64",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
@@ -4539,7 +4540,7 @@ func InitTables() {
 		},
 		sys.PPC64, sys.ARM64, sys.S390X, sys.Wasm)
 	addF("math/bits", "OnesCount32",
-		makeOnesCountAMD64(ssa.OpPopCount32, ssa.OpPopCount32),
+		makeOnesCountAMD64(ssa.OpPopCount32),
 		sys.AMD64)
 	addF("math/bits", "OnesCount32",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
@@ -4547,7 +4548,7 @@ func InitTables() {
 		},
 		sys.PPC64, sys.ARM64, sys.S390X, sys.Wasm)
 	addF("math/bits", "OnesCount16",
-		makeOnesCountAMD64(ssa.OpPopCount16, ssa.OpPopCount16),
+		makeOnesCountAMD64(ssa.OpPopCount16),
 		sys.AMD64)
 	addF("math/bits", "OnesCount16",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
@@ -4560,7 +4561,7 @@ func InitTables() {
 		},
 		sys.S390X, sys.PPC64, sys.Wasm)
 	addF("math/bits", "OnesCount",
-		makeOnesCountAMD64(ssa.OpPopCount64, ssa.OpPopCount32),
+		makeOnesCountAMD64(ssa.OpPopCount64),
 		sys.AMD64)
 	addF("math/bits", "Mul64",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
@@ -6663,7 +6664,13 @@ func EmitArgInfo(f *ir.Func, abiInfo *abi.ABIParamResultInfo) *obj.LSym {
 		return true
 	}
 
-	for _, a := range abiInfo.InParams() {
+	start := 0
+	if strings.Contains(f.LSym.Name, "[") {
+		// Skip the dictionary argument - it is implicit and the user doesn't need to see it.
+		start = 1
+	}
+
+	for _, a := range abiInfo.InParams()[start:] {
 		if !visitType(a.FrameOffset(abiInfo), a.Type, 0) {
 			break
 		}
@@ -6703,7 +6710,8 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 	var progToValue map[*obj.Prog]*ssa.Value
 	var progToBlock map[*obj.Prog]*ssa.Block
 	var valueToProgAfter []*obj.Prog // The first Prog following computation of a value v; v is visible at this point.
-	if f.PrintOrHtmlSSA {
+	gatherPrintInfo := f.PrintOrHtmlSSA || ssa.GenssaDump[f.Name]
+	if gatherPrintInfo {
 		progToValue = make(map[*obj.Prog]*ssa.Value, f.NumValues())
 		progToBlock = make(map[*obj.Prog]*ssa.Block, f.NumBlocks())
 		f.Logf("genssa %s\n", f.Name)
@@ -6814,7 +6822,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 				valueToProgAfter[v.ID] = s.pp.Next
 			}
 
-			if f.PrintOrHtmlSSA {
+			if gatherPrintInfo {
 				for ; x != s.pp.Next; x = x.Link {
 					progToValue[x] = v
 				}
@@ -6844,7 +6852,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 		x := s.pp.Next
 		s.SetPos(b.Pos)
 		Arch.SSAGenBlock(&s, b, next)
-		if f.PrintOrHtmlSSA {
+		if gatherPrintInfo {
 			for ; x != s.pp.Next; x = x.Link {
 				progToBlock[x] = b
 			}
@@ -7022,6 +7030,54 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 		buf.WriteString("</dl>")
 		buf.WriteString("</code>")
 		f.HTMLWriter.WriteColumn("genssa", "genssa", "ssa-prog", buf.String())
+	}
+	if ssa.GenssaDump[f.Name] {
+		fi := f.DumpFileForPhase("genssa")
+		if fi != nil {
+
+			// inliningDiffers if any filename changes or if any line number except the innermost (index 0) changes.
+			inliningDiffers := func(a, b []src.Pos) bool {
+				if len(a) != len(b) {
+					return true
+				}
+				for i := range a {
+					if a[i].Filename() != b[i].Filename() {
+						return true
+					}
+					if i > 0 && a[i].Line() != b[i].Line() {
+						return true
+					}
+				}
+				return false
+			}
+
+			var allPosOld []src.Pos
+			var allPos []src.Pos
+
+			for p := pp.Text; p != nil; p = p.Link {
+				if p.Pos.IsKnown() {
+					allPos = p.AllPos(allPos)
+					if inliningDiffers(allPos, allPosOld) {
+						for i := len(allPos) - 1; i >= 0; i-- {
+							pos := allPos[i]
+							fmt.Fprintf(fi, "# %s:%d\n", pos.Filename(), pos.Line())
+						}
+						allPos, allPosOld = allPosOld, allPos // swap, not copy, so that they do not share slice storage.
+					}
+				}
+
+				var s string
+				if v, ok := progToValue[p]; ok {
+					s = v.String()
+				} else if b, ok := progToBlock[p]; ok {
+					s = b.String()
+				} else {
+					s = "   " // most value and branch strings are 2-3 characters long
+				}
+				fmt.Fprintf(fi, " %-6s\t%.5d %s\t%s\n", s, p.Pc, ssa.StmtString(p.Pos), p.InstructionString())
+			}
+			fi.Close()
+		}
 	}
 
 	defframe(&s, e, f)
