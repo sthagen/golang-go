@@ -190,6 +190,15 @@ func (w *typeWriter) typ(typ Type) {
 		}
 
 	case *Interface:
+		if t.implicit {
+			if len(t.methods) == 0 && len(t.embeddeds) == 1 {
+				w.typ(t.embeddeds[0])
+				break
+			}
+			// Something's wrong with the implicit interface.
+			// Print it as such and continue.
+			w.string("/* implicit */ ")
+		}
 		w.string("interface{")
 		first := true
 		for _, m := range t.methods {
@@ -258,9 +267,6 @@ func (w *typeWriter) typ(typ Type) {
 			break
 		}
 		// Optionally write out package for typeparams (like Named).
-		// TODO(danscales): this is required for import/export, so
-		// we maybe need a separate function that won't be changed
-		// for debugging purposes.
 		if t.obj.pkg != nil {
 			writePackage(w.buf, t.obj.pkg, w.qf)
 		}
