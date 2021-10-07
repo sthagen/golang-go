@@ -639,6 +639,10 @@ func rewriteValuePPC64(v *Value) bool {
 		return true
 	case OpPopCount8:
 		return rewriteValuePPC64_OpPopCount8(v)
+	case OpPrefetchCache:
+		return rewriteValuePPC64_OpPrefetchCache(v)
+	case OpPrefetchCacheStreamed:
+		return rewriteValuePPC64_OpPrefetchCacheStreamed(v)
 	case OpRotateLeft16:
 		return rewriteValuePPC64_OpRotateLeft16(v)
 	case OpRotateLeft32:
@@ -7089,6 +7093,20 @@ func rewriteValuePPC64_OpPPC64MOVBZreg(v *Value) bool {
 		v.copyOf(x)
 		return true
 	}
+	// match: (MOVBZreg x:(Select0 (LoweredAtomicLoad8 _ _)))
+	// result: x
+	for {
+		x := v_0
+		if x.Op != OpSelect0 {
+			break
+		}
+		x_0 := x.Args[0]
+		if x_0.Op != OpPPC64LoweredAtomicLoad8 {
+			break
+		}
+		v.copyOf(x)
+		return true
+	}
 	// match: (MOVBZreg x:(Arg <t>))
 	// cond: is8BitInt(t) && !isSigned(t)
 	// result: x
@@ -10540,6 +10558,20 @@ func rewriteValuePPC64_OpPPC64MOVWZreg(v *Value) bool {
 	for {
 		x := v_0
 		if x.Op != OpPPC64MOVWZloadidx {
+			break
+		}
+		v.copyOf(x)
+		return true
+	}
+	// match: (MOVWZreg x:(Select0 (LoweredAtomicLoad32 _ _)))
+	// result: x
+	for {
+		x := v_0
+		if x.Op != OpSelect0 {
+			break
+		}
+		x_0 := x.Args[0]
+		if x_0.Op != OpPPC64LoweredAtomicLoad32 {
 			break
 		}
 		v.copyOf(x)
@@ -14005,6 +14037,34 @@ func rewriteValuePPC64_OpPopCount8(v *Value) bool {
 		return true
 	}
 }
+func rewriteValuePPC64_OpPrefetchCache(v *Value) bool {
+	v_1 := v.Args[1]
+	v_0 := v.Args[0]
+	// match: (PrefetchCache ptr mem)
+	// result: (DCBT ptr mem [0])
+	for {
+		ptr := v_0
+		mem := v_1
+		v.reset(OpPPC64DCBT)
+		v.AuxInt = int64ToAuxInt(0)
+		v.AddArg2(ptr, mem)
+		return true
+	}
+}
+func rewriteValuePPC64_OpPrefetchCacheStreamed(v *Value) bool {
+	v_1 := v.Args[1]
+	v_0 := v.Args[0]
+	// match: (PrefetchCacheStreamed ptr mem)
+	// result: (DCBT ptr mem [8])
+	for {
+		ptr := v_0
+		mem := v_1
+		v.reset(OpPPC64DCBT)
+		v.AuxInt = int64ToAuxInt(8)
+		v.AddArg2(ptr, mem)
+		return true
+	}
+}
 func rewriteValuePPC64_OpRotateLeft16(v *Value) bool {
 	v_1 := v.Args[1]
 	v_0 := v.Args[0]
@@ -16583,14 +16643,14 @@ func rewriteValuePPC64_OpStore(v *Value) bool {
 		return true
 	}
 	// match: (Store {t} ptr val mem)
-	// cond: t.Size() == 8 && (is64BitInt(val.Type) || isPtr(val.Type))
+	// cond: t.Size() == 8 && !is64BitFloat(val.Type)
 	// result: (MOVDstore ptr val mem)
 	for {
 		t := auxToType(v.Aux)
 		ptr := v_0
 		val := v_1
 		mem := v_2
-		if !(t.Size() == 8 && (is64BitInt(val.Type) || isPtr(val.Type))) {
+		if !(t.Size() == 8 && !is64BitFloat(val.Type)) {
 			break
 		}
 		v.reset(OpPPC64MOVDstore)

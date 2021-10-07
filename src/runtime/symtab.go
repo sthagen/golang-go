@@ -383,6 +383,9 @@ const (
 	// to be an incomplete unwinding of the stack. In certain contexts
 	// (in particular garbage collector stack scans) that is a fatal error.
 	funcFlag_SPWRITE
+
+	// ASM indicates that a function was implemented in assembly.
+	funcFlag_ASM
 )
 
 // pcHeader holds data used by the pclntab lookups.
@@ -424,6 +427,8 @@ type moduledata struct {
 	noptrbss, enoptrbss   uintptr
 	end, gcdata, gcbss    uintptr
 	types, etypes         uintptr
+	rodata                uintptr
+	gofunc                uintptr // go.func.*
 
 	textsectmap []textsect
 	typelinks   []int32 // offsets from types
@@ -548,15 +553,15 @@ func modulesinit() {
 }
 
 type functab struct {
-	entry   uintptr
-	funcoff uintptr
+	entryoff uint32 // relative to runtime.text
+	funcoff  uint32
 }
 
 // Mapping information for secondary text sections
 
 type textsect struct {
 	vaddr    uintptr // prelinked section vaddr
-	length   uintptr // section length
+	end      uintptr // vaddr + section length
 	baseaddr uintptr // relocated section address
 }
 
@@ -599,16 +604,16 @@ func moduledataverify1(datap *moduledata) {
 	nftab := len(datap.ftab) - 1
 	for i := 0; i < nftab; i++ {
 		// NOTE: ftab[nftab].entry is legal; it is the address beyond the final function.
-		if datap.ftab[i].entry > datap.ftab[i+1].entry {
+		if datap.ftab[i].entryoff > datap.ftab[i+1].entryoff {
 			f1 := funcInfo{(*_func)(unsafe.Pointer(&datap.pclntable[datap.ftab[i].funcoff])), datap}
 			f2 := funcInfo{(*_func)(unsafe.Pointer(&datap.pclntable[datap.ftab[i+1].funcoff])), datap}
 			f2name := "end"
 			if i+1 < nftab {
 				f2name = funcname(f2)
 			}
-			println("function symbol table not sorted by PC:", hex(datap.ftab[i].entry), funcname(f1), ">", hex(datap.ftab[i+1].entry), f2name, ", plugin:", datap.pluginpath)
+			println("function symbol table not sorted by PC offset:", hex(datap.ftab[i].entryoff), funcname(f1), ">", hex(datap.ftab[i+1].entryoff), f2name, ", plugin:", datap.pluginpath)
 			for j := 0; j <= i; j++ {
-				println("\t", hex(datap.ftab[j].entry), funcname(funcInfo{(*_func)(unsafe.Pointer(&datap.pclntable[datap.ftab[j].funcoff])), datap}))
+				println("\t", hex(datap.ftab[j].entryoff), funcname(funcInfo{(*_func)(unsafe.Pointer(&datap.pclntable[datap.ftab[j].funcoff])), datap}))
 			}
 			if GOOS == "aix" && isarchive {
 				println("-Wl,-bnoobjreorder is mandatory on aix/ppc64 with c-archive")
@@ -617,8 +622,12 @@ func moduledataverify1(datap *moduledata) {
 		}
 	}
 
-	if datap.minpc != datap.ftab[0].entry ||
-		datap.maxpc != datap.ftab[nftab].entry {
+	min := datap.textAddr(datap.ftab[0].entryoff)
+	// The max PC is outside of the text section.
+	// Subtract 1 to get a PC inside the text section, look it up, then add 1 back in.
+	max := datap.textAddr(datap.ftab[nftab].entryoff-1) + 1
+	if datap.minpc != min || datap.maxpc != max {
+		println("minpc=", hex(datap.minpc), "min=", hex(min), "maxpc=", hex(datap.maxpc), "max=", hex(max))
 		throw("minpc or maxpc invalid")
 	}
 
@@ -641,27 +650,26 @@ func moduledataverify1(datap *moduledata) {
 // To resolve the large text issue, the text is split into multiple text sections
 // to allow the linker to generate long calls when necessary.
 // When this happens, the vaddr for each text section is set to its offset within the text.
-// Each function's offset is compared against the section vaddrs and sizes to determine the containing section.
+// Each function's offset is compared against the section vaddrs and ends to determine the containing section.
 // Then the section relative offset is added to the section's
-// relocated baseaddr to compute the function addess.
-func (md *moduledata) textAddr(off uintptr) uintptr {
-	var res uintptr
+// relocated baseaddr to compute the function address.
+//
+// It is nosplit because it is part of the findfunc implementation.
+//go:nosplit
+func (md *moduledata) textAddr(off32 uint32) uintptr {
+	off := uintptr(off32)
+	res := md.text + off
 	if len(md.textsectmap) > 1 {
 		for i := range md.textsectmap {
-			sectaddr := md.textsectmap[i].vaddr
-			sectlen := md.textsectmap[i].length
-			if uintptr(off) >= sectaddr && uintptr(off) < sectaddr+sectlen {
-				res = md.textsectmap[i].baseaddr + uintptr(off) - uintptr(md.textsectmap[i].vaddr)
+			if off >= md.textsectmap[i].vaddr && off < md.textsectmap[i].end {
+				res = md.textsectmap[i].baseaddr + off - md.textsectmap[i].vaddr
 				break
 			}
 		}
-	} else {
-		// single text section
-		res = md.text + uintptr(off)
-	}
-	if res > md.etext && GOARCH != "wasm" { // on wasm, functions do not live in the same address space as the linear memory
-		println("runtime: textOff", hex(off), "out of range", hex(md.text), "-", hex(md.etext))
-		throw("runtime: text offset out of range")
+		if res > md.etext && GOARCH != "wasm" { // on wasm, functions do not live in the same address space as the linear memory
+			println("runtime: textAddr", hex(res), "out of range", hex(md.text), "-", hex(md.etext))
+			throw("runtime: text offset out of range")
+		}
 	}
 	return res
 }
@@ -773,7 +781,7 @@ func (f *_func) isInlined() bool {
 
 // entry returns the entry PC for f.
 func (f funcInfo) entry() uintptr {
-	return f.datap.textAddr(uintptr(f.entryoff))
+	return f.datap.textAddr(f.entryoff)
 }
 
 // findfunc looks up function metadata for a PC.
@@ -796,31 +804,38 @@ func findfunc(pc uintptr) funcInfo {
 	ffb := (*findfuncbucket)(add(unsafe.Pointer(datap.findfunctab), b*unsafe.Sizeof(findfuncbucket{})))
 	idx := ffb.idx + uint32(ffb.subbuckets[i])
 
-	// If the idx is beyond the end of the ftab, set it to the end of the table and search backward.
-	// This situation can occur if multiple text sections are generated to handle large text sections
-	// and the linker has inserted jump tables between them.
-
-	if idx >= uint32(len(datap.ftab)) {
-		idx = uint32(len(datap.ftab) - 1)
-	}
-	if pc < datap.ftab[idx].entry {
-		// With multiple text sections, the idx might reference a function address that
-		// is higher than the pc being searched, so search backward until the matching address is found.
-
-		for datap.ftab[idx].entry > pc && idx > 0 {
-			idx--
-		}
-		if idx == 0 {
-			throw("findfunc: bad findfunctab entry idx")
-		}
-	} else {
-		// linear search to find func with pc >= entry.
-		for datap.ftab[idx+1].entry <= pc {
+	// Find the ftab entry.
+	if len(datap.textsectmap) == 1 {
+		// fast path for the common case
+		pcOff := uint32(pc - datap.text)
+		for datap.ftab[idx+1].entryoff <= pcOff {
 			idx++
 		}
+	} else {
+		// Multiple text sections.
+		// If the idx is beyond the end of the ftab, set it to the end of the table and search backward.
+		if idx >= uint32(len(datap.ftab)) {
+			idx = uint32(len(datap.ftab) - 1)
+		}
+		if pc < datap.textAddr(datap.ftab[idx].entryoff) {
+			// The idx might reference a function address that
+			// is higher than the pcOff being searched, so search backward until the matching address is found.
+			for datap.textAddr(datap.ftab[idx].entryoff) > pc && idx > 0 {
+				idx--
+			}
+			if idx == 0 {
+				throw("findfunc: bad findfunctab entry idx")
+			}
+		} else {
+			// linear search to find func with pc >= entry.
+			for datap.textAddr(datap.ftab[idx+1].entryoff) <= pc {
+				idx++
+			}
+		}
 	}
+
 	funcoff := datap.ftab[idx].funcoff
-	if funcoff == ^uintptr(0) {
+	if funcoff == ^uint32(0) {
 		// With multiple text sections, there may be functions inserted by the external
 		// linker that are not known by Go. This means there may be holes in the PC
 		// range covered by the func table. The invalid funcoff value indicates a hole.
@@ -1016,8 +1031,9 @@ func funcline(f funcInfo, targetpc uintptr) (file string, line int32) {
 
 func funcspdelta(f funcInfo, targetpc uintptr, cache *pcvalueCache) int32 {
 	x, _ := pcvalue(f, f.pcsp, targetpc, cache, true)
-	if x&(goarch.PtrSize-1) != 0 {
+	if debugPcln && x&(goarch.PtrSize-1) != 0 {
 		print("invalid spdelta ", funcname(f), " ", hex(f.entry()), " ", hex(targetpc), " ", hex(f.pcsp), " ", x, "\n")
+		throw("bad spdelta")
 	}
 	return x
 }
@@ -1070,18 +1086,24 @@ func pcdatavalue2(f funcInfo, table uint32, targetpc uintptr) (int32, uintptr) {
 	return pcvalue(f, pcdatastart(f, table), targetpc, nil, true)
 }
 
+// funcdata returns a pointer to the ith funcdata for f.
+// funcdata should be kept in sync with cmd/link:writeFuncs.
 func funcdata(f funcInfo, i uint8) unsafe.Pointer {
 	if i < 0 || i >= f.nfuncdata {
 		return nil
 	}
-	p := add(unsafe.Pointer(&f.nfuncdata), unsafe.Sizeof(f.nfuncdata)+uintptr(f.npcdata)*4)
-	if goarch.PtrSize == 8 && uintptr(p)&4 != 0 {
-		if uintptr(unsafe.Pointer(f._func))&4 != 0 {
-			println("runtime: misaligned func", f._func)
-		}
-		p = add(p, 4)
+	base := f.datap.gofunc // load gofunc address early so that we calculate during cache misses
+	p := uintptr(unsafe.Pointer(&f.nfuncdata)) + unsafe.Sizeof(f.nfuncdata) + uintptr(f.npcdata)*4 + uintptr(i)*4
+	off := *(*uint32)(unsafe.Pointer(p))
+	// Return off == ^uint32(0) ? 0 : f.datap.gofunc + uintptr(off), but without branches.
+	// The compiler calculates mask on most architectures using conditional assignment.
+	var mask uintptr
+	if off == ^uint32(0) {
+		mask = 1
 	}
-	return *(*unsafe.Pointer)(add(p, uintptr(i)*goarch.PtrSize))
+	mask--
+	raw := base + uintptr(off)
+	return unsafe.Pointer(raw & mask)
 }
 
 // step advances to the next pc, value pair in the encoded table.
