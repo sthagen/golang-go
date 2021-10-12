@@ -70,6 +70,10 @@ func rewriteValueAMD64(v *Value) bool {
 		return rewriteValueAMD64_OpAMD64ANDQmodify(v)
 	case OpAMD64BSFQ:
 		return rewriteValueAMD64_OpAMD64BSFQ(v)
+	case OpAMD64BSWAPL:
+		return rewriteValueAMD64_OpAMD64BSWAPL(v)
+	case OpAMD64BSWAPQ:
+		return rewriteValueAMD64_OpAMD64BSWAPQ(v)
 	case OpAMD64BTCLconst:
 		return rewriteValueAMD64_OpAMD64BTCLconst(v)
 	case OpAMD64BTCQconst:
@@ -3603,6 +3607,34 @@ func rewriteValueAMD64_OpAMD64BSFQ(v *Value) bool {
 		v0.AuxInt = int32ToAuxInt(1 << 16)
 		v0.AddArg(x)
 		v.AddArg(v0)
+		return true
+	}
+	return false
+}
+func rewriteValueAMD64_OpAMD64BSWAPL(v *Value) bool {
+	v_0 := v.Args[0]
+	// match: (BSWAPL (BSWAPL p))
+	// result: p
+	for {
+		if v_0.Op != OpAMD64BSWAPL {
+			break
+		}
+		p := v_0.Args[0]
+		v.copyOf(p)
+		return true
+	}
+	return false
+}
+func rewriteValueAMD64_OpAMD64BSWAPQ(v *Value) bool {
+	v_0 := v.Args[0]
+	// match: (BSWAPQ (BSWAPQ p))
+	// result: p
+	for {
+		if v_0.Op != OpAMD64BSWAPQ {
+			break
+		}
+		p := v_0.Args[0]
+		v.copyOf(p)
 		return true
 	}
 	return false
@@ -29222,11 +29254,11 @@ func rewriteValueAMD64_OpHasCPUFeature(v *Value) bool {
 	b := v.Block
 	typ := &b.Func.Config.Types
 	// match: (HasCPUFeature {s})
-	// result: (SETNE (CMPQconst [0] (LoweredHasCPUFeature {s})))
+	// result: (SETNE (CMPLconst [0] (LoweredHasCPUFeature {s})))
 	for {
 		s := auxToSym(v.Aux)
 		v.reset(OpAMD64SETNE)
-		v0 := b.NewValue0(v.Pos, OpAMD64CMPQconst, types.TypeFlags)
+		v0 := b.NewValue0(v.Pos, OpAMD64CMPLconst, types.TypeFlags)
 		v0.AuxInt = int32ToAuxInt(0)
 		v1 := b.NewValue0(v.Pos, OpAMD64LoweredHasCPUFeature, typ.UInt64)
 		v1.Aux = symToAux(s)
