@@ -18866,7 +18866,7 @@ func rewriteValueAMD64_OpAMD64ORQ(v *Value) bool {
 	}
 	// match: (ORQ x0:(MOVBELload [i] {s} p0 mem) sh:(SHLQconst [32] x1:(MOVBELload [i] {s} p1 mem)))
 	// cond: x0.Uses == 1 && x1.Uses == 1 && sh.Uses == 1 && sequentialAddresses(p1, p0, 4) && mergePoint(b,x0,x1) != nil && clobber(x0, x1, sh)
-	// result: @mergePoint(b,x0,x1) (MOVBEQload [i] {s} p0 mem)
+	// result: @mergePoint(b,x0,x1) (MOVBEQload [i] {s} p1 mem)
 	for {
 		for _i0 := 0; _i0 <= 1; _i0, v_0, v_1 = _i0+1, v_1, v_0 {
 			x0 := v_0
@@ -18895,7 +18895,7 @@ func rewriteValueAMD64_OpAMD64ORQ(v *Value) bool {
 			v.copyOf(v0)
 			v0.AuxInt = int32ToAuxInt(i)
 			v0.Aux = symToAux(s)
-			v0.AddArg2(p0, mem)
+			v0.AddArg2(p1, mem)
 			return true
 		}
 		break

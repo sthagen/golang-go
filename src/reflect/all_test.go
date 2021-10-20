@@ -7722,3 +7722,14 @@ func TestNotInHeapDeref(t *testing.T) {
 	v = ValueOf((*nih)(unsafe.Pointer(new(int))))
 	shouldPanic("reflect: reflect.Value.Elem on an invalid notinheap pointer", func() { v.Elem() })
 }
+
+func TestMethodCallValueCodePtr(t *testing.T) {
+	m := ValueOf(Point{}).Method(1)
+	want := MethodValueCallCodePtr()
+	if got := uintptr(m.UnsafePointer()); got != want {
+		t.Errorf("methodValueCall code pointer mismatched, want: %v, got: %v", want, got)
+	}
+	if got := m.Pointer(); got != want {
+		t.Errorf("methodValueCall code pointer mismatched, want: %v, got: %v", want, got)
+	}
+}

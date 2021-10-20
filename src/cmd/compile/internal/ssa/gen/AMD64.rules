@@ -2244,4 +2244,4 @@
   && sequentialAddresses(p1, p0, 4)
   && mergePoint(b,x0,x1) != nil
   && clobber(x0, x1, sh)
-  => @mergePoint(b,x0,x1) (MOVBEQload [i] {s} p0 mem)
+  => @mergePoint(b,x0,x1) (MOVBEQload [i] {s} p1 mem)
