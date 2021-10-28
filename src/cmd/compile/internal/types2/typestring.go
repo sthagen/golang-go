@@ -272,9 +272,6 @@ func (w *typeWriter) typ(typ Type) {
 		}
 		w.string(t.obj.name + subscript(t.id))
 
-	case *top:
-		w.error("⊤")
-
 	default:
 		// For externally defined implementations of Type.
 		// Note: In this case cycles won't be caught.

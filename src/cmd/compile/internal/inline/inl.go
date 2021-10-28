@@ -1259,7 +1259,7 @@ func (subst *inlsubst) node(n ir.Node) ir.Node {
 		n := n.(*ir.BranchStmt)
 		m := ir.Copy(n).(*ir.BranchStmt)
 		m.SetPos(subst.updatedPos(m.Pos()))
-		*m.PtrInit() = nil
+		m.SetInit(nil)
 		m.Label = translateLabel(n.Label)
 		return m
 
@@ -1271,7 +1271,7 @@ func (subst *inlsubst) node(n ir.Node) ir.Node {
 		n := n.(*ir.LabelStmt)
 		m := ir.Copy(n).(*ir.LabelStmt)
 		m.SetPos(subst.updatedPos(m.Pos()))
-		*m.PtrInit() = nil
+		m.SetInit(nil)
 		m.Label = translateLabel(n.Label)
 		return m
 
@@ -1285,18 +1285,24 @@ func (subst *inlsubst) node(n ir.Node) ir.Node {
 	ir.EditChildren(m, subst.edit)
 
 	if subst.newclofn == nil {
-		// Translate any label on FOR or RANGE loops
-		if m.Op() == ir.OFOR {
+		// Translate any label on FOR, RANGE loops or SWITCH
+		switch m.Op() {
+		case ir.OFOR:
 			m := m.(*ir.ForStmt)
+			m.Label = translateLabel(m.Label)
+			return m
+
+		case ir.ORANGE:
+			m := m.(*ir.RangeStmt)
+			m.Label = translateLabel(m.Label)
+			return m
+
+		case ir.OSWITCH:
+			m := m.(*ir.SwitchStmt)
 			m.Label = translateLabel(m.Label)
 			return m
 		}
 
-		if m.Op() == ir.ORANGE {
-			m := m.(*ir.RangeStmt)
-			m.Label = translateLabel(m.Label)
-			return m
-		}
 	}
 
 	switch m := m.(type) {

@@ -331,7 +331,7 @@ var depsRules = `
 	< C
 	< runtime/cgo
 	< CGO
-	< runtime/race, runtime/msan;
+	< runtime/race, runtime/msan, runtime/asan;
 
 	# Bulk of the standard library must not use cgo.
 	# The prohibition stops at net and os/user.
@@ -621,7 +621,7 @@ func TestDependencies(t *testing.T) {
 	}
 }
 
-var buildIgnore = []byte("\n// +build ignore")
+var buildIgnore = []byte("\n//go:build ignore")
 
 func findImports(pkg string) ([]string, error) {
 	vpkg := pkg

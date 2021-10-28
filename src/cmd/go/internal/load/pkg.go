@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -37,9 +38,9 @@ import (
 	"cmd/go/internal/modload"
 	"cmd/go/internal/par"
 	"cmd/go/internal/search"
+	"cmd/go/internal/str"
 	"cmd/go/internal/trace"
 	"cmd/go/internal/vcs"
-	"cmd/internal/str"
 	"cmd/internal/sys"
 
 	"golang.org/x/mod/modfile"
@@ -1625,6 +1626,7 @@ var cgoSyscallExclude = map[string]bool{
 	"runtime/cgo":  true,
 	"runtime/race": true,
 	"runtime/msan": true,
+	"runtime/asan": true,
 }
 
 var foldPath = make(map[string]string)
@@ -2363,10 +2365,14 @@ func (p *Package) setBuildInfo() {
 			setVCSError(err)
 			return
 		}
-		info.Settings = append(info.Settings, []debug.BuildSetting{
-			{Key: vcsCmd.Cmd + "revision", Value: st.Revision},
-			{Key: vcsCmd.Cmd + "uncommitted", Value: strconv.FormatBool(st.Uncommitted)},
-		}...)
+		if st.Revision != "" {
+			appendSetting(vcsCmd.Cmd+"revision", st.Revision)
+		}
+		if !st.CommitTime.IsZero() {
+			stamp := st.CommitTime.UTC().Format(time.RFC3339Nano)
+			appendSetting(vcsCmd.Cmd+"committime", stamp)
+		}
+		appendSetting(vcsCmd.Cmd+"uncommitted", strconv.FormatBool(st.Uncommitted))
 	}
 
 	text, err := info.MarshalText()
@@ -2414,6 +2420,10 @@ func LinkerDeps(p *Package) []string {
 	// Using memory sanitizer forces an import of runtime/msan.
 	if cfg.BuildMSan {
 		deps = append(deps, "runtime/msan")
+	}
+	// Using address sanitizer forces an import of runtime/asan.
+	if cfg.BuildASan {
+		deps = append(deps, "runtime/asan")
 	}
 
 	return deps

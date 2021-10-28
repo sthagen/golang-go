@@ -34,6 +34,17 @@ func MSanSupported(goos, goarch string) bool {
 	}
 }
 
+// ASanSupported reports whether goos/goarch supports the address
+// sanitizer option.
+func ASanSupported(goos, goarch string) bool {
+	switch goos {
+	case "linux":
+		return goarch == "arm64" || goarch == "amd64"
+	default:
+		return false
+	}
+}
+
 // MustLinkExternal reports whether goos/goarch requires external linking.
 // (This is the opposite of internal/testenv.CanInternalLink. Keep them in sync.)
 func MustLinkExternal(goos, goarch string) bool {
@@ -94,13 +105,6 @@ func BuildModeSupported(compiler, buildmode, goos, goarch string) bool {
 			"ios/amd64", "ios/arm64",
 			"aix/ppc64",
 			"windows/386", "windows/amd64", "windows/arm":
-			return true
-		}
-		return false
-
-	case "shared":
-		switch platform {
-		case "linux/386", "linux/amd64", "linux/arm", "linux/arm64", "linux/ppc64le", "linux/s390x":
 			return true
 		}
 		return false

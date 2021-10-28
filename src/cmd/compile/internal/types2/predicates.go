@@ -6,9 +6,10 @@
 
 package types2
 
-// isNamed reports whether typ has a name.
-// isNamed may be called with types that are not fully set up.
-func isNamed(typ Type) bool {
+// hasName reports whether typ has a name. This includes
+// predeclared types, defined types, and type parameters.
+// hasName may be called with types that are not fully set up.
+func hasName(typ Type) bool {
 	switch typ.(type) {
 	case *Basic, *Named, *TypeParam:
 		return true
@@ -70,7 +71,7 @@ func isOrdered(typ Type) bool { return is(typ, IsOrdered) }
 
 func isConstType(typ Type) bool {
 	// Type parameters are never const types.
-	t, _ := under(typ).(*Basic)
+	t := asBasic(typ)
 	return t != nil && t.info&IsConstType != 0
 }
 
@@ -338,10 +339,6 @@ func identical(x, y Type, cmpTags bool, p *ifacePair) bool {
 
 	case *TypeParam:
 		// nothing to do (x and y being equal is caught in the very beginning of this function)
-
-	case *top:
-		// Either both types are theTop in which case the initial x == y check
-		// will have caught them. Otherwise they are not identical.
 
 	case nil:
 		// avoid a crash in case of nil type

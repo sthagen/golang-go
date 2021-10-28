@@ -67,12 +67,13 @@ Do not send CLs removing the interior tags from such phrases.
 
 <p><!-- golang.org/issue/37475 -->
   The <code>go</code> command now embeds version control information in
-  binaries including the currently checked-out revision and a flag indicating
-  whether edited or untracked files are present. Version control information
-  is embedded if the <code>go</code> command is invoked in a directory within a
-  Git or Mercurial repository, and the <code>main</code> package and its
-  containing main module are in the same repository. This information may be
-  omitted using the flag <code>-buildvcs=false</code>.
+  binaries including the currently checked-out revision, commit time, and a
+  flag indicating whether edited or untracked files are present. Version
+  control information is embedded if the <code>go</code> command is invoked in
+  a directory within a Git, Mercurial, Fossil, or Bazaar repository, and the
+  <code>main</code> package and its containing main module are in the same
+  repository. This information may be omitted using the flag
+  <code>-buildvcs=false</code>.
 </p>
 
 <p><!-- golang.org/issue/37475 -->
@@ -89,6 +90,13 @@ Do not send CLs removing the interior tags from such phrases.
   package.
 </p>
 
+<p><!-- golang.org/issue/47788 -->
+  The <code>go</code> command no longer supports <code>-linkshared</code>
+  and <code>-buildmode=shared</code>.
+  (<code>shared<code> building and linking has never worked in module mode or
+  when <code>GOROOT</code> is not writable.)
+<p>
+
 <p>
   TODO: complete this section, or delete if not needed
 </p>
@@ -98,7 +106,7 @@ Do not send CLs removing the interior tags from such phrases.
 <p><!-- https://golang.org/issue/43566 -->
   <code>gofmt</code> now reads and formats input files concurrently, with a
   memory limit proportional to <code>GOMAXPROCS</code>. On a machine with
-  multiple CPUs, gofmt should now be significantly faster.
+  multiple CPUs, <code>gofmt</code> should now be significantly faster.
 </p>
 
 

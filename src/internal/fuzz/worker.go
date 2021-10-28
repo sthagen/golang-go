@@ -738,20 +738,9 @@ func (ws *workerServer) fuzz(ctx context.Context, args fuzzArgs) (resp fuzzRespo
 				return resp
 			}
 			if cov != nil {
-				// Found new coverage. Before reporting to the coordinator,
-				// run the same values once more to deflake.
-				if !shouldStop() {
-					dur, cov, errMsg = fuzzOnce(entry)
-					if errMsg != "" {
-						resp.Err = errMsg
-						return resp
-					}
-				}
-				if cov != nil {
-					resp.CoverageData = cov
-					resp.InterestingDuration = dur
-					return resp
-				}
+				resp.CoverageData = cov
+				resp.InterestingDuration = dur
+				return resp
 			}
 			if shouldStop() {
 				return resp
@@ -1088,7 +1077,7 @@ func (wc *workerClient) fuzz(ctx context.Context, entryIn CorpusEntry, args fuzz
 		wc.m.r.restore(mem.header().randState, mem.header().randInc)
 		if !args.Warmup {
 			// Only mutate the valuesOut if fuzzing actually occurred.
-			for i := int64(0); i < mem.header().count; i++ {
+			for i := int64(0); i < resp.Count; i++ {
 				wc.m.mutate(valuesOut, cap(mem.valueRef()))
 			}
 		}

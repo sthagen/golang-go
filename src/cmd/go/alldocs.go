@@ -114,13 +114,16 @@
 // 		The default is GOMAXPROCS, normally the number of CPUs available.
 // 	-race
 // 		enable data race detection.
-// 		Supported only on linux/amd64, freebsd/amd64, darwin/amd64, windows/amd64,
+// 		Supported only on linux/amd64, freebsd/amd64, darwin/amd64, darwin/arm64, windows/amd64,
 // 		linux/ppc64le and linux/arm64 (only for 48-bit VMA).
 // 	-msan
 // 		enable interoperation with memory sanitizer.
 // 		Supported only on linux/amd64, linux/arm64
 // 		and only with Clang/LLVM as the host C compiler.
 // 		On linux/arm64, pie build mode will be used.
+// 	-asan
+// 		enable interoperation with address sanitizer.
+// 		Supported only on linux/arm64, linux/amd64.
 // 	-v
 // 		print the names of packages as they are compiled.
 // 	-work
@@ -155,13 +158,10 @@
 // 		in order to keep output separate from default builds.
 // 		If using the -race flag, the install suffix is automatically set to race
 // 		or, if set explicitly, has _race appended to it. Likewise for the -msan
-// 		flag. Using a -buildmode option that requires non-default compile flags
-// 		has a similar effect.
+// 		and -asan flags. Using a -buildmode option that requires non-default compile
+// 		flags has a similar effect.
 // 	-ldflags '[pattern=]arg list'
 // 		arguments to pass on each go tool link invocation.
-// 	-linkshared
-// 		build code that will be linked against shared libraries previously
-// 		created with -buildmode=shared.
 // 	-mod mode
 // 		module download mode to use: readonly, vendor, or mod.
 // 		By default, if a vendor directory is present and the go version in go.mod
@@ -775,7 +775,6 @@
 //         Name          string   // package name
 //         Doc           string   // package documentation string
 //         Target        string   // install path
-//         Shlib         string   // the shared library that contains this package (only set when -linkshared)
 //         Goroot        bool     // is this package in the Go root?
 //         Standard      bool     // is this package part of the standard Go library?
 //         Stale         bool     // would 'go install' do anything for this package?
@@ -1795,11 +1794,6 @@
 // 		Listed main packages are built into executables and listed
 // 		non-main packages are built into .a files (the default
 // 		behavior).
-//
-// 	-buildmode=shared
-// 		Combine all the listed non-main packages into a single shared
-// 		library that will be used when building with the -linkshared
-// 		option. Packages named main are ignored.
 //
 // 	-buildmode=exe
 // 		Build the listed main packages and everything they import into
