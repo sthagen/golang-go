@@ -464,14 +464,18 @@
 //
 // Usage:
 //
-// 	go fix [packages]
+// 	go fix [-fix list] [packages]
 //
 // Fix runs the Go fix command on the packages named by the import paths.
+//
+// The -fix flag sets a comma-separated list of fixes to run.
+// The default is all known fixes.
+// (Its value is passed to 'go tool fix -r'.)
 //
 // For more about fix, see 'go doc cmd/fix'.
 // For more about specifying packages, see 'go help packages'.
 //
-// To run fix with specific options, run 'go tool fix'.
+// To run fix with other options, run 'go tool fix'.
 //
 // See also: go fmt, go vet.
 //
@@ -2781,11 +2785,12 @@
 //
 // 	-fuzz regexp
 // 	    Run the fuzz target matching the regular expression. When specified,
-// 	    the command line argument must match exactly one package, and regexp
-// 	    must match exactly one fuzz target within that package. After tests,
-// 	    benchmarks, seed corpora of other fuzz targets, and examples have
-// 	    completed, the matching target will be fuzzed. See the Fuzzing section
-// 	    of the testing package documentation for details.
+// 	    the command line argument must match exactly one package within the
+// 	    main module, and regexp must match exactly one fuzz target within
+// 	    that package. After tests, benchmarks, seed corpora of other fuzz
+// 	    targets, and examples have completed, the matching target will be
+// 	    fuzzed. See the Fuzzing section of the testing package documentation
+// 	    for details.
 //
 // 	-fuzztime t
 // 	    Run enough iterations of the fuzz test to take t, specified as a
