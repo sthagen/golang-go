@@ -474,11 +474,34 @@ func TestUDPReadTimeout(t *testing.T) {
 	}
 }
 
+func BenchmarkReadWriteMsgUDPAddrPort(b *testing.B) {
+	conn, err := ListenUDP("udp4", &UDPAddr{IP: IPv4(127, 0, 0, 1)})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer conn.Close()
+	addr := conn.LocalAddr().(*UDPAddr).AddrPort()
+	buf := make([]byte, 8)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, _, err := conn.WriteMsgUDPAddrPort(buf, nil, addr)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, _, _, _, err = conn.ReadMsgUDPAddrPort(buf, nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkWriteToReadFromUDP(b *testing.B) {
 	conn, err := ListenUDP("udp4", &UDPAddr{IP: IPv4(127, 0, 0, 1)})
 	if err != nil {
 		b.Fatal(err)
 	}
+	defer conn.Close()
 	addr := conn.LocalAddr()
 	buf := make([]byte, 8)
 	b.ResetTimer()
@@ -489,6 +512,28 @@ func BenchmarkWriteToReadFromUDP(b *testing.B) {
 			b.Fatal(err)
 		}
 		_, _, err = conn.ReadFromUDP(buf)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkWriteToReadFromUDPAddrPort(b *testing.B) {
+	conn, err := ListenUDP("udp4", &UDPAddr{IP: IPv4(127, 0, 0, 1)})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer conn.Close()
+	addr := conn.LocalAddr().(*UDPAddr).AddrPort()
+	buf := make([]byte, 8)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_, err := conn.WriteToUDPAddrPort(buf, addr)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_, _, err = conn.ReadFromUDPAddrPort(buf)
 		if err != nil {
 			b.Fatal(err)
 		}

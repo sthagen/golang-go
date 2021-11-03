@@ -2233,6 +2233,9 @@ func newm1(mp *m) {
 		if msanenabled {
 			msanwrite(unsafe.Pointer(&ts), unsafe.Sizeof(ts))
 		}
+		if asanenabled {
+			asanwrite(unsafe.Pointer(&ts), unsafe.Sizeof(ts))
+		}
 		execLock.rlock() // Prevent process clone.
 		asmcgocall(_cgo_thread_start, unsafe.Pointer(&ts))
 		execLock.runlock()
@@ -3623,8 +3626,10 @@ func goexit1() {
 // goexit continuation on g0.
 func goexit0(gp *g) {
 	_g_ := getg()
+	_p_ := _g_.m.p.ptr()
 
 	casgstatus(gp, _Grunning, _Gdead)
+	gcController.addScannableStack(_p_, -int64(gp.stack.hi-gp.stack.lo))
 	if isSystemGoroutine(gp, false) {
 		atomic.Xadd(&sched.ngsys, -1)
 	}
@@ -3655,7 +3660,7 @@ func goexit0(gp *g) {
 	dropg()
 
 	if GOARCH == "wasm" { // no threads yet on wasm
-		gfput(_g_.m.p.ptr(), gp)
+		gfput(_p_, gp)
 		schedule() // never returns
 	}
 
@@ -3663,7 +3668,7 @@ func goexit0(gp *g) {
 		print("invalid m->lockedInt = ", _g_.m.lockedInt, "\n")
 		throw("internal lockOSThread error")
 	}
-	gfput(_g_.m.p.ptr(), gp)
+	gfput(_p_, gp)
 	if locked {
 		// The goroutine may have locked this thread because
 		// it put it in an unusual kernel state. Kill it
@@ -4292,6 +4297,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr) *g {
 		newg.tracking = true
 	}
 	casgstatus(newg, _Gdead, _Grunnable)
+	gcController.addScannableStack(_p_, int64(newg.stack.hi-newg.stack.lo))
 
 	if _p_.goidcache == _p_.goidcacheend {
 		// Sched.goidgen is the last allocated id,
@@ -4431,6 +4437,9 @@ retry:
 		}
 		if msanenabled {
 			msanmalloc(unsafe.Pointer(gp.stack.lo), gp.stack.hi-gp.stack.lo)
+		}
+		if asanenabled {
+			asanunpoison(unsafe.Pointer(gp.stack.lo), gp.stack.hi-gp.stack.lo)
 		}
 	}
 	return gp

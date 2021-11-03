@@ -407,7 +407,11 @@ leave the test binary in pkg.test for use when analyzing the profiles.
 When 'go test' runs a test binary, it does so from within the
 corresponding package's source code directory. Depending on the test,
 it may be necessary to do the same when invoking a generated test
-binary directly.
+binary directly. Because that directory may be located within the
+module cache, which may be read-only and is verified by checksums, the
+test must not write to it or any other directory within the module
+unless explicitly requested by the user (such as with the -fuzz flag,
+which writes failures to testdata/fuzz).
 
 The command-line package list, if present, must appear before any
 flag not known to the go test command. Continuing the example above,
@@ -661,6 +665,12 @@ func runTest(ctx context.Context, cmd *base.Command, args []string) {
 		}
 		if len(pkgs) != 1 {
 			base.Fatalf("cannot use -fuzz flag with multiple packages")
+		}
+		if testCoverProfile != "" {
+			base.Fatalf("cannot use -coverprofile flag with -fuzz flag")
+		}
+		if profileFlag := testProfile(); profileFlag != "" {
+			base.Fatalf("cannot use %s flag with -fuzz flag", profileFlag)
 		}
 
 		// Reject the '-fuzz' flag if the package is outside the main module.
