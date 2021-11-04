@@ -297,7 +297,7 @@ func Recvfrom(fd int, p []byte, flags int) (n int, from Sockaddr, err error) {
 	return
 }
 
-func RecvfromInet4(fd int, p []byte, flags int, from *SockaddrInet4) (n int, err error) {
+func recvfromInet4(fd int, p []byte, flags int, from *SockaddrInet4) (n int, err error) {
 	var rsa RawSockaddrAny
 	var socklen _Socklen = SizeofSockaddrAny
 	if n, err = recvfrom(fd, p, flags, &rsa, &socklen); err != nil {
@@ -310,7 +310,7 @@ func RecvfromInet4(fd int, p []byte, flags int, from *SockaddrInet4) (n int, err
 	return
 }
 
-func RecvfromInet6(fd int, p []byte, flags int, from *SockaddrInet6) (n int, err error) {
+func recvfromInet6(fd int, p []byte, flags int, from *SockaddrInet6) (n int, err error) {
 	var rsa RawSockaddrAny
 	var socklen _Socklen = SizeofSockaddrAny
 	if n, err = recvfrom(fd, p, flags, &rsa, &socklen); err != nil {
@@ -324,7 +324,34 @@ func RecvfromInet6(fd int, p []byte, flags int, from *SockaddrInet6) (n int, err
 	return
 }
 
-func SendtoInet4(fd int, p []byte, flags int, to SockaddrInet4) (err error) {
+func Recvmsg(fd int, p, oob []byte, flags int) (n, oobn int, recvflags int, from Sockaddr, err error) {
+	var rsa RawSockaddrAny
+	n, oobn, recvflags, err = recvmsgRaw(fd, p, oob, flags, &rsa)
+	// source address is only specified if the socket is unconnected
+	if rsa.Addr.Family != AF_UNSPEC {
+		from, err = anyToSockaddr(&rsa)
+	}
+	return
+}
+
+func Sendmsg(fd int, p, oob []byte, to Sockaddr, flags int) (err error) {
+	_, err = SendmsgN(fd, p, oob, to, flags)
+	return
+}
+
+func SendmsgN(fd int, p, oob []byte, to Sockaddr, flags int) (n int, err error) {
+	var ptr unsafe.Pointer
+	var salen _Socklen
+	if to != nil {
+		ptr, salen, err = to.sockaddr()
+		if err != nil {
+			return 0, err
+		}
+	}
+	return sendmsgN(fd, p, oob, ptr, salen, flags)
+}
+
+func sendtoInet4(fd int, p []byte, flags int, to SockaddrInet4) (err error) {
 	ptr, n, err := to.sockaddr()
 	if err != nil {
 		return err
@@ -332,7 +359,7 @@ func SendtoInet4(fd int, p []byte, flags int, to SockaddrInet4) (err error) {
 	return sendto(fd, p, flags, ptr, n)
 }
 
-func SendtoInet6(fd int, p []byte, flags int, to SockaddrInet6) (err error) {
+func sendtoInet6(fd int, p []byte, flags int, to SockaddrInet6) (err error) {
 	ptr, n, err := to.sockaddr()
 	if err != nil {
 		return err

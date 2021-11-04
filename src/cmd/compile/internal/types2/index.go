@@ -386,7 +386,7 @@ func (check *Checker) isValidIndex(x *operand, what string, allowNegative bool) 
 	}
 
 	// spec: "the index x must be of integer type or an untyped constant"
-	if !isInteger(x.typ) {
+	if !allInteger(x.typ) {
 		check.errorf(x, invalidArg+"%s %s must be integer", what, x)
 		return false
 	}

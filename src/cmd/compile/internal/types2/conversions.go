@@ -93,7 +93,7 @@ func (check *Checker) conversion(x *operand, T Type) {
 			// ok
 		} else if IsInterface(T) || constArg && !isConstType(T) {
 			final = Default(x.typ)
-		} else if isInteger(x.typ) && isString(T) {
+		} else if isInteger(x.typ) && allString(T) {
 			final = x.typ
 		}
 		check.updateExprType(x.expr, final, true)
