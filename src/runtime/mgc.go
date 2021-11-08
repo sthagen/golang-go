@@ -545,7 +545,7 @@ func (t gcTrigger) test() bool {
 		// own write.
 		return gcController.heapLive >= gcController.trigger
 	case gcTriggerTime:
-		if atomic.Loadint32(&gcController.gcPercent) < 0 {
+		if gcController.gcPercent.Load() < 0 {
 			return false
 		}
 		lastgc := int64(atomic.Load64(&memstats.last_gc_nanotime))
@@ -1084,6 +1084,8 @@ func gcMarkTermination(nextTriggerRatio float64) {
 		print(" ms cpu, ",
 			work.heap0>>20, "->", work.heap1>>20, "->", work.heap2>>20, " MB, ",
 			work.heapGoal>>20, " MB goal, ",
+			gcController.stackScan>>20, " MB stacks, ",
+			gcController.globalsScan>>20, " MB globals, ",
 			work.maxprocs, " P")
 		if work.userForced {
 			print(" (forced)")

@@ -474,6 +474,70 @@ func TestUDPReadTimeout(t *testing.T) {
 	}
 }
 
+func TestAllocs(t *testing.T) {
+	switch runtime.GOOS {
+	case "plan9":
+		// Plan9 wasn't optimized.
+		t.Skipf("skipping on %v", runtime.GOOS)
+	}
+	builder := os.Getenv("GO_BUILDER_NAME")
+	switch builder {
+	case "linux-amd64-noopt":
+		// Optimizations are required to remove the allocs.
+		t.Skipf("skipping on %v", builder)
+	}
+	conn, err := ListenUDP("udp4", &UDPAddr{IP: IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	addr := conn.LocalAddr()
+	addrPort := addr.(*UDPAddr).AddrPort()
+	buf := make([]byte, 8)
+
+	allocs := testing.AllocsPerRun(1000, func() {
+		_, _, err := conn.WriteMsgUDPAddrPort(buf, nil, addrPort)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, _, _, err = conn.ReadMsgUDPAddrPort(buf, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	if got := int(allocs); got != 0 {
+		t.Errorf("WriteMsgUDPAddrPort/ReadMsgUDPAddrPort allocated %d objects", got)
+	}
+
+	allocs = testing.AllocsPerRun(1000, func() {
+		_, err := conn.WriteToUDPAddrPort(buf, addrPort)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, err = conn.ReadFromUDPAddrPort(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	if got := int(allocs); got != 0 {
+		t.Errorf("WriteToUDPAddrPort/ReadFromUDPAddrPort allocated %d objects", got)
+	}
+
+	allocs = testing.AllocsPerRun(1000, func() {
+		_, err := conn.WriteTo(buf, addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, err = conn.ReadFromUDP(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
+	if got := int(allocs); got != 1 {
+		t.Errorf("WriteTo/ReadFromUDP allocated %d objects", got)
+	}
+}
+
 func BenchmarkReadWriteMsgUDPAddrPort(b *testing.B) {
 	conn, err := ListenUDP("udp4", &UDPAddr{IP: IPv4(127, 0, 0, 1)})
 	if err != nil {

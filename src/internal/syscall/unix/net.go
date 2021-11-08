@@ -21,8 +21,24 @@ func RecvfromInet6(fd int, p []byte, flags int, from *syscall.SockaddrInet6) (n 
 
 //go:linkname SendtoInet4 syscall.sendtoInet4
 //go:noescape
-func SendtoInet4(fd int, p []byte, flags int, to syscall.SockaddrInet4) (err error)
+func SendtoInet4(fd int, p []byte, flags int, to *syscall.SockaddrInet4) (err error)
 
 //go:linkname SendtoInet6 syscall.sendtoInet6
 //go:noescape
-func SendtoInet6(fd int, p []byte, flags int, to syscall.SockaddrInet6) (err error)
+func SendtoInet6(fd int, p []byte, flags int, to *syscall.SockaddrInet6) (err error)
+
+//go:linkname SendmsgNInet4 syscall.sendmsgNInet4
+//go:noescape
+func SendmsgNInet4(fd int, p, oob []byte, to *syscall.SockaddrInet4, flags int) (n int, err error)
+
+//go:linkname SendmsgNInet6 syscall.sendmsgNInet6
+//go:noescape
+func SendmsgNInet6(fd int, p, oob []byte, to *syscall.SockaddrInet6, flags int) (n int, err error)
+
+//go:linkname RecvmsgInet4 syscall.recvmsgInet4
+//go:noescape
+func RecvmsgInet4(fd int, p, oob []byte, flags int, from *syscall.SockaddrInet4) (n, oobn int, recvflags int, err error)
+
+//go:linkname RecvmsgInet6 syscall.recvmsgInet6
+//go:noescape
+func RecvmsgInet6(fd int, p, oob []byte, flags int, from *syscall.SockaddrInet6) (n, oobn int, recvflags int, err error)
