@@ -2520,22 +2520,28 @@ func TestTimeoutHandlerStartTimerWhenServing(t *testing.T) {
 func TestTimeoutHandlerContextCanceled(t *testing.T) {
 	setParallel(t)
 	defer afterTest(t)
-	sendHi := make(chan bool, 1)
 	writeErrors := make(chan error, 1)
 	sayHi := HandlerFunc(func(w ResponseWriter, r *Request) {
 		w.Header().Set("Content-Type", "text/plain")
-		<-sendHi
-		_, werr := w.Write([]byte("hi"))
-		writeErrors <- werr
+		var err error
+		// The request context has already been canceled, but
+		// retry the write for a while to give the timeout handler
+		// a chance to notice.
+		for i := 0; i < 100; i++ {
+			_, err = w.Write([]byte("a"))
+			if err != nil {
+				break
+			}
+			time.Sleep(1 * time.Millisecond)
+		}
+		writeErrors <- err
 	})
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Hour)
-	h := NewTestTimeoutHandler(sayHi, ctx)
+	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
+	h := NewTestTimeoutHandler(sayHi, ctx)
 	cst := newClientServerTest(t, h1Mode, h)
 	defer cst.close()
 
-	// Succeed without timing out:
-	sendHi <- true
 	res, err := cst.c.Get(cst.ts.URL)
 	if err != nil {
 		t.Error(err)
@@ -2548,7 +2554,7 @@ func TestTimeoutHandlerContextCanceled(t *testing.T) {
 		t.Errorf("got body %q; expected %q", g, e)
 	}
 	if g, e := <-writeErrors, context.Canceled; g != e {
-		t.Errorf("got unexpected Write error on first request: %v", g)
+		t.Errorf("got unexpected Write in handler: %v, want %g", g, e)
 	}
 }
 
@@ -6674,5 +6680,65 @@ func testQuerySemicolon(t *testing.T, query string, wantX string, allowSemicolon
 		if strings.Contains(logBuf.String(), "semicolon") {
 			t.Errorf("got %q from ErrorLog, expected no mention of semicolons", logBuf.String())
 		}
+	}
+}
+
+func TestMaxBytesHandler(t *testing.T) {
+	setParallel(t)
+	defer afterTest(t)
+
+	for _, maxSize := range []int64{100, 1_000, 1_000_000} {
+		for _, requestSize := range []int64{100, 1_000, 1_000_000} {
+			t.Run(fmt.Sprintf("max size %d request size %d", maxSize, requestSize),
+				func(t *testing.T) {
+					testMaxBytesHandler(t, maxSize, requestSize)
+				})
+		}
+	}
+}
+
+func testMaxBytesHandler(t *testing.T, maxSize, requestSize int64) {
+	var (
+		handlerN   int64
+		handlerErr error
+	)
+	echo := HandlerFunc(func(w ResponseWriter, r *Request) {
+		var buf bytes.Buffer
+		handlerN, handlerErr = io.Copy(&buf, r.Body)
+		io.Copy(w, &buf)
+	})
+
+	ts := httptest.NewServer(MaxBytesHandler(echo, maxSize))
+	defer ts.Close()
+
+	c := ts.Client()
+	var buf strings.Builder
+	body := strings.NewReader(strings.Repeat("a", int(requestSize)))
+	res, err := c.Post(ts.URL, "text/plain", body)
+	if err != nil {
+		t.Errorf("unexpected connection error: %v", err)
+	} else {
+		_, err = io.Copy(&buf, res.Body)
+		res.Body.Close()
+		if err != nil {
+			t.Errorf("unexpected read error: %v", err)
+		}
+	}
+	if handlerN > maxSize {
+		t.Errorf("expected max request body %d; got %d", maxSize, handlerN)
+	}
+	if requestSize > maxSize && handlerErr == nil {
+		t.Error("expected error on handler side; got nil")
+	}
+	if requestSize <= maxSize {
+		if handlerErr != nil {
+			t.Errorf("%d expected nil error on handler side; got %v", requestSize, handlerErr)
+		}
+		if handlerN != requestSize {
+			t.Errorf("expected request of size %d; got %d", requestSize, handlerN)
+		}
+	}
+	if buf.Len() != int(handlerN) {
+		t.Errorf("expected echo of size %d; got %d", handlerN, buf.Len())
 	}
 }

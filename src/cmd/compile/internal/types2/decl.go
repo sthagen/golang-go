@@ -124,7 +124,7 @@ func (check *Checker) objDecl(obj Object, def *Named) {
 		fallthrough
 
 	case grey:
-		// We have a cycle.
+		// We have a (possibly invalid) cycle.
 		// In the existing code, this is marked by a non-nil type
 		// for the object except for constants and variables whose
 		// type may be non-nil (known), or nil if it depends on the
@@ -136,17 +136,17 @@ func (check *Checker) objDecl(obj Object, def *Named) {
 		// order code.
 		switch obj := obj.(type) {
 		case *Const:
-			if check.cycle(obj) || obj.typ == nil {
+			if !check.validCycle(obj) || obj.typ == nil {
 				obj.typ = Typ[Invalid]
 			}
 
 		case *Var:
-			if check.cycle(obj) || obj.typ == nil {
+			if !check.validCycle(obj) || obj.typ == nil {
 				obj.typ = Typ[Invalid]
 			}
 
 		case *TypeName:
-			if check.cycle(obj) {
+			if !check.validCycle(obj) {
 				// break cycle
 				// (without this, calling underlying()
 				// below may lead to an endless loop
@@ -156,7 +156,7 @@ func (check *Checker) objDecl(obj Object, def *Named) {
 			}
 
 		case *Func:
-			if check.cycle(obj) {
+			if !check.validCycle(obj) {
 				// Don't set obj.typ to Typ[Invalid] here
 				// because plenty of code type-asserts that
 				// functions have a *Signature type. Grey
@@ -210,9 +210,9 @@ func (check *Checker) objDecl(obj Object, def *Named) {
 	}
 }
 
-// cycle checks if the cycle starting with obj is valid and
+// validCycle reports whether the cycle starting with obj is valid and
 // reports an error if it is not.
-func (check *Checker) cycle(obj Object) (isCycle bool) {
+func (check *Checker) validCycle(obj Object) (valid bool) {
 	// The object map contains the package scope objects and the non-interface methods.
 	if debug {
 		info := check.objMap[obj]
@@ -228,13 +228,23 @@ func (check *Checker) cycle(obj Object) (isCycle bool) {
 	assert(obj.color() >= grey)
 	start := obj.color() - grey // index of obj in objPath
 	cycle := check.objPath[start:]
-	nval := 0 // number of (constant or variable) values in the cycle
-	ndef := 0 // number of type definitions in the cycle
+	tparCycle := false // if set, the cycle is through a type parameter list
+	nval := 0          // number of (constant or variable) values in the cycle; valid if !generic
+	ndef := 0          // number of type definitions in the cycle; valid if !generic
+loop:
 	for _, obj := range cycle {
 		switch obj := obj.(type) {
 		case *Const, *Var:
 			nval++
 		case *TypeName:
+			// If we reach a generic type that is part of a cycle
+			// and we are in a type parameter list, we have a cycle
+			// through a type parameter list, which is invalid.
+			if check.inTParamList && isGeneric(obj.typ) {
+				tparCycle = true
+				break loop
+			}
+
 			// Determine if the type name is an alias or not. For
 			// package-level objects, use the object map which
 			// provides syntactic information (which doesn't rely
@@ -262,31 +272,36 @@ func (check *Checker) cycle(obj Object) (isCycle bool) {
 
 	if check.conf.Trace {
 		check.trace(obj.Pos(), "## cycle detected: objPath = %s->%s (len = %d)", pathString(cycle), obj.Name(), len(cycle))
-		check.trace(obj.Pos(), "## cycle contains: %d values, %d type definitions", nval, ndef)
+		if tparCycle {
+			check.trace(obj.Pos(), "## cycle contains: generic type in a type parameter list")
+		} else {
+			check.trace(obj.Pos(), "## cycle contains: %d values, %d type definitions", nval, ndef)
+		}
 		defer func() {
-			if isCycle {
+			if !valid {
 				check.trace(obj.Pos(), "=> error: cycle is invalid")
 			}
 		}()
 	}
 
-	// A cycle involving only constants and variables is invalid but we
-	// ignore them here because they are reported via the initialization
-	// cycle check.
-	if nval == len(cycle) {
-		return false
-	}
+	if !tparCycle {
+		// A cycle involving only constants and variables is invalid but we
+		// ignore them here because they are reported via the initialization
+		// cycle check.
+		if nval == len(cycle) {
+			return true
+		}
 
-	// A cycle involving only types (and possibly functions) must have at least
-	// one type definition to be permitted: If there is no type definition, we
-	// have a sequence of alias type names which will expand ad infinitum.
-	if nval == 0 && ndef > 0 {
-		return false // cycle is permitted
+		// A cycle involving only types (and possibly functions) must have at least
+		// one type definition to be permitted: If there is no type definition, we
+		// have a sequence of alias type names which will expand ad infinitum.
+		if nval == 0 && ndef > 0 {
+			return true
+		}
 	}
 
 	check.cycleError(cycle)
-
-	return true
+	return false
 }
 
 type typeInfo uint
@@ -555,7 +570,7 @@ func (check *Checker) typeDecl(obj *TypeName, tdecl *syntax.TypeDecl, def *Named
 		check.validType(obj.typ, nil)
 		// If typ is local, an error was already reported where typ is specified/defined.
 		if check.isImportedConstraint(rhs) && !check.allowVersion(check.pkg, 1, 18) {
-			check.errorf(tdecl.Type.Pos(), "using type constraint %s requires go1.18 or later", rhs)
+			check.versionErrorf(tdecl.Type.Pos(), "go1.18", "using type constraint %s", rhs)
 		}
 	}).describef(obj, "validType(%s)", obj.Name())
 
@@ -570,11 +585,7 @@ func (check *Checker) typeDecl(obj *TypeName, tdecl *syntax.TypeDecl, def *Named
 	// alias declaration
 	if alias {
 		if !check.allowVersion(check.pkg, 1, 9) {
-			if check.conf.CompilerErrorMessages {
-				check.error(tdecl, "type aliases only supported as of -lang=go1.9")
-			} else {
-				check.error(tdecl, "type aliases requires go1.9 or later")
-			}
+			check.versionErrorf(tdecl, "go1.9", "type aliases")
 		}
 
 		obj.typ = Typ[Invalid]
@@ -628,6 +639,19 @@ func (check *Checker) collectTypeParams(dst **TypeParamList, list []*syntax.Fiel
 	// the parameterized type may be used by the constraints (issue #47887).
 	// Example: type T[P T[P]] interface{}
 	*dst = bindTParams(tparams)
+
+	// Signal to cycle detection that we are in a type parameter list.
+	// We can only be inside one type parameter list at any given time:
+	// function closures may appear inside a type parameter list but they
+	// cannot be generic, and their bodies are processed in delayed and
+	// sequential fashion. Note that with each new declaration, we save
+	// the existing context and restore it when done; thus inTParamList
+	// is true exactly only when we are in a specific type parameter list.
+	assert(!check.inTParamList)
+	check.inTParamList = true
+	defer func() {
+		check.inTParamList = false
+	}()
 
 	// Keep track of bounds for later validation.
 	var bound Type

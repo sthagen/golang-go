@@ -148,7 +148,7 @@ func (check *Checker) varType(e syntax.Expr) Type {
 	// are in the middle of type-checking parameter declarations that might belong to
 	// interface methods. Delay this check to the end of type-checking.
 	check.later(func() {
-		if t := asInterface(typ); t != nil {
+		if t, _ := under(typ).(*Interface); t != nil {
 			pos := syntax.StartPos(e)
 			tset := computeInterfaceTypeSet(check, pos, t) // TODO(gri) is this the correct position?
 			if !tset.IsMethodSet() {
@@ -264,7 +264,7 @@ func (check *Checker) typInternal(e0 syntax.Expr, def *Named) (T Type) {
 
 	case *syntax.IndexExpr:
 		if !check.allowVersion(check.pkg, 1, 18) {
-			check.softErrorf(e.Pos(), "type instantiation requires go1.18 or later")
+			check.versionErrorf(e.Pos(), "go1.18", "type instantiation")
 		}
 		return check.instantiatedType(e.X, unpackExpr(e.Index), def)
 

@@ -116,7 +116,7 @@ func (check *Checker) overflow(x *operand) {
 	// x.typ cannot be a type parameter (type
 	// parameters cannot be constant types).
 	if isTyped(x.typ) {
-		check.representable(x, asBasic(x.typ))
+		check.representable(x, under(x.typ).(*Basic))
 		return
 	}
 
@@ -187,29 +187,25 @@ func (check *Checker) unary(x *operand, e *syntax.Operation) {
 		return
 
 	case syntax.Recv:
-		var elem Type
-		if !underIs(x.typ, func(u Type) bool {
-			ch, _ := u.(*Chan)
-			if ch == nil {
-				check.errorf(x, invalidOp+"cannot receive from non-channel %s", x)
-				return false
-			}
-			if ch.dir == SendOnly {
-				check.errorf(x, invalidOp+"cannot receive from send-only channel %s", x)
-				return false
-			}
-			if elem != nil && !Identical(ch.elem, elem) {
-				check.errorf(x, invalidOp+"channels of %s must have the same element type", x)
-				return false
-			}
-			elem = ch.elem
-			return true
-		}) {
+		u := structuralType(x.typ)
+		if u == nil {
+			check.errorf(x, invalidOp+"cannot receive from %s: no structural type", x)
+			x.mode = invalid
+			return
+		}
+		ch, _ := u.(*Chan)
+		if ch == nil {
+			check.errorf(x, invalidOp+"cannot receive from non-channel %s", x)
+			x.mode = invalid
+			return
+		}
+		if ch.dir == SendOnly {
+			check.errorf(x, invalidOp+"cannot receive from send-only channel %s", x)
 			x.mode = invalid
 			return
 		}
 		x.mode = commaok
-		x.typ = elem
+		x.typ = ch.elem
 		check.hasCallOrRecv = true
 		return
 	}
@@ -617,7 +613,7 @@ func (check *Checker) updateExprType(x syntax.Expr, typ Type, final bool) {
 	// If the new type is not final and still untyped, just
 	// update the recorded type.
 	if !final && isUntyped(typ) {
-		old.typ = asBasic(typ)
+		old.typ = under(typ).(*Basic)
 		check.untyped[x] = old
 		return
 	}
@@ -869,7 +865,7 @@ func (check *Checker) shift(x, y *operand, e syntax.Expr, op syntax.Operator) {
 		x.mode = invalid
 		return
 	} else if !allUnsigned(y.typ) && !check.allowVersion(check.pkg, 1, 13) {
-		check.errorf(y, invalidOp+"signed shift count %s requires go1.13 or later", y)
+		check.versionErrorf(y, "go1.13", invalidOp+"signed shift count %s", y)
 		x.mode = invalid
 		return
 	}
@@ -1258,7 +1254,7 @@ func (check *Checker) exprInternal(x *operand, e syntax.Expr, hint Type) exprKin
 			goto Error
 		}
 
-		switch utyp := structure(base).(type) {
+		switch utyp := structuralType(base).(type) {
 		case *Struct:
 			// Prevent crash if the struct referred to is not yet set up.
 			// See analogous comment for *Array.
@@ -1394,7 +1390,7 @@ func (check *Checker) exprInternal(x *operand, e syntax.Expr, hint Type) exprKin
 					duplicate := false
 					// if the key is of interface type, the type is also significant when checking for duplicates
 					xkey := keyVal(x.val)
-					if asInterface(utyp.key) != nil {
+					if IsInterface(utyp.key) {
 						for _, vtyp := range visited[xkey] {
 							if Identical(vtyp, x.typ) {
 								duplicate = true

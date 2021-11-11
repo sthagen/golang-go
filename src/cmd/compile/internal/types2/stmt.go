@@ -408,27 +408,21 @@ func (check *Checker) stmt(ctxt stmtContext, s syntax.Stmt) {
 		if ch.mode == invalid || val.mode == invalid {
 			return
 		}
-		var elem Type
-		if !underIs(ch.typ, func(u Type) bool {
-			uch, _ := u.(*Chan)
-			if uch == nil {
-				check.errorf(s, invalidOp+"cannot send to non-channel %s", &ch)
-				return false
-			}
-			if uch.dir == RecvOnly {
-				check.errorf(s, invalidOp+"cannot send to receive-only channel %s", &ch)
-				return false
-			}
-			if elem != nil && !Identical(uch.elem, elem) {
-				check.errorf(s, invalidOp+"channels of %s must have the same element type", &ch)
-				return false
-			}
-			elem = uch.elem
-			return true
-		}) {
+		u := structuralType(ch.typ)
+		if u == nil {
+			check.errorf(s, invalidOp+"cannot send to %s: no structural type", &ch)
 			return
 		}
-		check.assignment(&val, elem, "send")
+		uch, _ := u.(*Chan)
+		if uch == nil {
+			check.errorf(s, invalidOp+"cannot send to non-channel %s", &ch)
+			return
+		}
+		if uch.dir == RecvOnly {
+			check.errorf(s, invalidOp+"cannot send to receive-only channel %s", &ch)
+			return
+		}
+		check.assignment(&val, uch.elem, "send")
 
 	case *syntax.AssignStmt:
 		lhs := unpackExpr(s.Lhs)
@@ -834,12 +828,12 @@ func (check *Checker) rangeStmt(inner stmtContext, s *syntax.ForStmt, rclause *s
 	// determine key/value types
 	var key, val Type
 	if x.mode != invalid {
-		// Ranging over a type parameter is permitted if it has a single underlying type.
+		// Ranging over a type parameter is permitted if it has a structural type.
 		var cause string
-		u := structure(x.typ)
+		u := structuralType(x.typ)
 		switch t := u.(type) {
 		case nil:
-			cause = "type set has no single underlying type"
+			cause = check.sprintf("%s has no structural type", x.typ)
 		case *Chan:
 			if sValue != nil {
 				check.softErrorf(sValue, "range over %s permits only one iteration variable", &x)

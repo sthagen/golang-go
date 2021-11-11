@@ -16,7 +16,7 @@ import (
 // The operand x must be the evaluation of inst.X and its type must be a signature.
 func (check *Checker) funcInst(x *operand, inst *syntax.IndexExpr) {
 	if !check.allowVersion(check.pkg, 1, 18) {
-		check.softErrorf(inst.Pos(), "function instantiation requires go1.18 or later")
+		check.versionErrorf(inst.Pos(), "go1.18", "function instantiation")
 	}
 
 	xlist := unpackExpr(inst.Index)
@@ -132,7 +132,7 @@ func (check *Checker) callExpr(x *operand, call *syntax.CallExpr) exprKind {
 		case 1:
 			check.expr(x, call.ArgList[0])
 			if x.mode != invalid {
-				if t := asInterface(T); t != nil {
+				if t, _ := under(T).(*Interface); t != nil {
 					if !t.IsMethodSet() {
 						check.errorf(call, "cannot use interface %s in conversion (contains specific type constraints or is comparable)", T)
 						break
@@ -170,7 +170,7 @@ func (check *Checker) callExpr(x *operand, call *syntax.CallExpr) exprKind {
 	cgocall := x.mode == cgofunc
 
 	// a type parameter may be "called" if all types have the same signature
-	sig, _ := structure(x.typ).(*Signature)
+	sig, _ := structuralType(x.typ).(*Signature)
 	if sig == nil {
 		check.errorf(x, invalidOp+"cannot call non-function %s", x)
 		x.mode = invalid
@@ -363,9 +363,9 @@ func (check *Checker) arguments(call *syntax.CallExpr, sig *Signature, targs []T
 	if sig.TypeParams().Len() > 0 {
 		if !check.allowVersion(check.pkg, 1, 18) {
 			if iexpr, _ := call.Fun.(*syntax.IndexExpr); iexpr != nil {
-				check.softErrorf(iexpr.Pos(), "function instantiation requires go1.18 or later")
+				check.versionErrorf(iexpr.Pos(), "go1.18", "function instantiation")
 			} else {
-				check.softErrorf(call.Pos(), "implicit function instantiation requires go1.18 or later")
+				check.versionErrorf(call.Pos(), "go1.18", "implicit function instantiation")
 			}
 		}
 		// TODO(gri) provide position information for targs so we can feed

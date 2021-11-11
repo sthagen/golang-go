@@ -35,7 +35,7 @@ func (check *Checker) indexExpr(x *operand, e *typeparams.IndexExpr) (isFuncInst
 		return false
 
 	case value:
-		if sig := asSignature(x.typ); sig != nil && sig.TypeParams().Len() > 0 {
+		if sig, _ := under(x.typ).(*Signature); sig != nil && sig.TypeParams().Len() > 0 {
 			// function instantiation
 			return true
 		}
@@ -47,6 +47,7 @@ func (check *Checker) indexExpr(x *operand, e *typeparams.IndexExpr) (isFuncInst
 		return false
 	}
 
+	// ordinary index expression
 	valid := false
 	length := int64(-1) // valid if >= 0
 	switch typ := under(x.typ).(type) {
@@ -72,7 +73,7 @@ func (check *Checker) indexExpr(x *operand, e *typeparams.IndexExpr) (isFuncInst
 		x.typ = typ.elem
 
 	case *Pointer:
-		if typ := asArray(typ.base); typ != nil {
+		if typ, _ := under(typ.base).(*Array); typ != nil {
 			valid = true
 			length = typ.len
 			x.mode = variable
@@ -120,7 +121,7 @@ func (check *Checker) indexExpr(x *operand, e *typeparams.IndexExpr) (isFuncInst
 					mode = value
 				}
 			case *Pointer:
-				if t := asArray(t.base); t != nil {
+				if t, _ := under(t.base).(*Array); t != nil {
 					l = t.len
 					e = t.elem
 				}
@@ -245,7 +246,7 @@ func (check *Checker) sliceExpr(x *operand, e *ast.SliceExpr) {
 		x.typ = &Slice{elem: u.elem}
 
 	case *Pointer:
-		if u := asArray(u.base); u != nil {
+		if u, _ := under(u.base).(*Array); u != nil {
 			valid = true
 			length = u.len
 			x.typ = &Slice{elem: u.elem}
@@ -372,7 +373,7 @@ func (check *Checker) isValidIndex(x *operand, code errorCode, what string, allo
 	}
 
 	// spec: "the index x must be of integer type or an untyped constant"
-	if !isInteger(x.typ) {
+	if !allInteger(x.typ) {
 		check.invalidArg(x, code, "%s %s must be integer", what, x)
 		return false
 	}

@@ -48,6 +48,7 @@ type context struct {
 	pos           token.Pos              // if valid, identifiers are looked up as if at position pos (used by Eval)
 	iota          constant.Value         // value of iota in a constant declaration; nil otherwise
 	errpos        positioner             // if set, identifier position of a constant with inherited initializer
+	inTParamList  bool                   // set if inside a type parameter list
 	sig           *Signature             // function signature if inside a function; nil otherwise
 	isPanic       map[*ast.CallExpr]bool // set of panic call expressions (used for termination check)
 	hasLabel      bool                   // set if a function makes use of labels (only ~1% of functions); unused outside functions
@@ -419,9 +420,9 @@ func (check *Checker) recordTypeAndValue(x ast.Expr, mode operandMode, typ Type,
 	}
 	if mode == constant_ {
 		assert(val != nil)
-		// We check is(typ, IsConstType) here as constant expressions may be
+		// We check allBasic(typ, IsConstType) here as constant expressions may be
 		// recorded as type parameters.
-		assert(typ == Typ[Invalid] || is(typ, IsConstType))
+		assert(typ == Typ[Invalid] || allBasic(typ, IsConstType))
 	}
 	if m := check.Types; m != nil {
 		m[x] = TypeAndValue{mode, typ, val}

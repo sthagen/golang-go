@@ -64,10 +64,10 @@ var unaryOpPredicates opPredicates
 func init() {
 	// Setting unaryOpPredicates in init avoids declaration cycles.
 	unaryOpPredicates = opPredicates{
-		token.ADD: isNumeric,
-		token.SUB: isNumeric,
-		token.XOR: isInteger,
-		token.NOT: isBoolean,
+		token.ADD: allNumeric,
+		token.SUB: allNumeric,
+		token.XOR: allInteger,
+		token.NOT: allBoolean,
 	}
 }
 
@@ -103,7 +103,7 @@ func (check *Checker) overflow(x *operand, op token.Token, opPos token.Pos) {
 	// x.typ cannot be a type parameter (type
 	// parameters cannot be constant types).
 	if isTyped(x.typ) {
-		check.representable(x, asBasic(x.typ))
+		check.representable(x, under(x.typ).(*Basic))
 		return
 	}
 
@@ -556,7 +556,7 @@ func (check *Checker) updateExprType(x ast.Expr, typ Type, final bool) {
 	// If the new type is not final and still untyped, just
 	// update the recorded type.
 	if !final && isUntyped(typ) {
-		old.typ = asBasic(typ)
+		old.typ = under(typ).(*Basic)
 		check.untyped[x] = old
 		return
 	}
@@ -641,10 +641,10 @@ func (check *Checker) implicitTypeAndValue(x *operand, target Type) (Type, const
 		return x.typ, nil, 0
 	}
 
-	switch t := under(target).(type) {
+	switch u := under(target).(type) {
 	case *Basic:
 		if x.mode == constant_ {
-			v, code := check.representation(x, t)
+			v, code := check.representation(x, u)
 			if code != 0 {
 				return nil, nil, code
 			}
@@ -682,7 +682,7 @@ func (check *Checker) implicitTypeAndValue(x *operand, target Type) (Type, const
 		}
 	case *TypeParam:
 		// TODO(gri) review this code - doesn't look quite right
-		ok := t.underIs(func(t Type) bool {
+		ok := u.underIs(func(t Type) bool {
 			target, _, _ := check.implicitTypeAndValue(x, t)
 			return target != nil
 		})
@@ -702,7 +702,7 @@ func (check *Checker) implicitTypeAndValue(x *operand, target Type) (Type, const
 			return Typ[UntypedNil], nil, 0
 		}
 		// cannot assign untyped values to non-empty interfaces
-		if !t.Empty() {
+		if !u.Empty() {
 			return nil, nil, _InvalidUntypedConversion
 		}
 		return Default(x.typ), nil, 0
@@ -733,7 +733,7 @@ func (check *Checker) comparison(x, y *operand, op token.Token) {
 			defined = Comparable(x.typ) && Comparable(y.typ) || x.isNil() && hasNil(y.typ) || y.isNil() && hasNil(x.typ)
 		case token.LSS, token.LEQ, token.GTR, token.GEQ:
 			// spec: The ordering operators <, <=, >, and >= apply to operands that are ordered."
-			defined = isOrdered(x.typ) && isOrdered(y.typ)
+			defined = allOrdered(x.typ) && allOrdered(y.typ)
 		default:
 			unreachable()
 		}
@@ -784,7 +784,7 @@ func (check *Checker) shift(x, y *operand, e ast.Expr, op token.Token) {
 		xval = constant.ToInt(x.val)
 	}
 
-	if isInteger(x.typ) || isUntyped(x.typ) && xval != nil && xval.Kind() == constant.Int {
+	if allInteger(x.typ) || isUntyped(x.typ) && xval != nil && xval.Kind() == constant.Int {
 		// The lhs is of integer type or an untyped constant representable
 		// as an integer. Nothing to do.
 	} else {
@@ -821,8 +821,8 @@ func (check *Checker) shift(x, y *operand, e ast.Expr, op token.Token) {
 
 	// Check that RHS is otherwise at least of integer type.
 	switch {
-	case isInteger(y.typ):
-		if !isUnsigned(y.typ) && !check.allowVersion(check.pkg, 1, 13) {
+	case allInteger(y.typ):
+		if !allUnsigned(y.typ) && !check.allowVersion(check.pkg, 1, 13) {
 			check.invalidOp(y, _InvalidShiftCount, "signed shift count %s requires go1.13 or later", y)
 			x.mode = invalid
 			return
@@ -910,7 +910,7 @@ func (check *Checker) shift(x, y *operand, e ast.Expr, op token.Token) {
 	}
 
 	// non-constant shift - lhs must be an integer
-	if !isInteger(x.typ) {
+	if !allInteger(x.typ) {
 		check.invalidOp(x, _InvalidShiftOperand, "shifted operand %s must be integer", x)
 		x.mode = invalid
 		return
@@ -924,19 +924,19 @@ var binaryOpPredicates opPredicates
 func init() {
 	// Setting binaryOpPredicates in init avoids declaration cycles.
 	binaryOpPredicates = opPredicates{
-		token.ADD: isNumericOrString,
-		token.SUB: isNumeric,
-		token.MUL: isNumeric,
-		token.QUO: isNumeric,
-		token.REM: isInteger,
+		token.ADD: allNumericOrString,
+		token.SUB: allNumeric,
+		token.MUL: allNumeric,
+		token.QUO: allNumeric,
+		token.REM: allInteger,
 
-		token.AND:     isInteger,
-		token.OR:      isInteger,
-		token.XOR:     isInteger,
-		token.AND_NOT: isInteger,
+		token.AND:     allInteger,
+		token.OR:      allInteger,
+		token.XOR:     allInteger,
+		token.AND_NOT: allInteger,
 
-		token.LAND: isBoolean,
-		token.LOR:  isBoolean,
+		token.LAND: allBoolean,
+		token.LOR:  allBoolean,
 	}
 }
 
@@ -966,10 +966,10 @@ func (check *Checker) binary(x *operand, e ast.Expr, lhs, rhs ast.Expr, op token
 		if IsInterface(x.typ) || IsInterface(y.typ) {
 			return true
 		}
-		if isBoolean(x.typ) != isBoolean(y.typ) {
+		if allBoolean(x.typ) != allBoolean(y.typ) {
 			return false
 		}
-		if isString(x.typ) != isString(y.typ) {
+		if allString(x.typ) != allString(y.typ) {
 			return false
 		}
 		if x.isNil() && !hasNil(y.typ) {
@@ -1022,7 +1022,7 @@ func (check *Checker) binary(x *operand, e ast.Expr, lhs, rhs ast.Expr, op token
 
 	if op == token.QUO || op == token.REM {
 		// check for zero divisor
-		if (x.mode == constant_ || isInteger(x.typ)) && y.mode == constant_ && constant.Sign(y.val) == 0 {
+		if (x.mode == constant_ || allInteger(x.typ)) && y.mode == constant_ && constant.Sign(y.val) == 0 {
 			check.invalidOp(&y, _DivByZero, "division by zero")
 			x.mode = invalid
 			return
@@ -1230,6 +1230,12 @@ func (check *Checker) exprInternal(x *operand, e ast.Expr, hint Type) exprKind {
 
 		switch utyp := structure(base).(type) {
 		case *Struct:
+			// Prevent crash if the struct referred to is not yet set up.
+			// See analogous comment for *Array.
+			if utyp.fields == nil {
+				check.error(e, _Todo, "illegal cycle in type declaration")
+				goto Error
+			}
 			if len(e.Elts) == 0 {
 				break
 			}
@@ -1356,7 +1362,7 @@ func (check *Checker) exprInternal(x *operand, e ast.Expr, hint Type) exprKind {
 					duplicate := false
 					// if the key is of interface type, the type is also significant when checking for duplicates
 					xkey := keyVal(x.val)
-					if asInterface(utyp.key) != nil {
+					if IsInterface(utyp.key) {
 						for _, vtyp := range visited[xkey] {
 							if Identical(vtyp, x.typ) {
 								duplicate = true

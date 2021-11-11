@@ -73,6 +73,16 @@ var (
 	gopath   string
 )
 
+// EnterModule resets MainModules and requirements to refer to just this one module.
+func EnterModule(ctx context.Context, enterModroot string) {
+	MainModules = nil // reset MainModules
+	requirements = nil
+	workFilePath = "" // Force module mode
+
+	modRoots = []string{enterModroot}
+	LoadModFile(ctx)
+}
+
 // Variable set in InitWorkfile
 var (
 	// Set to the path to the go.work file, or "" if workspace mode is disabled.
@@ -704,7 +714,7 @@ func LoadModFile(ctx context.Context) *Requirements {
 		}
 	}
 
-	if MainModules.Index(mainModule).goVersionV == "" {
+	if MainModules.Index(mainModule).goVersionV == "" && rs.pruning != workspace {
 		// TODO(#45551): Do something more principled instead of checking
 		// cfg.CmdName directly here.
 		if cfg.BuildMod == "mod" && cfg.CmdName != "mod graph" && cfg.CmdName != "mod why" {
@@ -987,29 +997,29 @@ func makeMainModules(ms []module.Version, rootDirs []string, modFiles []*modfile
 // requirementsFromModFiles returns the set of non-excluded requirements from
 // the global modFile.
 func requirementsFromModFiles(ctx context.Context, modFiles []*modfile.File) *Requirements {
-	rootCap := 0
-	for i := range modFiles {
-		rootCap += len(modFiles[i].Require)
-	}
-	roots := make([]module.Version, 0, rootCap)
-	mPathCount := make(map[string]int)
-	for _, m := range MainModules.Versions() {
-		mPathCount[m.Path] = 1
-	}
+	var roots []module.Version
 	direct := map[string]bool{}
-	for _, modFile := range modFiles {
-	requirement:
+	var pruning modPruning
+	if inWorkspaceMode() {
+		pruning = workspace
+		roots = make([]module.Version, len(MainModules.Versions()))
+		copy(roots, MainModules.Versions())
+	} else {
+		pruning = pruningForGoVersion(MainModules.GoVersion())
+		if len(modFiles) != 1 {
+			panic(fmt.Errorf("requirementsFromModFiles called with %v modfiles outside workspace mode", len(modFiles)))
+		}
+		modFile := modFiles[0]
+		roots = make([]module.Version, 0, len(modFile.Require))
+		mm := MainModules.mustGetSingleMainModule()
 		for _, r := range modFile.Require {
-			// TODO(#45713): Maybe join
-			for _, mainModule := range MainModules.Versions() {
-				if index := MainModules.Index(mainModule); index != nil && index.exclude[r.Mod] {
-					if cfg.BuildMod == "mod" {
-						fmt.Fprintf(os.Stderr, "go: dropping requirement on excluded version %s %s\n", r.Mod.Path, r.Mod.Version)
-					} else {
-						fmt.Fprintf(os.Stderr, "go: ignoring requirement on excluded version %s %s\n", r.Mod.Path, r.Mod.Version)
-					}
-					continue requirement
+			if index := MainModules.Index(mm); index != nil && index.exclude[r.Mod] {
+				if cfg.BuildMod == "mod" {
+					fmt.Fprintf(os.Stderr, "go: dropping requirement on excluded version %s %s\n", r.Mod.Path, r.Mod.Version)
+				} else {
+					fmt.Fprintf(os.Stderr, "go: ignoring requirement on excluded version %s %s\n", r.Mod.Path, r.Mod.Version)
 				}
+				continue
 			}
 
 			roots = append(roots, r.Mod)
@@ -1019,7 +1029,7 @@ func requirementsFromModFiles(ctx context.Context, modFiles []*modfile.File) *Re
 		}
 	}
 	module.Sort(roots)
-	rs := newRequirements(pruningForGoVersion(MainModules.GoVersion()), roots, direct)
+	rs := newRequirements(pruning, roots, direct)
 	return rs
 }
 
@@ -1040,7 +1050,7 @@ func setDefaultBuildMod() {
 	// to modload functions instead of relying on an implicit setting
 	// based on command name.
 	switch cfg.CmdName {
-	case "get", "mod download", "mod init", "mod tidy":
+	case "get", "mod download", "mod init", "mod tidy", "work sync":
 		// These commands are intended to update go.mod and go.sum.
 		cfg.BuildMod = "mod"
 		return
