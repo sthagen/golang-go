@@ -178,8 +178,11 @@ func (check *Checker) builtin(x *operand, call *syntax.CallExpr, id builtinId) (
 				mode = value
 			}
 
-		case *TypeParam:
-			if t.underIs(func(t Type) bool {
+		case *Interface:
+			if !isTypeParam(x.typ) {
+				break
+			}
+			if t.typeSet().underIs(func(t Type) bool {
 				switch t := arrayPtrDeref(t).(type) {
 				case *Basic:
 					if isString(t) && id == _Len {
@@ -293,7 +296,7 @@ func (check *Checker) builtin(x *operand, call *syntax.CallExpr, id builtinId) (
 		// the argument types must be of floating-point type
 		// (applyTypeFunc never calls f with a type parameter)
 		f := func(typ Type) Type {
-			assert(asTypeParam(typ) == nil)
+			assert(!isTypeParam(typ))
 			if t, _ := under(typ).(*Basic); t != nil {
 				switch t.kind {
 				case Float32:
@@ -436,7 +439,7 @@ func (check *Checker) builtin(x *operand, call *syntax.CallExpr, id builtinId) (
 		// the argument must be of complex type
 		// (applyTypeFunc never calls f with a type parameter)
 		f := func(typ Type) Type {
-			assert(asTypeParam(typ) == nil)
+			assert(!isTypeParam(typ))
 			if t, _ := under(typ).(*Basic); t != nil {
 				switch t.kind {
 				case Complex64:
@@ -788,17 +791,17 @@ func (check *Checker) builtin(x *operand, call *syntax.CallExpr, id builtinId) (
 
 // hasVarSize reports if the size of type t is variable due to type parameters.
 func hasVarSize(t Type) bool {
-	switch t := under(t).(type) {
+	switch u := under(t).(type) {
 	case *Array:
-		return hasVarSize(t.elem)
+		return hasVarSize(u.elem)
 	case *Struct:
-		for _, f := range t.fields {
+		for _, f := range u.fields {
 			if hasVarSize(f.typ) {
 				return true
 			}
 		}
-	case *TypeParam:
-		return true
+	case *Interface:
+		return isTypeParam(t)
 	case *Named, *Union:
 		unreachable()
 	}
@@ -813,7 +816,7 @@ func hasVarSize(t Type) bool {
 // applyTypeFunc returns nil.
 // If x is not a type parameter, the result is f(x).
 func (check *Checker) applyTypeFunc(f func(Type) Type, x Type) Type {
-	if tp := asTypeParam(x); tp != nil {
+	if tp, _ := x.(*TypeParam); tp != nil {
 		// Test if t satisfies the requirements for the argument
 		// type and collect possible result types at the same time.
 		var terms []*Term

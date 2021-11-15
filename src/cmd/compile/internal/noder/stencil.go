@@ -515,6 +515,7 @@ func (g *genInst) buildClosure(outer *ir.Func, x ir.Node) ir.Node {
 
 	// Build call itself.
 	var innerCall ir.Node = ir.NewCallExpr(pos, ir.OCALL, target.Nname, args)
+	innerCall.(*ir.CallExpr).IsDDD = typ.IsVariadic()
 	if len(formalResults) > 0 {
 		innerCall = ir.NewReturnStmt(pos, []ir.Node{innerCall})
 	}
@@ -801,6 +802,12 @@ func (g *genInst) genericSubst(newsym *types.Sym, nameNode *ir.Name, shapes []*t
 
 	// Make sure name/type of newf is set before substituting the body.
 	newf.Body = subst.list(gf.Body)
+	if len(newf.Body) == 0 {
+		// Ensure the body is nonempty, for issue 49524.
+		// TODO: have some other way to detect the difference between
+		// a function declared with no body, vs. one with an empty body?
+		newf.Body = append(newf.Body, ir.NewBlockStmt(gf.Pos(), nil))
+	}
 
 	if len(subst.defnMap) > 0 {
 		base.Fatalf("defnMap is not empty")
@@ -1088,6 +1095,9 @@ func (subst *subster) node(n ir.Node) ir.Node {
 			case ir.OXDOT:
 				// This is the case of a bound call on a typeparam,
 				// which will be handled in the dictPass.
+				// As with OFUNCINST, we must transform the arguments of the call now,
+				// so any needed CONVIFACE nodes are exposed.
+				transformEarlyCall(call)
 
 			case ir.ODOTTYPE, ir.ODOTTYPE2:
 				// These are DOTTYPEs that could get transformed into
@@ -1222,14 +1232,15 @@ func (g *genInst) dictPass(info *instInfo) {
 				transformDot(mse, false)
 			}
 		case ir.OCALL:
-			op := m.(*ir.CallExpr).X.Op()
+			call := m.(*ir.CallExpr)
+			op := call.X.Op()
 			if op == ir.OMETHVALUE {
 				// Redo the transformation of OXDOT, now that we
 				// know the method value is being called.
-				m.(*ir.CallExpr).X.(*ir.SelectorExpr).SetOp(ir.OXDOT)
-				transformDot(m.(*ir.CallExpr).X.(*ir.SelectorExpr), true)
+				call.X.(*ir.SelectorExpr).SetOp(ir.OXDOT)
+				transformDot(call.X.(*ir.SelectorExpr), true)
 			}
-			transformCall(m.(*ir.CallExpr))
+			transformCall(call)
 
 		case ir.OCONVIFACE:
 			if m.Type().IsEmptyInterface() && m.(*ir.ConvExpr).X.Type().IsEmptyInterface() {

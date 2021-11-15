@@ -144,9 +144,14 @@ func (check *Checker) typ(e syntax.Expr) Type {
 func (check *Checker) varType(e syntax.Expr) Type {
 	typ := check.definedType(e, nil)
 
-	// We don't want to call under() (via toInterface) or complete interfaces while we
-	// are in the middle of type-checking parameter declarations that might belong to
-	// interface methods. Delay this check to the end of type-checking.
+	// If we have a type parameter there's nothing to do.
+	if isTypeParam(typ) {
+		return typ
+	}
+
+	// We don't want to call under() or complete interfaces while we are in
+	// the middle of type-checking parameter declarations that might belong
+	// to interface methods. Delay this check to the end of type-checking.
 	check.later(func() {
 		if t, _ := under(typ).(*Interface); t != nil {
 			pos := syntax.StartPos(e)
@@ -310,6 +315,7 @@ func (check *Checker) typInternal(e0 syntax.Expr, def *Named) (T Type) {
 	case *syntax.Operation:
 		if e.Op == syntax.Mul && e.Y == nil {
 			typ := new(Pointer)
+			typ.base = Typ[Invalid] // avoid nil base in invalid recursive type declaration
 			def.setUnderlying(typ)
 			typ.base = check.varType(e.X)
 			// If typ.base is invalid, it's unlikely that *base is particularly
@@ -356,7 +362,7 @@ func (check *Checker) typInternal(e0 syntax.Expr, def *Named) (T Type) {
 		check.later(func() {
 			if !Comparable(typ.key) {
 				var why string
-				if asTypeParam(typ.key) != nil {
+				if isTypeParam(typ.key) {
 					why = " (missing comparable constraint)"
 				}
 				check.errorf(e.Key, "invalid map key type %s%s", typ.key, why)
@@ -431,7 +437,7 @@ func (check *Checker) instantiatedType(x syntax.Expr, targsx []syntax.Expr, def 
 	}
 
 	// create the instance
-	h := check.conf.Context.TypeHash(origin, targs)
+	h := check.conf.Context.typeHash(origin, targs)
 	// targs may be incomplete, and require inference. In any case we should de-duplicate.
 	inst := check.conf.Context.typeForHash(h, nil)
 	// If inst is non-nil, we can't just return here. Inst may have been

@@ -115,8 +115,8 @@ func (subst *subster) typ(typ Type) Type {
 			return &Signature{
 				rparams: t.rparams,
 				// TODO(rFindley) why can't we nil out tparams here, rather than in instantiate?
-				tparams:  t.tparams,
-				scope:    t.scope,
+				tparams: t.tparams,
+				// instantiated signatures have a nil scope
 				recv:     recv,
 				params:   params,
 				results:  results,
@@ -207,9 +207,9 @@ func (subst *subster) typ(typ Type) Type {
 		}
 
 		// before creating a new named type, check if we have this one already
-		h := subst.ctxt.typeHash(t.orig, newTArgs)
+		h := subst.ctxt.instanceHash(t.orig, newTArgs)
 		dump(">>> new type hash: %s", h)
-		if named := subst.ctxt.typeForHash(h, nil); named != nil {
+		if named := subst.ctxt.lookup(h, t.orig, newTArgs); named != nil {
 			dump(">>> found %s", named)
 			return named
 		}

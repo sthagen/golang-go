@@ -69,13 +69,18 @@ func (t *TypeParam) SetConstraint(bound Type) {
 	t.bound = bound
 }
 
-func (t *TypeParam) Underlying() Type { return t }
-func (t *TypeParam) String() string   { return TypeString(t, nil) }
+func (t *TypeParam) Underlying() Type {
+	return t.iface()
+}
+
+func (t *TypeParam) String() string { return TypeString(t, nil) }
 
 // ----------------------------------------------------------------------------
 // Implementation
 
 // iface returns the constraint interface of t.
+// TODO(gri) If we make tparamIsIface the default, this should be renamed to under
+//           (similar to Named.under).
 func (t *TypeParam) iface() *Interface {
 	bound := t.bound
 
@@ -88,10 +93,11 @@ func (t *TypeParam) iface() *Interface {
 			return &emptyInterface
 		}
 	case *Interface:
+		if isTypeParam(bound) {
+			// error is reported in Checker.collectTypeParams
+			return &emptyInterface
+		}
 		ityp = u
-	case *TypeParam:
-		// error is reported in Checker.collectTypeParams
-		return &emptyInterface
 	}
 
 	// If we don't have an interface, wrap constraint into an implicit interface.

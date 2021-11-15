@@ -390,8 +390,8 @@ func (check *Checker) instantiatedType(x ast.Expr, targsx []ast.Expr, def *Named
 		return gtyp // error already reported
 	}
 
-	origin, _ := gtyp.(*Named)
-	if origin == nil {
+	orig, _ := gtyp.(*Named)
+	if orig == nil {
 		panic(fmt.Sprintf("%v: cannot instantiate %v", x.Pos(), gtyp))
 	}
 
@@ -409,23 +409,24 @@ func (check *Checker) instantiatedType(x ast.Expr, targsx []ast.Expr, def *Named
 	}
 
 	// create the instance
-	h := check.conf.Context.typeHash(origin, targs)
+	ctxt := check.bestContext(nil)
+	h := ctxt.instanceHash(orig, targs)
 	// targs may be incomplete, and require inference. In any case we should de-duplicate.
-	inst := check.conf.Context.typeForHash(h, nil)
+	inst, _ := ctxt.lookup(h, orig, targs).(*Named)
 	// If inst is non-nil, we can't just return here. Inst may have been
 	// constructed via recursive substitution, in which case we wouldn't do the
 	// validation below. Ensure that the validation (and resulting errors) runs
 	// for each instantiated type in the source.
 	if inst == nil {
-		tname := NewTypeName(x.Pos(), origin.obj.pkg, origin.obj.name, nil)
-		inst = check.newNamed(tname, origin, nil, nil, nil) // underlying, methods and tparams are set when named is resolved
+		tname := NewTypeName(x.Pos(), orig.obj.pkg, orig.obj.name, nil)
+		inst = check.newNamed(tname, orig, nil, nil, nil) // underlying, methods and tparams are set when named is resolved
 		inst.targs = NewTypeList(targs)
-		inst = check.conf.Context.typeForHash(h, inst)
+		inst = ctxt.update(h, orig, targs, inst).(*Named)
 	}
 	def.setUnderlying(inst)
 
 	inst.resolver = func(ctxt *Context, n *Named) (*TypeParamList, Type, []*Func) {
-		tparams := origin.TypeParams().list()
+		tparams := orig.TypeParams().list()
 
 		inferred := targs
 		if len(targs) < len(tparams) {
@@ -446,7 +447,7 @@ func (check *Checker) instantiatedType(x ast.Expr, targsx []ast.Expr, def *Named
 		// This is an instance from the source, not from recursive substitution,
 		// and so it must be resolved during type-checking so that we can report
 		// errors.
-		inst.resolve(check.conf.Context)
+		inst.resolve(ctxt)
 		// Since check is non-nil, we can still mutate inst. Unpinning the resolver
 		// frees some memory.
 		inst.resolver = nil

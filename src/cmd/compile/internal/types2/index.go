@@ -99,12 +99,15 @@ func (check *Checker) indexExpr(x *operand, e *syntax.IndexExpr) (isFuncInst boo
 		x.expr = e
 		return false
 
-	case *TypeParam:
+	case *Interface:
+		if !isTypeParam(x.typ) {
+			break
+		}
 		// TODO(gri) report detailed failure cause for better error messages
 		var key, elem Type // key != nil: we must have all maps
 		mode := variable   // non-maps result mode
 		// TODO(gri) factor out closure and use it for non-typeparam cases as well
-		if typ.underIs(func(u Type) bool {
+		if typ.typeSet().underIs(func(u Type) bool {
 			l := int64(-1) // valid if >= 0
 			var k, e Type  // k is only set for maps
 			switch t := u.(type) {

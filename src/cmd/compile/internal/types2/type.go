@@ -21,10 +21,10 @@ type Type interface {
 // under must only be called when a type is known
 // to be fully set up.
 func under(t Type) Type {
-	if n := asNamed(t); n != nil {
-		return n.under()
+	if t, _ := t.(*Named); t != nil {
+		return t.under()
 	}
-	return t
+	return t.Underlying()
 }
 
 // If x and y are identical, match returns x.
@@ -65,6 +65,9 @@ func match(x, y Type) Type {
 func structuralType(typ Type) Type {
 	var su Type
 	if underIs(typ, func(u Type) bool {
+		if u == nil {
+			return false
+		}
 		if su != nil {
 			u = match(su, u)
 			if u == nil {
@@ -78,19 +81,4 @@ func structuralType(typ Type) Type {
 		return su
 	}
 	return nil
-}
-
-// If t is a defined type, asNamed returns that type (possibly after resolving it), otherwise it returns nil.
-func asNamed(t Type) *Named {
-	e, _ := t.(*Named)
-	if e != nil {
-		e.resolve(nil)
-	}
-	return e
-}
-
-// If t is a type parameter, asTypeParam returns that type, otherwise it returns nil.
-func asTypeParam(t Type) *TypeParam {
-	u, _ := under(t).(*TypeParam)
-	return u
 }

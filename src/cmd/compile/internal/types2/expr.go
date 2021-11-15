@@ -160,11 +160,10 @@ var op2str2 = [...]string{
 // If typ is a type parameter, underIs returns the result of typ.underIs(f).
 // Otherwise, underIs returns the result of f(under(typ)).
 func underIs(typ Type, f func(Type) bool) bool {
-	u := under(typ)
-	if tpar, _ := u.(*TypeParam); tpar != nil {
+	if tpar, _ := typ.(*TypeParam); tpar != nil {
 		return tpar.underIs(f)
 	}
-	return f(u)
+	return f(under(typ))
 }
 
 func (check *Checker) unary(x *operand, e *syntax.Operation) {
@@ -659,7 +658,11 @@ func (check *Checker) updateExprVal(x syntax.Expr, val constant.Value) {
 func (check *Checker) convertUntyped(x *operand, target Type) {
 	newType, val, code := check.implicitTypeAndValue(x, target)
 	if code != 0 {
-		check.invalidConversion(code, x, safeUnderlying(target))
+		t := target
+		if !isTypeParam(target) {
+			t = safeUnderlying(target)
+		}
+		check.invalidConversion(code, x, t)
 		x.mode = invalid
 		return
 	}
@@ -738,16 +741,19 @@ func (check *Checker) implicitTypeAndValue(x *operand, target Type) (Type, const
 		default:
 			return nil, nil, _InvalidUntypedConversion
 		}
-	case *TypeParam:
-		// TODO(gri) review this code - doesn't look quite right
-		ok := u.underIs(func(t Type) bool {
-			target, _, _ := check.implicitTypeAndValue(x, t)
-			return target != nil
-		})
-		if !ok {
-			return nil, nil, _InvalidUntypedConversion
-		}
 	case *Interface:
+		if isTypeParam(target) {
+			if !u.typeSet().underIs(func(u Type) bool {
+				if u == nil {
+					return false
+				}
+				t, _, _ := check.implicitTypeAndValue(x, u)
+				return t != nil
+			}) {
+				return nil, nil, _InvalidUntypedConversion
+			}
+			break
+		}
 		// Update operand types to the default type rather than the target
 		// (interface) type: values must have concrete dynamic types.
 		// Untyped nil was handled upfront.
@@ -987,8 +993,9 @@ func (check *Checker) binary(x *operand, e syntax.Expr, lhs, rhs syntax.Expr, op
 		return
 	}
 
+	// TODO(gri) make canMix more efficient - called for each binary operation
 	canMix := func(x, y *operand) bool {
-		if IsInterface(x.typ) || IsInterface(y.typ) {
+		if IsInterface(x.typ) && !isTypeParam(x.typ) || IsInterface(y.typ) && !isTypeParam(y.typ) {
 			return true
 		}
 		if allBoolean(x.typ) != allBoolean(y.typ) {
@@ -1246,7 +1253,11 @@ func (check *Checker) exprInternal(x *operand, e syntax.Expr, hint Type) exprKin
 		case hint != nil:
 			// no composite literal type present - use hint (element type of enclosing type)
 			typ = hint
-			base, _ = deref(under(typ)) // *T implies &T{}
+			base = typ
+			if !isTypeParam(typ) {
+				base = under(typ)
+			}
+			base, _ = deref(base) // *T implies &T{}
 
 		default:
 			// TODO(gri) provide better error messages depending on context
@@ -1460,9 +1471,14 @@ func (check *Checker) exprInternal(x *operand, e syntax.Expr, hint Type) exprKin
 		if x.mode == invalid {
 			goto Error
 		}
+		// TODO(gri) we may want to permit type assertions on type parameter values at some point
+		if isTypeParam(x.typ) {
+			check.errorf(x, invalidOp+"cannot use type assertion on type parameter value %s", x)
+			goto Error
+		}
 		xtyp, _ := under(x.typ).(*Interface)
 		if xtyp == nil {
-			check.errorf(x, "%s is not an interface type", x)
+			check.errorf(x, invalidOp+"%s is not an interface", x)
 			goto Error
 		}
 		// x.(type) expressions are encoded via TypeSwitchGuards
@@ -1622,25 +1638,20 @@ func (check *Checker) typeAssertion(e syntax.Expr, x *operand, xtyp *Interface, 
 		return
 	}
 
-	var msg string
-	if wrongType != nil {
-		if Identical(method.typ, wrongType.typ) {
-			msg = fmt.Sprintf("%s method has pointer receiver", method.name)
-		} else {
-			msg = fmt.Sprintf("wrong type for method %s: have %s, want %s", method.name, wrongType.typ, method.typ)
-		}
-	} else {
-		msg = fmt.Sprintf("missing %s method", method.name)
-	}
-
 	var err error_
+	var msg string
 	if typeSwitch {
 		err.errorf(e.Pos(), "impossible type switch case: %s", e)
-		err.errorf(nopos, "%s cannot have dynamic type %s (%s)", x, T, msg)
+		msg = check.sprintf("%s cannot have dynamic type %s %s", x, T,
+			check.missingMethodReason(T, x.typ, method, wrongType))
+
 	} else {
 		err.errorf(e.Pos(), "impossible type assertion: %s", e)
-		err.errorf(nopos, "%s does not implement %s (%s)", T, x.typ, msg)
+		msg = check.sprintf("%s does not implement %s %s", T, x.typ,
+			check.missingMethodReason(T, x.typ, method, wrongType))
+
 	}
+	err.errorf(nopos, msg)
 	check.report(&err)
 }
 
