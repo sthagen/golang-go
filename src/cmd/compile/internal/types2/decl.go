@@ -51,7 +51,7 @@ func pathString(path []Object) string {
 	return s
 }
 
-// objDecl type-checks the declaration of obj in its respective (file) context.
+// objDecl type-checks the declaration of obj in its respective (file) environment.
 // For the meaning of def, see Checker.definedType, in typexpr.go.
 func (check *Checker) objDecl(obj Object, def *Named) {
 	if check.conf.Trace && obj.Type() == nil {
@@ -69,7 +69,7 @@ func (check *Checker) objDecl(obj Object, def *Named) {
 	// Funcs with m.instRecv set have not yet be completed. Complete them now
 	// so that they have a type when objDecl exits.
 	if m, _ := obj.(*Func); m != nil && m.instRecv != nil {
-		check.completeMethod(check.conf.Context, m)
+		check.completeMethod(nil, m)
 	}
 
 	// Checking the declaration of obj means inferring its type
@@ -178,11 +178,11 @@ func (check *Checker) objDecl(obj Object, def *Named) {
 		unreachable()
 	}
 
-	// save/restore current context and setup object context
-	defer func(ctxt context) {
-		check.context = ctxt
-	}(check.context)
-	check.context = context{
+	// save/restore current environment and set up object environment
+	defer func(env environment) {
+		check.environment = env
+	}(check.environment)
+	check.environment = environment{
 		scope: d.file,
 	}
 
@@ -570,7 +570,7 @@ func (check *Checker) typeDecl(obj *TypeName, tdecl *syntax.TypeDecl, def *Named
 		check.validType(obj.typ, nil)
 		// If typ is local, an error was already reported where typ is specified/defined.
 		if check.isImportedConstraint(rhs) && !check.allowVersion(check.pkg, 1, 18) {
-			check.versionErrorf(tdecl.Type.Pos(), "go1.18", "using type constraint %s", rhs)
+			check.versionErrorf(tdecl.Type, "go1.18", "using type constraint %s", rhs)
 		}
 	}).describef(obj, "validType(%s)", obj.Name())
 
@@ -646,7 +646,7 @@ func (check *Checker) collectTypeParams(dst **TypeParamList, list []*syntax.Fiel
 	// function closures may appear inside a type parameter list but they
 	// cannot be generic, and their bodies are processed in delayed and
 	// sequential fashion. Note that with each new declaration, we save
-	// the existing context and restore it when done; thus inTParamList
+	// the existing environment and restore it when done; thus inTParamList
 	// is true exactly only when we are in a specific type parameter list.
 	assert(!check.inTParamList)
 	check.inTParamList = true

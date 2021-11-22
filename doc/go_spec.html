@@ -1,8 +1,15 @@
 <!--{
-	"Title": "The Go Programming Language Specification",
-	"Subtitle": "Version of Oct 15, 2021",
+	"Title": "The Go Programming Language Specification - Go 1.18 Draft (incomplete)",
+	"Subtitle": "Version of Nov 19, 2021",
 	"Path": "/ref/spec"
 }-->
+
+<h2>Earlier version</h2>
+
+<p>
+For the pre-Go1.18 specification without generics support see
+<a href="/doc/go1.17_spec.html">The Go Programming Language Specification</a>.
+</p>
 
 <h2 id="Introduction">Introduction</h2>
 
@@ -266,7 +273,7 @@ The following character sequences represent <a href="#Operators">operators</a>
 *    ^     *=    ^=     &lt;-    &gt;     &gt;=    {    }
 /    &lt;&lt;    /=    &lt;&lt;=    ++    =     :=    ,    ;
 %    &gt;&gt;    %=    &gt;&gt;=    --    !     ...   .    :
-     &amp;^          &amp;^=
+     &amp;^          &amp;^=          ~
 </pre>
 
 <h3 id="Integer_literals">Integer literals</h3>
@@ -780,32 +787,46 @@ If a variable has not yet been assigned a value, its value is the
 
 <p>
 A type determines a set of values together with operations and methods specific
-to those values. A type may be denoted by a <i>type name</i>, if it has one,
-or specified using a <i>type literal</i>, which composes a type from existing types.
+to those values. A type may be denoted by a <i>type name</i>, if it has one, which must be
+followed by <a href="#Instantiations">type arguments</a> if the type is parameterized.
+A type may also be specified using a <i>type literal</i>, which composes a type
+from existing types.
 </p>
 
 <pre class="ebnf">
-Type      = TypeName | TypeLit | "(" Type ")" .
+Type      = TypeName [ TypeArgs ] | TypeLit | "(" Type ")" .
 TypeName  = identifier | QualifiedIdent .
+TypeArgs  = "[" TypeList [ "," ] "]" .
+TypeList  = Type { "," Type } .
 TypeLit   = ArrayType | StructType | PointerType | FunctionType | InterfaceType |
 	    SliceType | MapType | ChannelType .
 </pre>
 
 <p>
 The language <a href="#Predeclared_identifiers">predeclares</a> certain type names.
-Others are introduced with <a href="#Type_declarations">type declarations</a>.
+Others are introduced with <a href="#Type_declarations">type declarations</a>
+or <a href="#Type_parameter_lists">type parameter lists</a>.
 <i>Composite types</i>&mdash;array, struct, pointer, function,
 interface, slice, map, and channel types&mdash;may be constructed using
 type literals.
 </p>
 
 <p>
+Predeclared types, defined types, and type parameters are called <i>named types</i>.
+An alias denotes a named type if the type given in the alias declaration is a named type.
+</p>
+
+<h3 id="Underlying_types">Underlying types</h3>
+
+<p>
 Each type <code>T</code> has an <i>underlying type</i>: If <code>T</code>
 is one of the predeclared boolean, numeric, or string types, or a type literal,
-the corresponding underlying
-type is <code>T</code> itself. Otherwise, <code>T</code>'s underlying type
-is the underlying type of the type to which <code>T</code> refers in its
-<a href="#Type_declarations">type declaration</a>.
+the corresponding underlying type is <code>T</code> itself.
+Otherwise, <code>T</code>'s underlying type is the underlying type of the
+type to which <code>T</code> refers in its <a href="#Type_declarations">type
+declaration</a>. Accordingly, the underlying type of a type parameter is the
+underlying type of its <a href="#Type_constraints">type constraint</a>, which
+is always an interface.
 </p>
 
 <pre>
@@ -820,36 +841,52 @@ type (
 	B3 []B1
 	B4 B3
 )
+
+func f[P any](x P) { … }
 </pre>
 
 <p>
 The underlying type of <code>string</code>, <code>A1</code>, <code>A2</code>, <code>B1</code>,
 and <code>B2</code> is <code>string</code>.
 The underlying type of <code>[]B1</code>, <code>B3</code>, and <code>B4</code> is <code>[]B1</code>.
+The underlying type of <code>P</code> is <code>interface{}</code>.
 </p>
 
 <h3 id="Method_sets">Method sets</h3>
+
 <p>
-A type has a (possibly empty) <i>method set</i> associated with it.
-The method set of an <a href="#Interface_types">interface type</a> is its interface.
-The method set of any other type <code>T</code> consists of all
+The <i>method set</i> of a type determines the methods that can be
+<a href="#Calls">called</a> on an <a href="#Operands">operand</a> of that type.
+Every type has a (possibly empty) method set associated with it:
+</p>
+
+<ul>
+<li>The method set of a <a href="#Type_definitions">defined type</a> <code>T</code> consists of all
 <a href="#Method_declarations">methods</a> declared with receiver type <code>T</code>.
-The method set of the corresponding <a href="#Pointer_types">pointer type</a> <code>*T</code>
-is the set of all methods declared with receiver <code>*T</code> or <code>T</code>
-(that is, it also contains the method set of <code>T</code>).
-Further rules apply to structs containing embedded fields, as described
-in the section on <a href="#Struct_types">struct types</a>.
+</li>
+
+<li>
+The method set of a pointer to a defined type <code>T</code>
+(where <code>T</code> is neither a pointer nor an interface)
+is the set of all methods declared with receiver <code>*T</code> or <code>T</code>.
+</li>
+
+<li>The method set of an <a href="#Interface_types">interface type</a> is the intersection
+of the method sets of each type in the interface's <a href="#Interface_types">type set</a>
+(the resulting method set is usually just the set of declared methods in the interface).
+</li>
+</ul>
+
+<p>
+Further rules apply to structs (and pointer to structs) containing embedded fields,
+as described in the section on <a href="#Struct_types">struct types</a>.
 Any other type has an empty method set.
-In a method set, each method must have a
-<a href="#Uniqueness_of_identifiers">unique</a>
-non-<a href="#Blank_identifier">blank</a> <a href="#MethodName">method name</a>.
 </p>
 
 <p>
-The method set of a type determines the interfaces that the
-type <a href="#Interface_types">implements</a>
-and the methods that can be <a href="#Calls">called</a>
-using a receiver of that type.
+In a method set, each method must have a
+<a href="#Uniqueness_of_identifiers">unique</a>
+non-<a href="#Blank_identifier">blank</a> <a href="#MethodName">method name</a>.
 </p>
 
 <h3 id="Boolean_types">Boolean types</h3>
@@ -1232,27 +1269,37 @@ func(int, int, float64) (float64, *[]int)
 func(n int) func(p *T)
 </pre>
 
-
 <h3 id="Interface_types">Interface types</h3>
 
 <p>
-An interface type specifies a <a href="#Method_sets">method set</a> called its <i>interface</i>.
-A variable of interface type can store a value of any type with a method set
-that is any superset of the interface. Such a type is said to
-<i>implement the interface</i>.
+An interface type defines a <i>type set</i>.
+A variable of interface type can store a value of any type that is in the type
+set of the interface. Such a type is said to <i>implement the interface</i>.
 The value of an uninitialized variable of interface type is <code>nil</code>.
 </p>
 
 <pre class="ebnf">
-InterfaceType      = "interface" "{" { ( MethodSpec | InterfaceTypeName ) ";" } "}" .
-MethodSpec         = MethodName Signature .
-MethodName         = identifier .
-InterfaceTypeName  = TypeName .
+InterfaceType  = "interface" "{" { InterfaceElem ";" } "}" .
+InterfaceElem  = MethodElem | TypeElem .
+MethodElem     = MethodName Signature .
+MethodName     = identifier .
+TypeElem       = TypeTerm { "|" TypeTerm } .
+TypeTerm       = Type | UnderlyingType .
+UnderlyingType = "~" Type .
 </pre>
 
 <p>
-An interface type may specify methods <i>explicitly</i> through method specifications,
-or it may <i>embed</i> methods of other interfaces through interface type names.
+An interface type is specified by a list of <i>interface elements</i>.
+An interface element is either a method or a type element,
+where a type element is a union of one or more type terms.
+A type term is either a single type or a single underlying type.
+</p>
+
+<p>
+In its most basic form an interface specifies a (possibly empty) list of methods.
+The type set defined by such an interface is the set of types which implement all of
+those methods, and the corresponding <a href="#Method_sets">method set</a> consists
+exactly of the methods specified by the interface.
 </p>
 
 <pre>
@@ -1297,14 +1344,18 @@ then the <code>File</code> interface is implemented by both <code>S1</code> and
 </p>
 
 <p>
-A type implements any interface comprising any subset of its methods
-and may therefore implement several distinct interfaces. For
-instance, all types implement the <i>empty interface</i>:
+Every type that is a member of the type set of an interface implements that interface.
+Any given type may implement several distinct interfaces.
+For instance, all types implement the <i>empty interface</i> which stands for the set of all types:
 </p>
 
 <pre>
 interface{}
 </pre>
+
+<p>
+For convenience, the predeclared type <code>any</code> is an alias for the empty interface.
+</p>
 
 <p>
 Similarly, consider this interface specification,
@@ -1334,12 +1385,16 @@ as the <code>File</code> interface.
 </p>
 
 <p>
-An interface <code>T</code> may use a (possibly qualified) interface type
-name <code>E</code> in place of a method specification. This is called
+In a slightly more general form
+an interface <code>T</code> may use a (possibly qualified) interface type
+name <code>E</code> as an interface element. This is called
 <i>embedding</i> interface <code>E</code> in <code>T</code>.
-The <a href="#Method_sets">method set</a> of <code>T</code> is the <i>union</i>
-of the method sets of <code>T</code>’s explicitly declared methods and of
-<code>T</code>’s embedded interfaces.
+The type set of <code>T</code> is the <i>intersection</i> of the type sets
+defined by <code>T</code>'s explicitly declared methods and the type sets
+of <code>T</code>’s embedded interfaces.
+In other words, the type set of <code>T</code> is the set of all types that implement all the
+explicitly declared methods of <code>T</code> and also all the methods of
+<code>E</code>.
 </p>
 
 <pre>
@@ -1361,8 +1416,7 @@ type ReadWriter interface {
 </pre>
 
 <p>
-A <i>union</i> of method sets contains the (exported and non-exported)
-methods of each method set exactly once, and methods with the
+When embedding interfaces, methods with the
 <a href="#Uniqueness_of_identifiers">same</a> names must
 have <a href="#Type_identity">identical</a> signatures.
 </p>
@@ -1373,6 +1427,136 @@ type ReadCloser interface {
 	Close()  // illegal: signatures of Reader.Close and Close are different
 }
 </pre>
+
+<p>
+Finally, in their most general form, an interface element may also be an arbitrary type term
+<code>T</code>, or a term of the form <code>~T</code> specifying the underlying type <code>T</code>,
+or a union of terms <code>t<sub>1</sub>|t<sub>2</sub>|…|t<sub>n</sub></code>.
+Together with method specifications, these elements enable the precise
+definition of an interface's type set as follows:
+</p>
+
+<ul>
+	<li>The type set of the empty interface is the set of all types.
+	</li>
+
+	<li>The type set of a non-empty interface is the intersection of the type sets
+		of its interface elements.
+	</li>
+
+	<li>The type set of a method specification is the set of types
+		whose method sets include that method.
+	</li>
+
+	<li>The type set of a non-interface type term is the set consisting
+		of just that type.
+	</li>
+
+	<li>The type set of a term of the form <code>~T</code>
+		is the set of types whose underlying type is <code>T</code>.
+	</li>
+
+	<li>The type set of a <i>union</i> of terms
+		<code>t<sub>1</sub>|t<sub>2</sub>|…|t<sub>n</sub></code>
+		is the union of the type sets of the terms.
+	</li>
+</ul>
+
+<pre>
+// An interface representing only the type int.
+interface {
+	int
+}
+
+// An interface representing all types with underlying type int.
+interface {
+	~int
+}
+
+// An interface representing all types with underlying type int which implement the String method.
+interface {
+	~int
+	String() string
+}
+
+// An interface representing an empty type set: there is no type that is both an int and a string.
+interface {
+	int
+	string
+}
+</pre>
+
+<p>
+In a term of the form <code>~T</code>, the underlying type of <code>T</code>
+must be itself, and <code>T</code> cannot be an interface.
+</p>
+
+<pre>
+type MyInt int
+
+interface {
+	~[]byte  // the underlying type of []byte is itself
+	~MyInt   // illegal: the underlying type of MyInt is not MyInt
+	~error   // illegal: error is an interface
+}
+</pre>
+
+<p>
+Union elements denote unions of type sets:
+</p>
+
+<pre>
+// The Floats interface represents all floating-point types
+// (including any named types whose underlying types are
+// either float32 or float64).
+type Floats interface {
+	~float32 | ~float64
+}
+</pre>
+
+<p>
+In a union, a term cannot be a type parameter, and the type sets of all
+non-interface terms must be pairwise disjoint (the pairwise intersection of the type sets must be empty).
+Given a type parameter <code>P</code>:
+</p>
+
+<pre>
+interface {
+	P                 // illegal: the term P is a type parameter
+	int | P           // illegal: the term P is a type parameter
+	~int | MyInt      // illegal: the type sets for ~int and MyInt are not disjoint (~int includes MyInt)
+	float32 | Floats  // overlapping type sets but Floats is an interface
+}
+</pre>
+
+<p>
+Implementation restriction:
+A union with more than one term cannot contain interface types
+with non-empty <a href="#Method_sets">method sets</a>.
+</p>
+
+<p>
+Interfaces that contain non-interface types, terms of the form <code>~T</code>,
+or unions may only be used as type constraints, or as elements of other interfaces used
+as constraints. They cannot be the types of values or variables, or components of other,
+non-interface types.
+</p>
+
+<pre>
+var x Floats                     // illegal: Floats is restricted by float32 and float64
+
+var x interface{} = Floats(nil)  // illegal
+
+type Floatish struct {
+	f Floats                 // illegal
+}
+</pre>
+
+<!-- TODO The rule below needs to be generalized to interface elements.
+	  It should be factored out and generalized to other types
+	  such as arrays and structs which are currently missing such a
+	  rule. See also #5069.
+-->
 
 <p>
 An interface type <code>T</code> may not embed itself
@@ -1470,8 +1654,8 @@ ChannelType = ( "chan" | "chan" "&lt;-" | "&lt;-" "chan" ) ElementType .
 
 <p>
 The optional <code>&lt;-</code> operator specifies the channel <i>direction</i>,
-<i>send</i> or <i>receive</i>. If no direction is given, the channel is
-<i>bidirectional</i>.
+<i>send</i> or <i>receive</i>. If a direction is given, the channel is <i>directional</i>,
+otherwise it is <i>bidirectional</i>.
 A channel may be constrained only to send or only to receive by
 <a href="#Assignments">assignment</a> or
 explicit <a href="#Conversions">conversion</a>.
@@ -1536,6 +1720,25 @@ Channels act as first-in-first-out queues.
 For example, if one goroutine sends values on a channel
 and a second goroutine receives them, the values are
 received in the order sent.
+</p>
+
+<h3 id="Type_parameters">Type parameters</h3>
+
+<p>
+A <i>type parameter</i> is an (unqualified) type name declared in the
+<a href="#Type_parameter_lists">type parameter list</a> of a
+<a href="#Function_declarations">function declaration</a> or
+<a href="#Type_definitions">type definition</a>; or in the receiver specification
+of a <a href="#Method_declarations">method declaration</a> that is associated
+with a parameterized type.
+A type parameter acts as a place holder for an (as of yet) unknown type in the declaration;
+the type parameter is replaced with a <i>type argument</i> upon
+<a href="#Instantiations">instantiation</a> of the parameterized function or type.
+</p>
+
+<p>
+The properties of a type parameter are determined by its
+<a href="#Type_constraints">type constraint</a>.
 </p>
 
 <h2 id="Properties_of_types_and_values">Properties of types and values</h2>
@@ -1632,7 +1835,6 @@ created by distinct <a href="#Type_definitions">type definitions</a>;
 are different because <code>B0</code> is different from <code>[]string</code>.
 </p>
 
-
 <h3 id="Assignability">Assignability</h3>
 
 <p>
@@ -1724,6 +1926,66 @@ x                   T           x is not representable by a value of T because
 1e1000              float64     1e1000 overflows to IEEE +Inf after rounding
 </pre>
 
+<h3 id="Structural_interfaces">Structural interfaces</h3>
+
+<p>
+An interface <code>T</code> is called <i>structural</i> if one of the following
+conditions is satisfied:
+</p>
+
+<ol>
+<li>
+There is a single type <code>U</code> which is the <a href="#Underlying_types">underlying type</a>
+of all types in the <a href="#Interface_types">type set</a> of <code>T</code>; or
+</li>
+<li>
+the type set of <code>T</code> contains only <a href="#Channel_types">channel types</a>
+with identical element type <code>E</code>, and all directional channels have the same
+direction.
+</li>
+</ol>
+
+<p>
+A structural interface has a <i>structural type</i> which is, depending on the
+condition that is satisfied, either:
+</p>
+
+<ol>
+<li>
+the type <code>U</code>; or
+</li>
+<li>
+the type <code>chan E</code> if <code>T</code> contains only bidirectional
+channels, or the type <code>chan&lt;- E</code> or <code>&lt;-chan E</code>
+depending on the direction of the directional channels present.
+</li>
+</ol>
+
+<p>
+Examples of structural interfaces with their structural types:
+</p>
+
+<pre>
+type Celsius float32
+type Kelvin  float32
+
+interface{ int }                          // int
+interface{ Celsius|Kelvin }               // float32
+interface{ ~chan int }                    // chan int
+interface{ ~chan int|~chan&lt;- int }        // chan&lt;- int
+interface{ ~[]*data; String() string }    // []*data
+</pre>
+
+<p>
+Examples of non-structural interfaces:
+</p>
+
+<pre>
+interface{}                               // no single underlying type
+interface{ Celsius|float64 }              // no single underlying type
+interface{ chan int | chan&lt;- string }     // channels have different element types
+interface{ &lt;-chan int | chan&lt;- int }      // directional channels have different directions
+</pre>
 
 <h2 id="Blocks">Blocks</h2>
 
@@ -1815,6 +2077,15 @@ Go is lexically scoped using <a href="#Blocks">blocks</a>:
 	<li>The scope of an identifier denoting a method receiver, function parameter,
 	    or result variable is the function body.</li>
 
+	<li>The scope of an identifier denoting a type parameter of a type-parameterized function
+	    or declared by a method receiver is the function body and all parameter lists of the
+	    function.
+	</li>
+
+	<li>The scope of an identifier denoting a type parameter of a parameterized type
+	    begins after the name of the parameterized type and ends at the end
+	    of the TypeSpec.</li>
+
 	<li>The scope of a constant or variable identifier declared
 	    inside a function begins at the end of the ConstSpec or VarSpec
 	    (ShortVarDecl for short variable declarations)
@@ -1872,7 +2143,8 @@ The following identifiers are implicitly declared in the
 </p>
 <pre class="grammar">
 Types:
-	bool byte complex64 complex128 error float32 float64
+	any bool byte comparable
+	complex64 complex128 error float32 float64
 	int int8 int16 int32 int64 rune string
 	uint uint8 uint16 uint32 uint64 uintptr
 
@@ -2076,12 +2348,12 @@ type (
 
 <p>
 A type definition creates a new, distinct type with the same
-<a href="#Types">underlying type</a> and operations as the given type,
-and binds an identifier to it.
+<a href="#Types">underlying type</a> and operations as the given type
+and binds an identifier, the <i>type name</i>, to it.
 </p>
 
 <pre class="ebnf">
-TypeDef = identifier Type .
+TypeDef = identifier [ TypeParameters ] Type .
 </pre>
 
 <p>
@@ -2158,6 +2430,130 @@ func (tz TimeZone) String() string {
 }
 </pre>
 
+<p>
+If the type definition specifies <a href="#Type_parameter_lists">type parameters</a>,
+the type name denotes a <i>parameterized type</i>.
+Parameterized types must be <a href="#Instantiations">instantiated</a> when they
+are used.
+</p>
+
+<pre>
+type List[T any] struct {
+	next  *List[T]
+	value T
+}
+
+type Tree[T constraints.Ordered] struct {
+	left, right *Tree[T]
+	value       T
+}
+</pre>
+
+<p>
+The given type cannot be a type parameter in a type definition.
+</p>
+
+<pre>
+type T[P any] P    // illegal: P is a type parameter
+
+func f[T any]() {
+	type L T   // illegal: T is a type parameter declared by the enclosing function
+}
+</pre>
+
+<p>
+A parameterized type may also have methods associated with it. In this case,
+the method receivers must declare the same number of type parameters as
+present in the parameterized type definition.
+</p>
+
+<pre>
+// The method Len returns the number of elements in the linked list l.
+func (l *List[T]) Len() int  { … }
+</pre>
+
+<h3 id="Type_parameter_lists">Type parameter lists</h3>
+
+<p>
+A type parameter list declares the <a href="#Type_parameters">type parameters</a>
+in a type-parameterized function or type declaration.
+The type parameter list looks like an ordinary <a href="#Function_types">function parameter list</a>
+except that the type parameter names must all be present and the list is enclosed
+in square brackets rather than parentheses.
+</p>
+
+<pre class="ebnf">
+TypeParameters  = "[" TypeParamList [ "," ] "]" .
+TypeParamList   = TypeParamDecl { "," TypeParamDecl } .
+TypeParamDecl   = IdentifierList TypeConstraint .
+</pre>
+
+<p>
+Each identifier declares a type parameter.
+All non-blank names in the list must be unique.
+Each type parameter is a new and different <a href="#Types">named type</a>.
+</p>
+
+<pre>
+[P any]
+[S interface{ ~[]byte|string }]
+[S ~[]E, E any]
+[P Constraint[int]]
+[_ any]
+</pre>
+
+<p>
+Just as each ordinary function parameter has a parameter type, each type parameter
+has a corresponding (meta-)type which is called its
+<a href="#Type_constraints"><i>type constraint</i></a>.
+</p>
+
+<p>
+A parsing ambiguity arises when the type parameter list for a parameterized type
+declares a single type parameter with a type constraint of the form <code>*C</code>
+or <code>(C)</code>:
+</p>
+
+<pre>
+type T[P *C] …
+type T[P (C)] …
+</pre>
+
+<p>
+In these rare cases, the type parameter declaration is indistinguishable from
+the expressions <code>P*C</code> or <code>P(C)</code> and the type declaration
+is parsed as an array type declaration.
+To resolve the ambiguity, embed the constraint in an interface:
+</p>
+
+<pre>
+type T[P interface{*C}] …
+</pre>
+
+<h4 id="Type_constraints">Type constraints</h4>
+
+<p>
+A type constraint is an <a href="#Interface_types">interface</a> that determines the
+set of permissible type arguments for the respective type parameter and controls the
+operations supported by values of that type parameter.
+</p>
+
+<pre class="ebnf">
+TypeConstraint = TypeElem .
+</pre>
+
+<p>
+If the constraint is an interface literal containing exactly one embedded type element
+<code>interface{E}</code>, in a type parameter list the enclosing <code>interface{ … }</code>
+may be omitted for convenience:
+</p>
+
+<pre>
+[T *P]                             // = [T interface{*P}]
+[T ~int]                           // = [T interface{~int}]
+[T int|string]                     // = [T interface{int|string}]
+type Constraint ~int               // illegal: ~int is not inside a type parameter list
+</pre>
 
 <h3 id="Variable_declarations">Variable declarations</h3>
 
@@ -2267,13 +2663,19 @@ they can be used to declare local temporary variables.
 
 <h3 id="Function_declarations">Function declarations</h3>
 
+<!--
+	Given the importance of functions, this section has always
+	been woefully underdeveloped. Would be nice to expand this
+	a bit.
+-->
+
 <p>
 A function declaration binds an identifier, the <i>function name</i>,
 to a function.
 </p>
 
 <pre class="ebnf">
-FunctionDecl = "func" FunctionName Signature [ FunctionBody ] .
+FunctionDecl = "func" FunctionName [ TypeParameters ] Signature [ FunctionBody ] .
 FunctionName = identifier .
 FunctionBody = Block .
 </pre>
@@ -2296,18 +2698,28 @@ func IndexRune(s string, r rune) int {
 </pre>
 
 <p>
-A function declaration may omit the body. Such a declaration provides the
-signature for a function implemented outside Go, such as an assembly routine.
+If the function declaration specifies <a href="#Type_parameter_lists">type parameters</a>,
+the function name denotes a <i>type-parameterized function</i>.
+Type-parameterized functions must be <a href="#Instantiations">instantiated</a> when they
+are used.
 </p>
 
 <pre>
-func min(x int, y int) int {
+func min[T constraints.Ordered](x, y T) T {
 	if x &lt; y {
 		return x
 	}
 	return y
 }
+</pre>
 
+<p>
+A function declaration without type parameters may omit the body.
+Such a declaration provides the signature for a function implemented outside Go,
+such as an assembly routine.
+</p>
+
+<pre>
 func flushICache(begin, end uintptr)  // implemented externally
 </pre>
 
@@ -2328,9 +2740,10 @@ Receiver   = Parameters .
 The receiver is specified via an extra parameter section preceding the method
 name. That parameter section must declare a single non-variadic parameter, the receiver.
 Its type must be a <a href="#Type_definitions">defined</a> type <code>T</code> or a
-pointer to a defined type <code>T</code>. <code>T</code> is called the receiver
-<i>base type</i>. A receiver base type cannot be a pointer or interface type and
-it must be defined in the same package as the method.
+pointer to a defined type <code>T</code>, possibly followed by a list of type parameter
+names <code>[P1, P2, …]</code> enclosed in square brackets.
+<code>T</code> is called the receiver <i>base type</i>. A receiver base type cannot be
+a pointer or interface type and it must be defined in the same package as the method.
 The method is said to be <i>bound</i> to its receiver base type and the method name
 is visible only within <a href="#Selectors">selectors</a> for type <code>T</code>
 or <code>*T</code>.
@@ -2372,18 +2785,32 @@ to the base type <code>Point</code>.
 </p>
 
 <p>
-The type of a method is the type of a function with the receiver as first
-argument.  For instance, the method <code>Scale</code> has type
+If the receiver base type is a <a href="#Type_declarations">parameterized type</a>, the
+receiver specification must declare corresponding type parameters for the method
+to use. This makes the receiver type parameters available to the method.
+</p>
+
+<p>
+Syntactically, this type parameter declaration looks like an
+<a href="#Instantiantions">instantiation</a> of the receiver base type, except that
+the type arguments are the type parameters being declared, one for each type parameter
+of the receiver base type.
+The type parameter names do not need to match their corresponding parameter names in the
+receiver base type definition, and all non-blank parameter names must be unique in the
+receiver parameter section and the method signature.
+The receiver type parameter constraints are implied by the receiver base type definition:
+corresponding type parameters have corresponding constraints.
 </p>
 
 <pre>
-func(p *Point, factor float64)
+type Pair[A, B any] struct {
+	a A
+	b B
+}
+
+func (p Pair[A, B]) Swap() Pair[A, B]  { return Pair[A, B]{p.b, p.a} }
+func (p Pair[First, _]) First() First  { return p.a }
 </pre>
-
-<p>
-However, a function declared this way is not a method.
-</p>
-
 
 <h2 id="Expressions">Expressions</h2>
 
@@ -2653,6 +3080,7 @@ noteFrequency := map[string]float32{
 
 <p>
 A function literal represents an anonymous <a href="#Function_declarations">function</a>.
+Function literals cannot declare type parameters.
 </p>
 
 <pre class="ebnf">
@@ -5059,7 +5487,6 @@ TypeSwitchStmt  = "switch" [ SimpleStmt ";" ] TypeSwitchGuard "{" { TypeCaseClau
 TypeSwitchGuard = [ identifier ":=" ] PrimaryExpr "." "(" "type" ")" .
 TypeCaseClause  = TypeSwitchCase ":" StatementList .
 TypeSwitchCase  = "case" TypeList | "default" .
-TypeList        = Type { "," Type } .
 </pre>
 
 <p>

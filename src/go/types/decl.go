@@ -239,7 +239,7 @@ loop:
 			// If we reach a generic type that is part of a cycle
 			// and we are in a type parameter list, we have a cycle
 			// through a type parameter list, which is invalid.
-			if check.environment.inTParamList && isGeneric(obj.typ) {
+			if check.inTParamList && isGeneric(obj.typ) {
 				tparCycle = true
 				break loop
 			}
@@ -623,7 +623,7 @@ func (check *Checker) typeDecl(obj *TypeName, tdecl *ast.TypeSpec, def *Named) {
 		check.validType(obj.typ, nil)
 		// If typ is local, an error was already reported where typ is specified/defined.
 		if check.isImportedConstraint(rhs) && !check.allowVersion(check.pkg, 1, 18) {
-			check.errorf(tdecl.Type, _Todo, "using type constraint %s requires go1.18 or later", rhs)
+			check.errorf(tdecl.Type, _UnsupportedFeature, "using type constraint %s requires go1.18 or later", rhs)
 		}
 	}).describef(obj, "validType(%s)", obj.Name())
 
@@ -631,7 +631,7 @@ func (check *Checker) typeDecl(obj *TypeName, tdecl *ast.TypeSpec, def *Named) {
 	if alias && tdecl.TypeParams.NumFields() != 0 {
 		// The parser will ensure this but we may still get an invalid AST.
 		// Complain and continue as regular type definition.
-		check.error(atPos(tdecl.Assign), _Todo, "generic type cannot be alias")
+		check.error(atPos(tdecl.Assign), _BadDecl, "generic type cannot be alias")
 		alias = false
 	}
 
@@ -669,11 +669,12 @@ func (check *Checker) typeDecl(obj *TypeName, tdecl *ast.TypeSpec, def *Named) {
 	}
 
 	// Disallow a lone type parameter as the RHS of a type declaration (issue #45639).
-	// We can look directly at named.underlying because even if it is still a *Named
-	// type (underlying not fully resolved yet) it cannot become a type parameter due
-	// to this very restriction.
-	if tpar, _ := named.underlying.(*TypeParam); tpar != nil {
-		check.error(tdecl.Type, _Todo, "cannot use a type parameter as RHS in type declaration")
+	// We don't need this restriction anymore if we make the underlying type of a type
+	// parameter its constraint interface: if the RHS is a lone type parameter, we will
+	// use its underlying type (like we do for any RHS in a type declaration), and its
+	// underlying type is an interface and the type declaration is well defined.
+	if isTypeParam(rhs) {
+		check.error(tdecl.Type, _MisplacedTypeParam, "cannot use a type parameter as RHS in type declaration")
 		named.underlying = Typ[Invalid]
 	}
 }
@@ -723,8 +724,12 @@ func (check *Checker) collectTypeParams(dst **TypeParamList, list *ast.FieldList
 
 	check.later(func() {
 		for i, bound := range bounds {
-			if _, ok := under(bound).(*TypeParam); ok {
-				check.error(posns[i], _Todo, "cannot use a type parameter as constraint")
+			if isTypeParam(bound) {
+				// We may be able to allow this since it is now well-defined what
+				// the underlying type and thus type set of a type parameter is.
+				// But we may need some additional form of cycle detection within
+				// type parameter lists.
+				check.error(posns[i], _MisplacedTypeParam, "cannot use a type parameter as constraint")
 			}
 		}
 		for _, tpar := range tparams {
@@ -794,7 +799,7 @@ func (check *Checker) collectMethods(obj *TypeName) {
 
 	// spec: "If the base type is a struct type, the non-blank method
 	// and field names must be distinct."
-	base := asNamed(obj.typ) // shouldn't fail but be conservative
+	base, _ := obj.typ.(*Named) // shouldn't fail but be conservative
 	if base != nil {
 		u := base.under()
 		if t, _ := u.(*Struct); t != nil {
@@ -861,7 +866,7 @@ func (check *Checker) funcDecl(obj *Func, decl *declInfo) {
 	obj.color_ = saved
 
 	if fdecl.Type.TypeParams.NumFields() > 0 && fdecl.Body == nil {
-		check.softErrorf(fdecl.Name, _Todo, "parameterized function is missing function body")
+		check.softErrorf(fdecl.Name, _BadDecl, "parameterized function is missing function body")
 	}
 
 	// function body must be type-checked after global declarations

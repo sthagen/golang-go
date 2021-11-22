@@ -27,6 +27,75 @@ func under(t Type) Type {
 	return t.Underlying()
 }
 
+// If t is not a type parameter, structuralType returns the underlying type.
+// If t is a type parameter, structuralType returns the single underlying
+// type of all types in its type set if it exists, or nil otherwise. If the
+// type set contains only unrestricted and restricted channel types (with
+// identical element types), the single underlying type is the restricted
+// channel type if the restrictions are always the same, or nil otherwise.
+func structuralType(t Type) Type {
+	tpar, _ := t.(*TypeParam)
+	if tpar == nil {
+		return under(t)
+	}
+
+	var su Type
+	if tpar.underIs(func(u Type) bool {
+		if u == nil {
+			return false
+		}
+		if su != nil {
+			u = match(su, u)
+			if u == nil {
+				return false
+			}
+		}
+		// su == nil || match(su, u) != nil
+		su = u
+		return true
+	}) {
+		return su
+	}
+	return nil
+}
+
+// structuralString is like structuralType but also considers []byte
+// and strings as identical. In this case, if successful and we saw
+// a string, the result is of type (possibly untyped) string.
+func structuralString(t Type) Type {
+	tpar, _ := t.(*TypeParam)
+	if tpar == nil {
+		return under(t) // string or untyped string
+	}
+
+	var su Type
+	hasString := false
+	if tpar.underIs(func(u Type) bool {
+		if u == nil {
+			return false
+		}
+		if isString(u) {
+			u = NewSlice(universeByte)
+			hasString = true
+		}
+		if su != nil {
+			u = match(su, u)
+			if u == nil {
+				return false
+			}
+		}
+		// su == nil || match(su, u) != nil
+		su = u
+		return true
+	}) {
+		if hasString {
+			return Typ[String]
+		}
+		return su
+	}
+	return nil
+}
+
 // If x and y are identical, match returns x.
 // If x and y are identical channels but for their direction
 // and one of them is unrestricted, match returns the channel
@@ -53,32 +122,5 @@ func match(x, y Type) Type {
 	}
 
 	// types are different
-	return nil
-}
-
-// If typ is a type parameter, structuralType returns the single underlying
-// type of all types in the corresponding type constraint if it exists, or
-// nil otherwise. If the type set contains only unrestricted and restricted
-// channel types (with identical element types), the single underlying type
-// is the restricted channel type if the restrictions are always the same.
-// If typ is not a type parameter, structuralType returns the underlying type.
-func structuralType(typ Type) Type {
-	var su Type
-	if underIs(typ, func(u Type) bool {
-		if u == nil {
-			return false
-		}
-		if su != nil {
-			u = match(su, u)
-			if u == nil {
-				return false
-			}
-		}
-		// su == nil || match(su, u) != nil
-		su = u
-		return true
-	}) {
-		return su
-	}
 	return nil
 }

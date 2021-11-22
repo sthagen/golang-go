@@ -266,10 +266,12 @@ func computeInterfaceTypeSet(check *Checker, pos token.Pos, ityp *Interface) *_T
 		var terms termlist
 		switch u := under(typ).(type) {
 		case *Interface:
+			// For now we don't permit type parameters as constraints.
+			assert(!isTypeParam(typ))
 			tset := computeInterfaceTypeSet(check, pos, u)
 			// If typ is local, an error was already reported where typ is specified/defined.
 			if check != nil && check.isImportedConstraint(typ) && !check.allowVersion(check.pkg, 1, 18) {
-				check.errorf(atPos(pos), _Todo, "embedding constraint interface %s requires go1.18 or later", typ)
+				check.errorf(atPos(pos), _UnsupportedFeature, "embedding constraint interface %s requires go1.18 or later", typ)
 				continue
 			}
 			if tset.comparable {
@@ -281,7 +283,7 @@ func computeInterfaceTypeSet(check *Checker, pos token.Pos, ityp *Interface) *_T
 			terms = tset.terms
 		case *Union:
 			if check != nil && !check.allowVersion(check.pkg, 1, 18) {
-				check.errorf(atPos(pos), _Todo, "embedding interface element %s requires go1.18 or later", u)
+				check.errorf(atPos(pos), _InvalidIfaceEmbed, "embedding interface element %s requires go1.18 or later", u)
 				continue
 			}
 			tset := computeUnionTypeSet(check, pos, u)
@@ -289,10 +291,6 @@ func computeInterfaceTypeSet(check *Checker, pos token.Pos, ityp *Interface) *_T
 				continue // ignore invalid unions
 			}
 			terms = tset.terms
-		case *TypeParam:
-			// Embedding stand-alone type parameters is not permitted.
-			// Union parsing reports a (delayed) error, so we can ignore this entry.
-			continue
 		default:
 			if u == Typ[Invalid] {
 				continue
@@ -369,11 +367,9 @@ func computeUnionTypeSet(check *Checker, pos token.Pos, utyp *Union) *_TypeSet {
 		var terms termlist
 		switch u := under(t.typ).(type) {
 		case *Interface:
+			// For now we don't permit type parameters as constraints.
+			assert(!isTypeParam(t.typ))
 			terms = computeInterfaceTypeSet(check, pos, u).terms
-		case *TypeParam:
-			// A stand-alone type parameters is not permitted as union term.
-			// Union parsing reports a (delayed) error, so we can ignore this entry.
-			continue
 		default:
 			if t.typ == Typ[Invalid] {
 				continue
@@ -385,7 +381,7 @@ func computeUnionTypeSet(check *Checker, pos token.Pos, utyp *Union) *_TypeSet {
 		allTerms = allTerms.union(terms)
 		if len(allTerms) > maxTermCount {
 			if check != nil {
-				check.errorf(atPos(pos), _Todo, "cannot handle more than %d union terms (implementation limitation)", maxTermCount)
+				check.errorf(atPos(pos), _InvalidUnion, "cannot handle more than %d union terms (implementation limitation)", maxTermCount)
 			}
 			utyp.tset = &invalidTypeSet
 			return utyp.tset

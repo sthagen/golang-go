@@ -18,7 +18,7 @@ import (
 // The operand x must be the evaluation of inst.X and its type must be a signature.
 func (check *Checker) funcInst(x *operand, ix *typeparams.IndexExpr) {
 	if !check.allowVersion(check.pkg, 1, 18) {
-		check.softErrorf(inNode(ix.Orig, ix.Lbrack), _Todo, "function instantiation requires go1.18 or later")
+		check.softErrorf(inNode(ix.Orig, ix.Lbrack), _UnsupportedFeature, "function instantiation requires go1.18 or later")
 	}
 
 	targs := check.typeList(ix.Indices)
@@ -33,7 +33,7 @@ func (check *Checker) funcInst(x *operand, ix *typeparams.IndexExpr) {
 	sig := x.typ.(*Signature)
 	got, want := len(targs), sig.TypeParams().Len()
 	if got > want {
-		check.errorf(ix.Indices[got-1], _Todo, "got %d type arguments but want %d", got, want)
+		check.errorf(ix.Indices[got-1], _WrongTypeArgCount, "got %d type arguments but want %d", got, want)
 		x.mode = invalid
 		x.expr = ix.Orig
 		return
@@ -90,7 +90,7 @@ func (check *Checker) instantiateSignature(pos token.Pos, typ *Signature, targs 
 		if i < len(posList) {
 			pos = posList[i]
 		}
-		check.softErrorf(atPos(pos), _Todo, err.Error())
+		check.softErrorf(atPos(pos), _InvalidTypeArg, err.Error())
 	} else {
 		check.mono.recordInstance(check.pkg, pos, tparams, targs, posList)
 	}
@@ -141,9 +141,9 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 					check.errorf(call.Args[0], _BadDotDotDotSyntax, "invalid use of ... in conversion to %s", T)
 					break
 				}
-				if t, _ := under(T).(*Interface); t != nil {
+				if t, _ := under(T).(*Interface); t != nil && !isTypeParam(T) {
 					if !t.IsMethodSet() {
-						check.errorf(call, _Todo, "cannot use interface %s in conversion (contains specific type constraints or is comparable)", T)
+						check.errorf(call, _MisplacedConstraintIface, "cannot use interface %s in conversion (contains specific type constraints or is comparable)", T)
 						break
 					}
 				}
@@ -175,7 +175,7 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 	cgocall := x.mode == cgofunc
 
 	// a type parameter may be "called" if all types have the same signature
-	sig, _ := structure(x.typ).(*Signature)
+	sig, _ := structuralType(x.typ).(*Signature)
 	if sig == nil {
 		check.invalidOp(x, _InvalidCall, "cannot call non-function %s", x)
 		x.mode = invalid
@@ -198,7 +198,7 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 		// check number of type arguments (got) vs number of type parameters (want)
 		got, want := len(targs), sig.TypeParams().Len()
 		if got > want {
-			check.errorf(ix.Indices[want], _Todo, "got %d type arguments but want %d", got, want)
+			check.errorf(ix.Indices[want], _WrongTypeArgCount, "got %d type arguments but want %d", got, want)
 			check.use(call.Args...)
 			x.mode = invalid
 			x.expr = call
@@ -370,9 +370,9 @@ func (check *Checker) arguments(call *ast.CallExpr, sig *Signature, targs []Type
 			switch call.Fun.(type) {
 			case *ast.IndexExpr, *ast.IndexListExpr:
 				ix := typeparams.UnpackIndexExpr(call.Fun)
-				check.softErrorf(inNode(call.Fun, ix.Lbrack), _Todo, "function instantiation requires go1.18 or later")
+				check.softErrorf(inNode(call.Fun, ix.Lbrack), _UnsupportedFeature, "function instantiation requires go1.18 or later")
 			default:
-				check.softErrorf(inNode(call, call.Lparen), _Todo, "implicit function instantiation requires go1.18 or later")
+				check.softErrorf(inNode(call, call.Lparen), _UnsupportedFeature, "implicit function instantiation requires go1.18 or later")
 			}
 		}
 		// TODO(gri) provide position information for targs so we can feed
@@ -531,7 +531,7 @@ func (check *Checker) selector(x *operand, e *ast.SelectorExpr) {
 			check.errorf(e.Sel, _InvalidMethodExpr, "cannot call pointer method %s on %s", sel, x.typ)
 		default:
 			var why string
-			if tpar := asTypeParam(x.typ); tpar != nil {
+			if tpar, _ := x.typ.(*TypeParam); tpar != nil {
 				// Type parameter bounds don't specify fields, so don't mention "field".
 				if tname := tpar.iface().obj; tname != nil {
 					why = check.sprintf("interface %s has no method %s", tname.name, sel)

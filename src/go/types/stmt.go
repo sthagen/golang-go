@@ -417,27 +417,21 @@ func (check *Checker) stmt(ctxt stmtContext, s ast.Stmt) {
 		if ch.mode == invalid || val.mode == invalid {
 			return
 		}
-		var elem Type
-		if !underIs(ch.typ, func(u Type) bool {
-			uch, _ := u.(*Chan)
-			if uch == nil {
-				check.invalidOp(inNode(s, s.Arrow), _InvalidSend, "cannot send to non-channel %s", &ch)
-				return false
-			}
-			if uch.dir == RecvOnly {
-				check.invalidOp(inNode(s, s.Arrow), _InvalidSend, "cannot send to receive-only channel %s", &ch)
-				return false
-			}
-			if elem != nil && !Identical(uch.elem, elem) {
-				check.invalidOp(inNode(s, s.Arrow), _Todo, "channels of %s must have the same element type", &ch)
-				return false
-			}
-			elem = uch.elem
-			return true
-		}) {
+		u := structuralType(ch.typ)
+		if u == nil {
+			check.invalidOp(inNode(s, s.Arrow), _InvalidSend, "cannot send to %s: no structural type", &ch)
 			return
 		}
-		check.assignment(&val, elem, "send")
+		uch, _ := u.(*Chan)
+		if uch == nil {
+			check.invalidOp(inNode(s, s.Arrow), _InvalidSend, "cannot send to non-channel %s", &ch)
+			return
+		}
+		if uch.dir == RecvOnly {
+			check.invalidOp(inNode(s, s.Arrow), _InvalidSend, "cannot send to receive-only channel %s", &ch)
+			return
+		}
+		check.assignment(&val, uch.elem, "send")
 
 	case *ast.IncDecStmt:
 		var op token.Token
@@ -691,6 +685,11 @@ func (check *Checker) stmt(ctxt stmtContext, s ast.Stmt) {
 		if x.mode == invalid {
 			return
 		}
+		// TODO(gri) we may want to permit type switches on type parameter values at some point
+		if isTypeParam(x.typ) {
+			check.errorf(&x, _InvalidTypeSwitch, "cannot use type switch on type parameter value %s", &x)
+			return
+		}
 		xtyp, _ := under(x.typ).(*Interface)
 		if xtyp == nil {
 			check.errorf(&x, _InvalidTypeSwitch, "%s is not an interface", &x)
@@ -832,12 +831,12 @@ func (check *Checker) stmt(ctxt stmtContext, s ast.Stmt) {
 		// determine key/value types
 		var key, val Type
 		if x.mode != invalid {
-			// Ranging over a type parameter is permitted if it has a single underlying type.
+			// Ranging over a type parameter is permitted if it has a structural type.
 			var cause string
-			u := structure(x.typ)
+			u := structuralType(x.typ)
 			switch t := u.(type) {
 			case nil:
-				cause = "type set has no single underlying type"
+				cause = check.sprintf("%s has no structural type", x.typ)
 			case *Chan:
 				if s.Value != nil {
 					check.softErrorf(s.Value, _InvalidIterVar, "range over %s permits only one iteration variable", &x)

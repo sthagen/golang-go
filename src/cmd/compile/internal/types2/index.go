@@ -213,7 +213,7 @@ func (check *Checker) sliceExpr(x *operand, e *syntax.SliceExpr) {
 
 	valid := false
 	length := int64(-1) // valid if >= 0
-	switch u := structuralType(x.typ).(type) {
+	switch u := structuralString(x.typ).(type) {
 	case nil:
 		check.errorf(x, invalidOp+"cannot slice %s: %s has no structural type", x, x.typ)
 		x.mode = invalid
@@ -222,7 +222,11 @@ func (check *Checker) sliceExpr(x *operand, e *syntax.SliceExpr) {
 	case *Basic:
 		if isString(u) {
 			if e.Full {
-				check.error(x, invalidOp+"3-index slice of string")
+				at := e.Index[2]
+				if at == nil {
+					at = e // e.Index[2] should be present but be careful
+				}
+				check.error(at, invalidOp+"3-index slice of string")
 				x.mode = invalid
 				return
 			}
@@ -232,7 +236,7 @@ func (check *Checker) sliceExpr(x *operand, e *syntax.SliceExpr) {
 			}
 			// spec: "For untyped string operands the result
 			// is a non-constant value of type string."
-			if u.kind == UntypedString {
+			if isUntyped(x.typ) {
 				x.typ = Typ[String]
 			}
 		}
@@ -305,9 +309,12 @@ func (check *Checker) sliceExpr(x *operand, e *syntax.SliceExpr) {
 L:
 	for i, x := range ind[:len(ind)-1] {
 		if x > 0 {
-			for _, y := range ind[i+1:] {
-				if y >= 0 && x > y {
-					check.errorf(e, "invalid slice indices: %d > %d", x, y)
+			for j, y := range ind[i+1:] {
+				if y >= 0 && y < x {
+					// The value y corresponds to the expression e.Index[i+1+j].
+					// Because y >= 0, it must have been set from the expression
+					// when checking indices and thus e.Index[i+1+j] is not nil.
+					check.errorf(e.Index[i+1+j], "invalid slice indices: %d < %d", y, x)
 					break L // only report one error, ok to continue
 				}
 			}

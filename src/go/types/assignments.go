@@ -37,7 +37,7 @@ func (check *Checker) assignment(x *operand, T Type, context string) {
 		// bool, rune, int, float64, complex128 or string respectively, depending
 		// on whether the value is a boolean, rune, integer, floating-point,
 		// complex, or string constant."
-		if T == nil || IsInterface(T) {
+		if T == nil || IsInterface(T) && !isTypeParam(T) {
 			if T == nil && x.typ == Typ[UntypedNil] {
 				check.errorf(x, _UntypedNil, "use of untyped nil in %s", context)
 				x.mode = invalid
@@ -72,7 +72,7 @@ func (check *Checker) assignment(x *operand, T Type, context string) {
 
 	// A generic (non-instantiated) function value cannot be assigned to a variable.
 	if sig, _ := under(x.typ).(*Signature); sig != nil && sig.TypeParams().Len() > 0 {
-		check.errorf(x, _Todo, "cannot use generic function %s without instantiation in %s", x, context)
+		check.errorf(x, _WrongTypeArgCount, "cannot use generic function %s without instantiation in %s", x, context)
 	}
 
 	// spec: "If a left-hand side is the blank identifier, any typed or
@@ -84,10 +84,18 @@ func (check *Checker) assignment(x *operand, T Type, context string) {
 
 	reason := ""
 	if ok, code := x.assignableTo(check, T, &reason); !ok {
-		if reason != "" {
-			check.errorf(x, code, "cannot use %s as %s value in %s: %s", x, T, context, reason)
+		if compilerErrorMessages {
+			if reason != "" {
+				check.errorf(x, code, "cannot use %s as type %s in %s:\n\t%s", x, T, context, reason)
+			} else {
+				check.errorf(x, code, "cannot use %s as type %s in %s", x, T, context)
+			}
 		} else {
-			check.errorf(x, code, "cannot use %s as %s value in %s", x, T, context)
+			if reason != "" {
+				check.errorf(x, code, "cannot use %s as %s value in %s: %s", x, T, context, reason)
+			} else {
+				check.errorf(x, code, "cannot use %s as %s value in %s", x, T, context)
+			}
 		}
 		x.mode = invalid
 	}

@@ -147,11 +147,10 @@ var op2str2 = [...]string{
 // If typ is a type parameter, underIs returns the result of typ.underIs(f).
 // Otherwise, underIs returns the result of f(under(typ)).
 func underIs(typ Type, f func(Type) bool) bool {
-	u := under(typ)
-	if tpar, _ := u.(*TypeParam); tpar != nil {
+	if tpar, _ := typ.(*TypeParam); tpar != nil {
 		return tpar.underIs(f)
 	}
-	return f(u)
+	return f(under(typ))
 }
 
 // The unary expression e may be nil. It's passed in for better error messages only.
@@ -174,29 +173,26 @@ func (check *Checker) unary(x *operand, e *ast.UnaryExpr) {
 		return
 
 	case token.ARROW:
-		var elem Type
-		if !underIs(x.typ, func(u Type) bool {
-			ch, _ := u.(*Chan)
-			if ch == nil {
-				check.invalidOp(x, _InvalidReceive, "cannot receive from non-channel %s", x)
-				return false
-			}
-			if ch.dir == SendOnly {
-				check.invalidOp(x, _InvalidReceive, "cannot receive from send-only channel %s", x)
-				return false
-			}
-			if elem != nil && !Identical(ch.elem, elem) {
-				check.invalidOp(x, _Todo, "channels of %s must have the same element type", x)
-				return false
-			}
-			elem = ch.elem
-			return true
-		}) {
+		u := structuralType(x.typ)
+		if u == nil {
+			check.invalidOp(x, _InvalidReceive, "cannot receive from %s: no structural type", x)
 			x.mode = invalid
 			return
 		}
+		ch, _ := u.(*Chan)
+		if ch == nil {
+			check.invalidOp(x, _InvalidReceive, "cannot receive from non-channel %s", x)
+			x.mode = invalid
+			return
+		}
+		if ch.dir == SendOnly {
+			check.invalidOp(x, _InvalidReceive, "cannot receive from send-only channel %s", x)
+			x.mode = invalid
+			return
+		}
+
 		x.mode = commaok
-		x.typ = elem
+		x.typ = ch.elem
 		check.hasCallOrRecv = true
 		return
 	}
@@ -602,7 +598,11 @@ func (check *Checker) updateExprVal(x ast.Expr, val constant.Value) {
 func (check *Checker) convertUntyped(x *operand, target Type) {
 	newType, val, code := check.implicitTypeAndValue(x, target)
 	if code != 0 {
-		check.invalidConversion(code, x, safeUnderlying(target))
+		t := target
+		if !isTypeParam(target) {
+			t = safeUnderlying(target)
+		}
+		check.invalidConversion(code, x, t)
 		x.mode = invalid
 		return
 	}
@@ -680,20 +680,23 @@ func (check *Checker) implicitTypeAndValue(x *operand, target Type) (Type, const
 		default:
 			return nil, nil, _InvalidUntypedConversion
 		}
-	case *TypeParam:
-		// TODO(gri) review this code - doesn't look quite right
-		ok := u.underIs(func(t Type) bool {
-			target, _, _ := check.implicitTypeAndValue(x, t)
-			return target != nil
-		})
-		if !ok {
-			return nil, nil, _InvalidUntypedConversion
-		}
-		// keep nil untyped (was bug #39755)
-		if x.isNil() {
-			return Typ[UntypedNil], nil, 0
-		}
 	case *Interface:
+		if isTypeParam(target) {
+			if !u.typeSet().underIs(func(u Type) bool {
+				if u == nil {
+					return false
+				}
+				t, _, _ := check.implicitTypeAndValue(x, u)
+				return t != nil
+			}) {
+				return nil, nil, _InvalidUntypedConversion
+			}
+			// keep nil untyped (was bug #39755)
+			if x.isNil() {
+				return Typ[UntypedNil], nil, 0
+			}
+			break
+		}
 		// Values must have concrete dynamic types. If the value is nil,
 		// keep it untyped (this is important for tools such as go vet which
 		// need the dynamic type for argument checking of say, print
@@ -962,8 +965,9 @@ func (check *Checker) binary(x *operand, e ast.Expr, lhs, rhs ast.Expr, op token
 		return
 	}
 
+	// TODO(gri) make canMix more efficient - called for each binary operation
 	canMix := func(x, y *operand) bool {
-		if IsInterface(x.typ) || IsInterface(y.typ) {
+		if IsInterface(x.typ) && !isTypeParam(x.typ) || IsInterface(y.typ) && !isTypeParam(y.typ) {
 			return true
 		}
 		if allBoolean(x.typ) != allBoolean(y.typ) {
@@ -1116,7 +1120,7 @@ func (check *Checker) nonGeneric(x *operand) {
 		}
 	}
 	if what != "" {
-		check.errorf(x.expr, _Todo, "cannot use generic %s %s without instantiation", what, x.expr)
+		check.errorf(x.expr, _WrongTypeArgCount, "cannot use generic %s %s without instantiation", what, x.expr)
 		x.mode = invalid
 		x.typ = Typ[Invalid]
 	}
@@ -1220,7 +1224,11 @@ func (check *Checker) exprInternal(x *operand, e ast.Expr, hint Type) exprKind {
 		case hint != nil:
 			// no composite literal type present - use hint (element type of enclosing type)
 			typ = hint
-			base, _ = deref(under(typ)) // *T implies &T{}
+			base = typ
+			if !isTypeParam(typ) {
+				base = under(typ)
+			}
+			base, _ = deref(base) // *T implies &T{}
 
 		default:
 			// TODO(gri) provide better error messages depending on context
@@ -1228,12 +1236,12 @@ func (check *Checker) exprInternal(x *operand, e ast.Expr, hint Type) exprKind {
 			goto Error
 		}
 
-		switch utyp := structure(base).(type) {
+		switch utyp := structuralType(base).(type) {
 		case *Struct:
 			// Prevent crash if the struct referred to is not yet set up.
 			// See analogous comment for *Array.
 			if utyp.fields == nil {
-				check.error(e, _Todo, "illegal cycle in type declaration")
+				check.error(e, _InvalidDeclCycle, "illegal cycle in type declaration")
 				goto Error
 			}
 			if len(e.Elts) == 0 {
@@ -1433,6 +1441,11 @@ func (check *Checker) exprInternal(x *operand, e ast.Expr, hint Type) exprKind {
 		if x.mode == invalid {
 			goto Error
 		}
+		// TODO(gri) we may want to permit type assertions on type parameter values at some point
+		if isTypeParam(x.typ) {
+			check.invalidOp(x, _InvalidAssert, "cannot use type assertion on type parameter value %s", x)
+			goto Error
+		}
 		xtyp, _ := under(x.typ).(*Interface)
 		if xtyp == nil {
 			check.invalidOp(x, _InvalidAssert, "%s is not an interface", x)
@@ -1472,7 +1485,7 @@ func (check *Checker) exprInternal(x *operand, e ast.Expr, hint Type) exprKind {
 					return false
 				}
 				if base != nil && !Identical(p.base, base) {
-					check.invalidOp(x, _Todo, "pointers of %s must have identical base types", x)
+					check.invalidOp(x, _InvalidIndirection, "pointers of %s must have identical base types", x)
 					return false
 				}
 				base = p.base
