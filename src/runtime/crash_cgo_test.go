@@ -64,6 +64,10 @@ func TestCgoCallbackGC(t *testing.T) {
 			t.Skip("too slow for mips64x builders")
 		}
 	}
+	if testenv.Builder() == "darwin-amd64-10_14" {
+		// TODO(#23011): When the 10.14 builders are gone, remove this skip.
+		t.Skip("skipping due to platform bug on macOS 10.14; see https://golang.org/issue/43926")
+	}
 	got := runTestProg(t, "testprogcgo", "CgoCallbackGC")
 	want := "OK\n"
 	if got != want {
@@ -89,11 +93,6 @@ func TestCgoExternalThreadSIGPROF(t *testing.T) {
 	switch runtime.GOOS {
 	case "plan9", "windows":
 		t.Skipf("no pthreads on %s", runtime.GOOS)
-	}
-	if runtime.GOARCH == "ppc64" && runtime.GOOS == "linux" {
-		// TODO(austin) External linking not implemented on
-		// linux/ppc64 (issue #8912)
-		t.Skipf("no external linking on ppc64")
 	}
 
 	exe, err := buildTestProg(t, "testprogcgo", "-tags=threadprof")
@@ -124,7 +123,7 @@ func TestCgoExternalThreadSignal(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := testenv.CleanCmdEnv(exec.Command(exe, "CgoExternalThreadSIGPROF")).CombinedOutput()
+	got, err := testenv.CleanCmdEnv(exec.Command(exe, "CgoExternalThreadSignal")).CombinedOutput()
 	if err != nil {
 		t.Fatalf("exit status: %v\n%s", err, got)
 	}
