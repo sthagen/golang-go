@@ -105,6 +105,14 @@ proposal</a>.
   now supports the <code>c-archive</code> and <code>c-shared</code> build modes.
 </p>
 
+<h3 id="ios">iOS</h3>
+
+<p><!-- golang.org/issue/48076, golang.org/issue/49616 -->
+  On iOS (the <code>ios/arm64</code> port)
+  and iOS simulator running on AMD64-based macOS (the <code>ios/amd64</code> port),
+  Go 1.18 now requires iOS 12 or later; support for previous versions has been discontinued.
+</p>
+
 <h2 id="tools">Tools</h2>
 
 <h3 id="go-command">Go command</h3>
@@ -431,7 +439,9 @@ proposal</a>.
 <dl id="strings"><dt><a href="/pkg/strings/">strings</a></dt>
   <dd>
     <p><!-- CL 345849 -->
-      TODO: <a href="https://golang.org/cl/345849">https://golang.org/cl/345849</a>: add Clone function
+      The new <a href="/pkg/strings/#Clone"><code>Clone</code></a> function copies the input
+      <code>string</code> without the returned cloned <code>string</code> referencing
+      the input string's memory.
     </p>
 
     <p><!-- CL 332771 -->
