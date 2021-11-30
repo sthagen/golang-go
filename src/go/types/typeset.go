@@ -106,6 +106,8 @@ func (s *_TypeSet) hasTerms() bool { return !s.terms.isEmpty() && !s.terms.isAll
 func (s *_TypeSet) singleType() Type { return s.terms.singleType() }
 
 // includes reports whether t ∈ s.
+// TODO(gri) This function is not used anywhere anymore. Remove once we
+//           are clear that we don't need it elsewhere in the future.
 func (s *_TypeSet) includes(t Type) bool { return s.terms.includes(t) }
 
 // subsetOf reports whether s1 ⊆ s2.
@@ -365,14 +367,18 @@ func computeUnionTypeSet(check *Checker, pos token.Pos, utyp *Union) *_TypeSet {
 	var allTerms termlist
 	for _, t := range utyp.terms {
 		var terms termlist
-		switch u := under(t.typ).(type) {
-		case *Interface:
+		u := under(t.typ)
+		if ui, _ := u.(*Interface); ui != nil {
 			// For now we don't permit type parameters as constraints.
 			assert(!isTypeParam(t.typ))
-			terms = computeInterfaceTypeSet(check, pos, u).terms
-		default:
-			if t.typ == Typ[Invalid] {
-				continue
+			terms = computeInterfaceTypeSet(check, pos, ui).terms
+		} else if t.typ == Typ[Invalid] {
+			continue
+		} else {
+			if t.tilde && !Identical(t.typ, u) {
+				// There is no underlying type which is t.typ.
+				// The corresponding type set is empty.
+				t = nil // ∅ term
 			}
 			terms = termlist{(*term)(t)}
 		}

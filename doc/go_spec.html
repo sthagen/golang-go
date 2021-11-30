@@ -1,6 +1,6 @@
 <!--{
 	"Title": "The Go Programming Language Specification - Go 1.18 Draft (incomplete)",
-	"Subtitle": "Version of Nov 24, 2021",
+	"Subtitle": "Version of Nov 29, 2021",
 	"Path": "/ref/spec"
 }-->
 
@@ -642,7 +642,7 @@ an identifier denoting a constant,
 a <a href="#Constant_expressions">constant expression</a>,
 a <a href="#Conversions">conversion</a> with a result that is a constant, or
 the result value of some built-in functions such as
-<code>unsafe.Sizeof</code> applied to any value,
+<code>unsafe.Sizeof</code> applied to <a href="#Package_unsafe">certain values</a>,
 <code>cap</code> or <code>len</code> applied to
 <a href="#Length_and_capacity">some expressions</a>,
 <code>real</code> and <code>imag</code> applied to a complex constant
@@ -1971,39 +1971,38 @@ x                   T           x is not representable by a value of T because
 
 <p>
 An interface specification which contains <a href="#Interface_types">type elements</a>
-that are not interface types defines a (possibly empty) set of <i>specific types</i>.
+defines a (possibly empty) set of <i>specific types</i>.
 Loosely speaking, these are the types <code>T</code> that appear in the
 interface definition in terms of the form <code>T</code>, <code>~T</code>,
 or in unions of such terms.
 </p>
 
 <p>
-More precisely, for a given interface, the set of specific types is defined as follows:
+More precisely, for a given interface, the set 𝑆 of specific types is defined as follows:
 </p>
 
 <ul>
-	<li>The set of specific types of the empty interface is the empty set.
+	<li>For an interface with no type elements, 𝑆 is the empty set.
 	</li>
 
-	<li>The set of specific types of a non-empty interface is the intersection
-		of the specific types of its interface elements.
+	<li>For an interface with type elements, 𝑆 is the intersection
+		of the specific types of its type elements.
 	</li>
 
-	<li>The set of specific types of a method specification is the empty set.
+	<li>For a non-interface type term <code>T</code>
+		or <code>~T</code>, 𝑆 is the set consisting of the type <code>T</code>.
 	</li>
 
-	<li>The set of specific types of a non-interface type term <code>T</code>
-		or <code>~T</code> is the set consisting of the type <code>T</code>.
-	</li>
-
-	<li>The set of specific types of a <i>union</i> of terms
-		<code>t<sub>1</sub>|t<sub>2</sub>|…|t<sub>n</sub></code>
-		is the union of the specific types of the terms.
+	<li>For a <i>union</i> of terms
+		<code>t<sub>1</sub>|t<sub>2</sub>|…|t<sub>n</sub></code>,
+		𝑆 is the union of the specific types of the terms.
 	</li>
 </ul>
 
 <p>
-If the set of specific types is empty, the interface has <i>no specific types</i>.
+If 𝑆 is empty, the interface has <i>no specific types</i>.
+An interface may have specific types even if its <a href="#Interface_types">type set</a>
+is empty.
 </p>
 
 <p>
@@ -2019,6 +2018,8 @@ interface{ int }               // int
 interface{ ~string }           // string
 interface{ int|~string }       // int, string
 interface{ Celsius|Kelvin }    // Celsius, Kelvin
+interface{ int; m() }          // int (but type set is empty because int has no method m)
+interface{ int; any }          // no specific types (intersection is empty)
 interface{ int; string }       // no specific types (intersection is empty)
 </pre>
 
@@ -2267,7 +2268,6 @@ An identifier is exported if both:
 <p>
 All other identifiers are not exported.
 </p>
-
 
 <h3 id="Uniqueness_of_identifiers">Uniqueness of identifiers</h3>
 
@@ -3715,6 +3715,26 @@ For <code>a</code> of <a href="#Map_types">map type</a> <code>M</code>:
 </ul>
 
 <p>
+For <code>a</code> of <a href="#Type_parameters">type parameter type</a> <code>P</code>:
+</p>
+<ul>
+	<li><code>P</code> must have <a href="#Structure_of_interfaces">specific types</a>.</li>
+	<li>The index expression <code>a[x]</code> must be valid for values
+	    of all specific types of <code>P</code>.</li>
+	<li>The element types of all specific types of <code>P</code> must be identical.
+	    In this context, the element type of a string type is <code>byte</code>.</li>
+	<li>If there is a map type among the specific types of <code>P</code>,
+	    all specific types must be map types, and the respective key types
+	    must be all identical.</li>
+	<li><code>a[x]</code> is the array, slice, or string element at index <code>x</code>,
+	    or the map element with key <code>x</code> of the type argument
+	    that <code>P</code> is instantiated with, and the type of <code>a[x]</code> is
+	    the type of the (identical) element types.</li>
+	<li><code>a[x]</code> may not be assigned to if the specific types of <code>P</code>
+	    include string types.
+</ul>
+
+<p>
 Otherwise <code>a[x]</code> is illegal.
 </p>
 
@@ -3980,7 +4000,8 @@ pt.Scale(3.5)     // method call with receiver pt
 
 <p>
 If <code>f</code> denotes a parameterized function, it must be
-<a href="#Instantiations">instantiated</a> before it can be called.
+<a href="#Instantiations">instantiated</a> before it can be called
+or used as a function value.
 </p>
 
 <p>
@@ -4807,7 +4828,7 @@ Only <code>V</code> is a type parameter and a value of each
 specific type of <code>V</code> can be converted to <code>T</code>.
 </li>
 <li>
-Only <code>T</code> is a type parameter and <code>x</code> can can be converted to each
+Only <code>T</code> is a type parameter and <code>x</code> can be converted to each
 specific type of <code>T</code>.
 </li>
 </ul>
@@ -6466,11 +6487,23 @@ len(s)    string type      string length in bytes
           []T              slice length
           map[K]T          map length (number of defined keys)
           chan T           number of elements queued in channel buffer
+	  type parameter   see below
 
 cap(s)    [n]T, *[n]T      array length (== n)
           []T              slice capacity
           chan T           channel buffer capacity
+	  type parameter   see below
 </pre>
+
+<p>
+If the argument type is a <a href="#Type_parameters">type parameter</a> <code>P</code>,
+<code>P</code> must have <a href="#Structure of interfaces">specific types</a>, and
+the call <code>len(e)</code> (or <code>cap(e)</code> respectively) must be valid for
+each specific type of <code>P</code>.
+The result is the length (or capacity, respectively) of the argument whose type
+corresponds to the type argument with which <code>P</code> was
+<a href="#Instantiations">instantiated</a>.
+</p>
 
 <p>
 The capacity of a slice is the number of elements for which there is
@@ -7413,8 +7446,14 @@ uintptr(unsafe.Pointer(&amp;x)) % unsafe.Alignof(x) == 0
 </pre>
 
 <p>
-Calls to <code>Alignof</code>, <code>Offsetof</code>, and
-<code>Sizeof</code> are compile-time constant expressions of type <code>uintptr</code>.
+A (variable of) type <code>T</code> has <i>variable size</i> if <code>T</code>
+is a type parameter, or if it is an array or struct type containing elements
+or fields of variable size. Otherwise the size is <i>constant</i>.
+Calls to <code>Alignof</code>, <code>Offsetof</code>, and <code>Sizeof</code>
+are compile-time <a href="#Constant_expressions">constant expressions</a> of
+type <code>uintptr</code> if their arguments (or the struct <code>s</code> in
+the selector expression <code>s.f</code> for <code>Offsetof</code>) are types
+of constant size.
 </p>
 
 <p>
