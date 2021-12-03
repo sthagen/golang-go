@@ -183,6 +183,13 @@ proposal</a>.
   third-party tools that need to collect package source code.)
 </p>
 
+<p><!-- CL 298612 -->
+  The <code>go</code> <code>build</code> command and related commands
+  now support an <code>-asan</code> flag that enables interoperation
+  with C (or C++) code compiled with the address sanitizer (C compiler
+  option <code>-fsanitize=address</code>).
+</p>
+
 <h3 id="gofmt"><code>gofmt</code></h3>
 
 <p><!-- https://golang.org/issue/43566 -->
@@ -198,6 +205,21 @@ proposal</a>.
   non-cooperative preemption, bringing that capability to all four Windows
   ports, which should hopefully address subtle bugs encountered when calling
   into Win32 functions that block for extended periods of time.
+</p>
+
+<p><!-- https://github.com/golang/go/issues/44167-->
+  The garbage collector now includes non-heap sources of garbage collector work
+  (e.g., stack scanning) when determining how frequently to run. As a result,
+  garbage collector overhead is more predictable when these sources are
+  significant. For most applications these changes will be negligible; however,
+  some Go applications may now use less memory and spend more time on garbage
+  collection, or vice versa, than before. The intended workaround is to tweak
+  <code>GOGC</code> where necessary.
+</p>
+
+<p>
+  The runtime now returns memory to the operating system more efficiently and has
+  been tuned to work more aggressively as a result.
 </p>
 
 <h2 id="compiler">Compiler</h2>
@@ -221,18 +243,23 @@ proposal</a>.
   <a href=go1.17#compiler>Go 1.17 release notes</a> for more details.
 </p>
 
-<p><!-- CL 298611 -->
-  TODO: <a href="https://golang.org/cl/298611">https://golang.org/cl/298611</a>: cmd/compile: add -asan option
+<p><!-- CL 352057, https://golang.org/issue/45728 -->
+  Go 1.17 generally improved the formatting of arguments in stack traces,
+  but could print inaccurate values for arguments passed in registers.
+  This is improved in Go 1.18 by printing a question mark (<code>?</code>)
+  after each value that may be inaccurate.
 </p>
 
-<p><!-- CL 352057 -->
-  TODO: <a href="https://golang.org/cl/352057">https://golang.org/cl/352057</a>: cmd/compile, runtime: track argument stack slot liveness
+<p><!-- CL 298611 -->
+  The new compiler <code>-asan</code> option supports the
+  new <code>go</code> command <code>-asan</code> option.
 </p>
 
 <h2 id="linker">Linker</h2>
 
 <p><!-- CL 298610 -->
-  TODO: <a href="https://golang.org/cl/298610">https://golang.org/cl/298610</a>: cmd/link: add -asan option
+  The new linker <code>-asan</code> option supports the
+  new <code>go</code> command <code>-asan</code> option.
 </p>
 
 <h2 id="library">Core library</h2>
@@ -240,7 +267,9 @@ proposal</a>.
 <h3 id="constraints">New <code>constraints</code> package</h3>
 
 <p><!-- CL 349709 -->
-  TODO: <a href="https://golang.org/cl/349709">https://golang.org/cl/349709</a>: constraints: new package
+  The new <a href="/pkg/constraints/"><code>constraints</code></a> package
+  defines a set of useful constraints that can be used with type parameters of
+  generic functions.
 </p>
 
 <h3 id="netip">New <code>net/netip</code> package</h3>
@@ -287,7 +316,7 @@ proposal</a>.
 <dl id="bufio"><dt><a href="/pkg/bufio/">bufio</a></dt>
   <dd>
     <p><!-- CL 345569 -->
-      The new <a href="/pkg/bufio#AvailableBuffer"><code>Writer.AvailableBuffer</code></a>
+      The new <a href="/pkg/bufio#Writer.AvailableBuffer"><code>Writer.AvailableBuffer</code></a>
       method returns an empty buffer with a possibly non-empty capacity for use
       with append-like APIs. After appending, the buffer can be provided to a
 			succeeding <code>Write</code> call and possibly avoid any copying.
@@ -321,7 +350,9 @@ proposal</a>.
 <dl id="crypto/tls"><dt><a href="/pkg/crypto/tls/">crypto/tls</a></dt>
   <dd>
     <p><!-- CL 325250 -->
-      TODO: <a href="https://golang.org/cl/325250">https://golang.org/cl/325250</a>: add Conn.NetConn method
+      The new <a href="/pkg/crypto/tls/#Conn.NetConn"><code>Conn.NetConn</code></a>
+      method allows access to the underlying
+      <a href="/pkg/net#Conn"><code>net.Conn</code></a>.
     </p>
   </dd>
 </dl><!-- crypto/tls -->
@@ -355,7 +386,7 @@ proposal</a>.
 <dl id="net"><dt><a href="/pkg/net/">net</a></dt>
   <dd>
     <p><!-- CL 340261 -->
-      TODO: <a href="https://golang.org/cl/340261">https://golang.org/cl/340261</a>: deprecate (net.Error).Temporary
+      <a href="/pkg/net#Error"><code>net.Error.Temporary</code></a> has been deprecated.
     </p>
   </dd>
 </dl><!-- net -->
@@ -368,8 +399,11 @@ proposal</a>.
       <a href="/pkg/net/http/#Transport"><code>Transport</code></a>
       will now be correctly used, if specified, for making HTTP requests.
     </p>
+
     <p><!-- CL 338590 -->
-      TODO: <a href="https://golang.org/cl/338590">https://golang.org/cl/338590</a>: add Cookie.Valid method
+      The new
+      <a href="/pkg/net/http#Cookie.Valid"><code>Cookie.Valid</code></a>
+      method reports whether the cookie is valid.
     </p>
   </dd>
 </dl><!-- net/http -->
@@ -377,7 +411,8 @@ proposal</a>.
 <dl id="os/user"><dt><a href="/pkg/os/user/">os/user</a></dt>
   <dd>
     <p><!-- CL 330753 -->
-      TODO: <a href="https://golang.org/cl/330753">https://golang.org/cl/330753</a>: implement go native GroupIds
+      <a href="/pkg/os/user#User.GroupIds"><code>User.GroupIds</code></a>.
+      now uses a Go native implementation when cgo is not available.
     </p>
   </dd>
 </dl><!-- os/user -->
@@ -402,24 +437,33 @@ proposal</a>.
       to eliminate the need to perform uintptr to unsafe.Pointer conversions at the callsite (as unsafe.Pointer rules require).
     </p>
 
-    <p><!-- CL 321889 -->
-      TODO: <a href="https://golang.org/cl/321889">https://golang.org/cl/321889</a>: allocate hiter as part of MapIter
-    </p>
-
     <p><!-- CL 321891 -->
-      TODO: <a href="https://golang.org/cl/321891">https://golang.org/cl/321891</a>: add MapIter.Reset
-    </p>
-
-    <p><!-- CL 345486 -->
-      TODO: <a href="https://golang.org/cl/345486">https://golang.org/cl/345486</a>: optimize for maps with string keys
+      The new
+      <a href="/pkg/reflect/#MapIter.Reset"><code>MapIter.Reset</code></a>
+      method changes its receiver to iterate over a
+      different map. The use of
+      <a href="/pkg/reflect/#MapIter.Reset"><code>MapIter.Reset</code></a>
+      allows allocation-free iteration
+      over many maps.
     </p>
 
     <p><!-- CL 352131 -->
-      TODO: <a href="https://golang.org/cl/352131">https://golang.org/cl/352131</a>: add Value.{CanInt, CanUint, CanFloat, CanComplex}
+      A number of methods (
+      <a href="/pkg/reflect#Value.CanInt"><code>Value.CanInt</code></a>,
+      <a href="/pkg/reflect#Value.CanUint"><code>Value.CanUint</code></a>,
+      <a href="/pkg/reflect#Value.CanFloat"><code>Value.CanFloat</code></a>,
+      <a href="/pkg/reflect#Value.CanComplex"><code>Value.CanComplex</code></a>
+      )
+      have been added to
+      <a href="/pkg/reflect#Value"><code>Value</code></a>
+      to test if a conversion is safe.
     </p>
 
     <p><!-- CL 357962 -->
-      TODO: <a href="https://golang.org/cl/357962">https://golang.org/cl/357962</a>: add FieldByIndexErr
+      <a href="/pkg/reflect#Value.FieldByIndexErr"><code>Value.FieldByIndexErr</code></a>
+      has been added to avoid the panic that occurs in
+      <a href="/pkg/reflect#Value.FieldByIndex"><code>Value.FieldByIndex</code></a>
+      when stepping through a nil pointer to an embedded struct.
     </p>
   </dd>
 </dl><!-- reflect -->
@@ -514,7 +558,11 @@ proposal</a>.
 <dl id="text/template"><dt><a href="/pkg/text/template/">text/template</a></dt>
   <dd>
     <p><!-- CL 321490 -->
-      TODO: <a href="https://golang.org/cl/321490">https://golang.org/cl/321490</a>: implement short-circuit and, or
+      The <code>and</code> function no longer always evaluates all arguments; it
+      stops evaluating arguments after the first argument that evaluates to
+      false.  Similarly, the <code>or</code> function now stops evaluating
+      arguments after the first argument that evaluates to true. This makes a
+      difference if any of the arguments is a function call.
     </p>
   </dd>
 </dl><!-- text/template -->
