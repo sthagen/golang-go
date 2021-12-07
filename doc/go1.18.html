@@ -42,15 +42,19 @@ Do not send CLs removing the interior tags from such phrases.
 </p>
 <ul>
   <li>
-    The new token <code>~</code> is added to the set of
-    <a href="https://golang.org/ref/spec#Operators_and_punctuation">operators and punctuation</a>.
-  </li>
-  <li>
     The syntax for
     <a href="https://golang.org/ref/spec#Function_declarations">Function</a> and
     <a href="https://golang.org/ref/spec#Type_declarations">type declarations</a>
     now accepts
     <a href="https://golang.org/ref/spec#Type_parameters">type parameters</a>.
+  </li>
+  <li>
+    Parameterized functions and types can be instantiated by following them with a list of
+    type arguments in square brackets.
+  </li>
+  <li>
+    The new token <code>~</code> has been added to the set of
+    <a href="https://golang.org/ref/spec#Operators_and_punctuation">operators and punctuation</a>.
   </li>
   <li>
     The syntax for
@@ -59,10 +63,6 @@ Do not send CLs removing the interior tags from such phrases.
     as well as union and <code>~T</code> type elements. Such interfaces may only be used
     as type constraints.
     An interface now defines a set of types as well as a set of methods.
-  </li>
-  <li>
-    Parameterized functions and types can be instantiated by following them with a list of
-    type arguments in square brackets.
   </li>
   <li>
     The new
@@ -282,7 +282,7 @@ Do not send CLs removing the interior tags from such phrases.
   <code>GOGC</code> where necessary.
 </p>
 
-<p>
+<p><!-- CL 358675, CL 353975, CL 353974 -->
   The runtime now returns memory to the operating system more efficiently and has
   been tuned to work more aggressively as a result.
 </p>
@@ -516,9 +516,7 @@ Do not send CLs removing the interior tags from such phrases.
       </li>
       <li>
         The new type
-        <a href="/pkg/go/types/#TypeList"><code>TypeList</code></a> and factory function
-        <a href="/pkg/go/types/#NewTypeList"><code>NewTypeList</code></a> facilitate storing
-        a list of types.
+        <a href="/pkg/go/types/#TypeList"><code>TypeList</code></a> holds a list of types.
       </li>
       <li>
         The new factory function
@@ -698,7 +696,8 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="regexp"><dt><a href="/pkg/regexp/">regexp</a></dt>
   <dd>
     <p><!-- CL 354569 -->
-      TODO: <a href="https://golang.org/cl/354569">https://golang.org/cl/354569</a>: document and implement that invalid UTF-8 bytes are the same as U+FFFD
+      <a href="/pkg/regexp/"><code>regexp</code></a>
+      now treats each invalid byte of a UTF-8 string as <code>U+FFFD</code>.
     </p>
   </dd>
 </dl><!-- regexp -->
@@ -706,7 +705,8 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="strconv"><dt><a href="/pkg/strconv/">strconv</a></dt>
   <dd>
     <p><!-- CL 343877 -->
-      TODO: <a href="https://golang.org/cl/343877">https://golang.org/cl/343877</a>: reject surrogate halves in Unquote
+      <a href="/pkg/strconv/#strconv.Unquote"><code>strconv.Unquote</code></a>
+      now rejects Unicode surrogate halves.
     </p>
   </dd>
 </dl><!-- strconv -->
@@ -740,7 +740,11 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="sync"><dt><a href="/pkg/sync/">sync</a></dt>
   <dd>
     <p><!-- CL 319769 -->
-      TODO: <a href="https://golang.org/cl/319769">https://golang.org/cl/319769</a>: add Mutex.TryLock, RWMutex.TryLock, RWMutex.TryRLock
+      The new methods
+      <a href="/pkg/sync#Mutex.TryLock"><code>Mutex.TryLock</code></a>,
+      <a href="/pkg/sync#RWMutex.TryLock"><code>RWMutex.TryLock</code></a>, and
+      <a href="/pkg/sync#RWMutex.TryRLock"><code>RWMutex.TryRLock</code></a>,
+      will acquire the lock if it is not currently held.
     </p>
   </dd>
 </dl><!-- sync -->
@@ -770,7 +774,7 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="syscall/js"><dt><a href="/pkg/syscall/js/">syscall/js</a></dt>
   <dd>
     <p><!-- CL 356430 -->
-      TODO: <a href="https://golang.org/cl/356430">https://golang.org/cl/356430</a>: remove Wrapper interface
+      <code>Wrapper</code> interface has been removed.
     </p>
   </dd>
 </dl><!-- syscall/js -->
