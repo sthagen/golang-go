@@ -1425,52 +1425,13 @@ func TestLabelRace(t *testing.T) {
 // TestLabelSystemstack makes sure CPU profiler samples of goroutines running
 // on systemstack include the correct pprof labels. See issue #48577
 func TestLabelSystemstack(t *testing.T) {
-	matchBasics := matchAndAvoidStacks(stackContainsLabeled, []string{"runtime.systemstack;key=value"}, avoidFunctions())
-	matches := func(t *testing.T, prof *profile.Profile) bool {
-		if !matchBasics(t, prof) {
-			return false
-		}
+	// Grab and re-set the initial value before continuing to ensure
+	// GOGC doesn't actually change following the test.
+	gogc := debug.SetGCPercent(100)
+	debug.SetGCPercent(gogc)
 
-		var withLabel, withoutLabel int64
-		for _, s := range prof.Sample {
-			var systemstack, labelHog bool
-			for _, loc := range s.Location {
-				for _, l := range loc.Line {
-					switch l.Function.Name {
-					case "runtime.systemstack":
-						systemstack = true
-					case "runtime/pprof.labelHog":
-						labelHog = true
-					}
-				}
-			}
-
-			if systemstack && labelHog {
-				if s.Label != nil && contains(s.Label["key"], "value") {
-					withLabel += s.Value[0]
-				} else {
-					withoutLabel += s.Value[0]
-				}
-			}
-		}
-
-		// ratio on 2019 Intel MBP before/after CL 351751 for n=30 runs:
-		// before: mean=0.013 stddev=0.013 min=0.000 max=0.039
-		// after : mean=0.996 stddev=0.007 min=0.967 max=1.000
-		//
-		// TODO: Figure out why some samples (containing gcWriteBarrier, gcStart)
-		// still have labelHog without labels. Once fixed this test case can be
-		// simplified to just check that all samples containing labelHog() have the
-		// label, and no other samples do.
-		ratio := float64(withLabel) / float64((withLabel + withoutLabel))
-		if ratio < 0.9 {
-			t.Logf("only %.1f%% of labelHog(systemstack()) samples have label", ratio*100)
-			return false
-		}
-		return true
-	}
-
-	testCPUProfile(t, matches, func(dur time.Duration) {
+	matches := matchAndAvoidStacks(stackContainsLabeled, []string{"runtime.systemstack;key=value"}, avoidFunctions())
+	p := testCPUProfile(t, matches, func(dur time.Duration) {
 		Do(context.Background(), Labels("key", "value"), func(context.Context) {
 			var wg sync.WaitGroup
 			stop := make(chan struct{})
@@ -1478,7 +1439,7 @@ func TestLabelSystemstack(t *testing.T) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					labelHog(stop)
+					labelHog(stop, gogc)
 				}()
 			}
 
@@ -1487,17 +1448,37 @@ func TestLabelSystemstack(t *testing.T) {
 			wg.Wait()
 		})
 	})
+
+	// labelHog should always be labeled.
+	for _, s := range p.Sample {
+		for _, loc := range s.Location {
+			for _, l := range loc.Line {
+				if l.Function.Name != "runtime/pprof.labelHog" {
+					continue
+				}
+
+				if s.Label == nil {
+					t.Errorf("labelHog sample labels got nil want key=value")
+					continue
+				}
+				if !contains(s.Label["key"], "value") {
+					t.Errorf("labelHog sample labels got %+v want contains key=value", s.Label)
+					continue
+				}
+			}
+		}
+	}
 }
 
 // labelHog is designed to burn CPU time in a way that a high number of CPU
 // samples end up running on systemstack.
-func labelHog(stop chan struct{}) {
+func labelHog(stop chan struct{}, gogc int) {
 	for i := 0; ; i++ {
 		select {
 		case <-stop:
 			return
 		default:
-			fmt.Fprintf(io.Discard, "%d", i)
+			debug.SetGCPercent(gogc)
 		}
 	}
 }
@@ -1608,6 +1589,7 @@ func TestTryAdd(t *testing.T) {
 	testCases := []struct {
 		name        string
 		input       []uint64          // following the input format assumed by profileBuilder.addCPUData.
+		count       int               // number of records in input.
 		wantLocs    [][]string        // ordered location entries with function names.
 		wantSamples []*profile.Sample // ordered samples, we care only about Value and the profile location IDs.
 	}{{
@@ -1617,6 +1599,7 @@ func TestTryAdd(t *testing.T) {
 			3, 0, 500, // hz = 500. Must match the period.
 			5, 0, 50, inlinedCallerStack[0], inlinedCallerStack[1],
 		},
+		count: 2,
 		wantLocs: [][]string{
 			{"runtime/pprof.inlinedCalleeDump", "runtime/pprof.inlinedCallerDump"},
 		},
@@ -1633,6 +1616,7 @@ func TestTryAdd(t *testing.T) {
 			7, 0, 10, inlinedCallerStack[0], inlinedCallerStack[1], inlinedCallerStack[0], inlinedCallerStack[1],
 			5, 0, 20, inlinedCallerStack[0], inlinedCallerStack[1],
 		},
+		count:    3,
 		wantLocs: [][]string{{"runtime/pprof.inlinedCalleeDump", "runtime/pprof.inlinedCallerDump"}},
 		wantSamples: []*profile.Sample{
 			{Value: []int64{10, 10 * period}, Location: []*profile.Location{{ID: 1}, {ID: 1}}},
@@ -1646,6 +1630,7 @@ func TestTryAdd(t *testing.T) {
 			// entry. The "stk" entry is actually the count.
 			4, 0, 0, 4242,
 		},
+		count:    2,
 		wantLocs: [][]string{{"runtime/pprof.lostProfileEvent"}},
 		wantSamples: []*profile.Sample{
 			{Value: []int64{4242, 4242 * period}, Location: []*profile.Location{{ID: 1}}},
@@ -1664,6 +1649,7 @@ func TestTryAdd(t *testing.T) {
 			5, 0, 30, inlinedCallerStack[0], inlinedCallerStack[0],
 			4, 0, 40, inlinedCallerStack[0],
 		},
+		count: 3,
 		// inlinedCallerDump shows up here because
 		// runtime_expandFinalInlineFrame adds it to the stack frame.
 		wantLocs: [][]string{{"runtime/pprof.inlinedCalleeDump"}, {"runtime/pprof.inlinedCallerDump"}},
@@ -1677,6 +1663,7 @@ func TestTryAdd(t *testing.T) {
 			3, 0, 500, // hz = 500. Must match the period.
 			9, 0, 10, recursionStack[0], recursionStack[1], recursionStack[2], recursionStack[3], recursionStack[4], recursionStack[5],
 		},
+		count: 2,
 		wantLocs: [][]string{
 			{"runtime/pprof.recursionChainBottom"},
 			{
@@ -1700,6 +1687,7 @@ func TestTryAdd(t *testing.T) {
 			5, 0, 50, inlinedCallerStack[0], inlinedCallerStack[1],
 			4, 0, 60, inlinedCallerStack[0],
 		},
+		count:    3,
 		wantLocs: [][]string{{"runtime/pprof.inlinedCalleeDump", "runtime/pprof.inlinedCallerDump"}},
 		wantSamples: []*profile.Sample{
 			{Value: []int64{50, 50 * period}, Location: []*profile.Location{{ID: 1}}},
@@ -1712,6 +1700,7 @@ func TestTryAdd(t *testing.T) {
 			4, 0, 70, inlinedCallerStack[0],
 			5, 0, 80, inlinedCallerStack[0], inlinedCallerStack[1],
 		},
+		count:    3,
 		wantLocs: [][]string{{"runtime/pprof.inlinedCalleeDump", "runtime/pprof.inlinedCallerDump"}},
 		wantSamples: []*profile.Sample{
 			{Value: []int64{70, 70 * period}, Location: []*profile.Location{{ID: 1}}},
@@ -1724,6 +1713,7 @@ func TestTryAdd(t *testing.T) {
 			3, 0, 500, // hz = 500. Must match the period.
 			4, 0, 70, inlinedCallerStack[0],
 		},
+		count:    2,
 		wantLocs: [][]string{{"runtime/pprof.inlinedCalleeDump", "runtime/pprof.inlinedCallerDump"}},
 		wantSamples: []*profile.Sample{
 			{Value: []int64{70, 70 * period}, Location: []*profile.Location{{ID: 1}}},
@@ -1739,6 +1729,7 @@ func TestTryAdd(t *testing.T) {
 			// from getting merged into above.
 			5, 0, 80, inlinedCallerStack[1], inlinedCallerStack[0],
 		},
+		count: 3,
 		wantLocs: [][]string{
 			{"runtime/pprof.inlinedCalleeDump", "runtime/pprof.inlinedCallerDump"},
 			{"runtime/pprof.inlinedCallerDump"},
@@ -1751,7 +1742,7 @@ func TestTryAdd(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			p, err := translateCPUProfile(tc.input)
+			p, err := translateCPUProfile(tc.input, tc.count)
 			if err != nil {
 				t.Fatalf("translating profile: %v", err)
 			}
