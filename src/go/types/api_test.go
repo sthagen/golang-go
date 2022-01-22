@@ -127,7 +127,6 @@ func TestValuesInfo(t *testing.T) {
 		{`package c5d; var _ = string(65)`, `65`, `untyped int`, `65`},
 		{`package c5e; var _ = string('A')`, `'A'`, `untyped rune`, `65`},
 		{`package c5f; type T string; var _ = T('A')`, `'A'`, `untyped rune`, `65`},
-		{`package c5g; var s uint; var _ = string(1 << s)`, `1 << s`, `untyped int`, ``},
 
 		{`package d0; var _ = []byte("foo")`, `"foo"`, `string`, `"foo"`},
 		{`package d1; var _ = []byte(string("foo"))`, `"foo"`, `string`, `"foo"`},
@@ -1425,6 +1424,18 @@ var _ = a.C2
 
 	makePkg("a", libSrc)
 	makePkg("main", mainSrc) // don't crash when type-checking this package
+}
+
+func TestLookupFieldOrMethodOnNil(t *testing.T) {
+	// LookupFieldOrMethod on a nil type is expected to produce a run-time panic.
+	defer func() {
+		const want = "LookupFieldOrMethod on nil type"
+		p := recover()
+		if s, ok := p.(string); !ok || s != want {
+			t.Fatalf("got %v, want %s", p, want)
+		}
+	}()
+	LookupFieldOrMethod(nil, false, nil, "")
 }
 
 func TestLookupFieldOrMethod(t *testing.T) {

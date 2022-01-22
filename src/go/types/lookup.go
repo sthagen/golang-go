@@ -19,7 +19,7 @@ import (
 // in T and returns the corresponding *Var or *Func, an index sequence, and a
 // bool indicating if there were any pointer indirections on the path to the
 // field or method. If addressable is set, T is the type of an addressable
-// variable (only matters for method lookups).
+// variable (only matters for method lookups). T must not be nil.
 //
 // The last index entry is the field or method index in the (possibly embedded)
 // type where the entry was found, either:
@@ -42,6 +42,10 @@ import (
 //	the method's formal receiver base type, nor was the receiver addressable.
 //
 func LookupFieldOrMethod(T Type, addressable bool, pkg *Package, name string) (obj Object, index []int, indirect bool) {
+	if T == nil {
+		panic("LookupFieldOrMethod on nil type")
+	}
+
 	// Methods cannot be associated to a named pointer type.
 	// (spec: "The type denoted by T is called the receiver base type;
 	// it must not be a pointer or interface type and it must be declared
@@ -316,14 +320,7 @@ func (check *Checker) missingMethod(V Type, T *Interface, static bool) (method, 
 				panic("method with type parameters")
 			}
 
-			// If the methods have type parameters we don't care whether they
-			// are the same or not, as long as they match up. Use unification
-			// to see if they can be made to match.
-			// TODO(gri) is this always correct? what about type bounds?
-			// (Alternative is to rename/subst type parameters and compare.)
-			u := newUnifier(true)
-			u.x.init(ftyp.TypeParams().list())
-			if !u.unify(ftyp, mtyp) {
+			if !Identical(ftyp, mtyp) {
 				return m, f
 			}
 		}
@@ -371,14 +368,7 @@ func (check *Checker) missingMethod(V Type, T *Interface, static bool) (method, 
 			panic("method with type parameters")
 		}
 
-		// If the methods have type parameters we don't care whether they
-		// are the same or not, as long as they match up. Use unification
-		// to see if they can be made to match.
-		// TODO(gri) is this always correct? what about type bounds?
-		// (Alternative is to rename/subst type parameters and compare.)
-		u := newUnifier(true)
-		u.x.init(ftyp.RecvTypeParams().list())
-		if !u.unify(ftyp, mtyp) {
+		if !Identical(ftyp, mtyp) {
 			return m, f
 		}
 	}
