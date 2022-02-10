@@ -1,6 +1,6 @@
 <!--{
 	"Title": "The Go Programming Language Specification - Go 1.18 Draft (incomplete)",
-	"Subtitle": "Version of Jan 31, 2022",
+	"Subtitle": "Version of Feb 9, 2022",
 	"Path": "/ref/spec"
 }-->
 
@@ -679,6 +679,8 @@ or <a href="#Conversions">conversion</a>, or implicitly when used in a
 operand in an <a href="#Expressions">expression</a>.
 It is an error if the constant value
 cannot be <a href="#Representability">represented</a> as a value of the respective type.
+If the type is a type parameter, the constant is converted into a non-constant
+value of the type parameter.
 </p>
 
 <p>
@@ -901,7 +903,9 @@ it is a <a href="#Type_definitions">defined type</a>.
 <h3 id="Numeric_types">Numeric types</h3>
 
 <p>
-A <i>numeric type</i> represents sets of integer or floating-point values.
+An <i>integer</i>, <i>floating-point</i>, or <i>complex</i> type
+represents the set of integer, floating-point, or complex values, respectively.
+They are collectively called <i>numeric types</i>.
 The predeclared architecture-independent numeric types are:
 </p>
 
@@ -932,7 +936,7 @@ The value of an <i>n</i>-bit integer is <i>n</i> bits wide and represented using
 </p>
 
 <p>
-There is also a set of predeclared numeric types with implementation-specific sizes:
+There is also a set of predeclared integer types with implementation-specific sizes:
 </p>
 
 <pre class="grammar">
@@ -1921,7 +1925,7 @@ if one of the following conditions applies:
 </li>
 
 <li>
-<code>T</code> is a floating-point type and <code>x</code> can be rounded to <code>T</code>'s
+<code>T</code> is a <a href="#Numeric_types">floating-point type</a> and <code>x</code> can be rounded to <code>T</code>'s
 precision without overflow. Rounding uses IEEE 754 round-to-even rules but with an IEEE
 negative zero further simplified to an unsigned zero. Note that constant values never result
 in an IEEE negative zero, NaN, or infinity.
@@ -2032,7 +2036,7 @@ interface{ int; string }       // no specific types (intersection is empty)
 </pre>
 
 <p>
-An interface <code>T</code> is called <i>structural</i> if one of the following
+An interface <code>T</code> has a <i>core type</i> if one of the following
 conditions is satisfied:
 </p>
 
@@ -2049,8 +2053,11 @@ direction.
 </ol>
 
 <p>
-A structural interface has a <i>structural type</i> which is, depending on the
-condition that is satisfied, either:
+All other interfaces don't have a core type.
+</p>
+
+<p>
+The core type is, depending on the condition that is satisfied, either:
 </p>
 
 <ol>
@@ -2065,7 +2072,7 @@ depending on the direction of the directional channels present.
 </ol>
 
 <p>
-Examples of structural interfaces with their structural types:
+Examples of interfaces with core types:
 </p>
 
 <pre>
@@ -2077,7 +2084,7 @@ interface{ ~[]*data; String() string }    // []*data
 </pre>
 
 <p>
-Examples of non-structural interfaces:
+Examples of interfaces whithout core types:
 </p>
 
 <pre>
@@ -2307,7 +2314,8 @@ ExpressionList = Expression { "," Expression } .
 
 <p>
 If the type is present, all constants take the type specified, and
-the expressions must be <a href="#Assignability">assignable</a> to that type.
+the expressions must be <a href="#Assignability">assignable</a> to that type,
+which must not be a type parameter.
 If the type is omitted, the constants take the
 individual types of the corresponding expressions.
 If the expression values are untyped <a href="#Constants">constants</a>,
@@ -3108,7 +3116,7 @@ For array and slice literals the following rules apply:
 	    key must be a non-negative constant
 	    <a href="#Representability">representable</a> by
 	    a value of type <code>int</code>; and if it is typed
-	    it must be of integer type.
+	    it must be of <a href="#Numeric_types">integer type</a>.
 	</li>
 	<li>An element without a key uses the previous element's index plus one.
 	    If the first element has no key, its index is zero.
@@ -3707,7 +3715,7 @@ The following rules apply:
 If <code>a</code> is not a map:
 </p>
 <ul>
-	<li>the index <code>x</code> must be of integer type or an untyped constant</li>
+	<li>the index <code>x</code> must be of <a href="#Numeric_types">integer type</a> or an untyped constant</li>
 	<li>a constant index must be non-negative and
 	    <a href="#Representability">representable</a> by a value of type <code>int</code></li>
 	<li>a constant index that is untyped is given type <code>int</code></li>
@@ -4495,19 +4503,21 @@ min(1.0, 2)    // illegal: default type float64 (for 1.0) doesn't match default 
 <h4 id="Constraint_type_inference">Constraint type inference</h3>
 
 <!--
-	The next paragraph needs to be updated for the new definition of structural type:
-	The structural type of an interface is the single underlying type of its type set,
+	The next paragraph needs to be updated for the new definition of core type:
+	The core type of an interface is the single underlying type of its type set,
 	if it exists. But for constraint type inference, if the type set consists of exactly
 	one type, we want to use that one type (which may be a defined type, different from
-	its underlying == structural type).
+	its underlying == core type).
 -->
 
 <p>
-Constraint type inference infers type arguments from already known
-type arguments by considering <a href="#Structure_of_interfaces">structural type constraints</a>:
-if the structural type <code>T</code> of a structural constraint is parameterized,
-<a href="#Type_unification">unifying</a> a known type argument with <code>T</code> may
-infer type arguments for other type parameters used by the structural type.
+Constraint type inference infers type arguments by considering type constraints.
+If a type parameter <code>P</code> has a constraint with a
+<a href="#Structure_of_interfaces">core type</a> <code>C</code>,
+<a href="#Type_unification">unifying</a> <code>P</code> with <code>C</code>
+may infer additional type arguments, either the type argument for <code>P</code>,
+or if that is already known, possibly the type arguments for type parameters
+used in <code>C</code>.
 </p>
 
 <p>
@@ -4521,8 +4531,8 @@ For instance, consider the type parameter list with type parameters <code>List</
 
 <p>
 Constraint type inference can deduce the type of <code>Elem</code> from the type argument
-for <code>List</code> because <code>Elem</code> is a type parameter in the structural constraint
-<code>~[]Elem</code> for <code>List</code>.
+for <code>List</code> because <code>Elem</code> is a type parameter in the core type
+<code>[]Elem</code> of <code>List</code>.
 If the type argument is <code>Bytes</code>:
 </p>
 
@@ -4531,7 +4541,7 @@ type Bytes []byte
 </pre>
 
 <p>
-unifying the underlying type of <code>Bytes</code> with the structural constraint means
+unifying the underlying type of <code>Bytes</code> with the core type means
 unifying <code>[]byte</code> with <code>[]Elem</code>. That unification succeeds and yields
 the <a href="#Type_unification">substitution map</a> entry
 <code>Elem</code> &RightArrow; <code>byte</code>.
@@ -4546,8 +4556,8 @@ substitution map <i>M</i>
 
 <ol>
 <li>
-For all type parameters with a structural constraint, unify the type parameter with the structural
-type of its constraint. If any unification fails, constraint type inference fails.
+For all type parameters with a core type, unify the type parameter with the core
+type. If any unification fails, constraint type inference fails.
 </li>
 
 <li>
@@ -4582,7 +4592,7 @@ the initial substitution map <i>M</i> contains the entry <code>A</code> &RightAr
 
 <p>
 In the first phase, the type parameters <code>B</code> and <code>C</code> are unified
-with the structural type of their respective constraints. This adds the entries
+with the core type of their respective constraints. This adds the entries
 <code>B</code> &RightArrow; <code>[]C</code> and <code>C</code> &RightArrow; <code>*A</code>
 to <i>M</i>.
 
@@ -4660,7 +4670,7 @@ to the type of the other operand.
 </p>
 
 <p>
-The right operand in a shift expression must have integer type
+The right operand in a shift expression must have <a href="#Numeric_types">integer type</a>
 or be an untyped constant <a href="#Representability">representable</a> by a
 value of type <code>uint</code>.
 If the left operand of a non-constant shift expression is an untyped constant,
@@ -4740,8 +4750,9 @@ x == y+1 &amp;&amp; &lt;-chanInt &gt; 0
 <p>
 Arithmetic operators apply to numeric values and yield a result of the same
 type as the first operand. The four standard arithmetic operators (<code>+</code>,
-<code>-</code>, <code>*</code>, <code>/</code>) apply to integer,
-floating-point, and complex types; <code>+</code> also applies to strings.
+<code>-</code>, <code>*</code>, <code>/</code>) apply to
+<a href="#Numeric_types">integer</a>, <a href="#Numeric_types">floating-point</a>, and
+<a href="#Numeric_types">complex</a> types; <code>+</code> also applies to <a href="#String_types">strings</.
 The bitwise logical and shift operators apply to integers only.
 </p>
 
@@ -4880,7 +4891,7 @@ occurs is implementation-specific.
 An implementation may combine multiple floating-point operations into a single
 fused operation, possibly across statements, and produce a result that differs
 from the value obtained by executing and rounding the instructions individually.
-An explicit floating-point type <a href="#Conversions">conversion</a> rounds to
+An explicit <a href="#Numeric_types">floating-point type</a> <a href="#Conversions">conversion</a> rounds to
 the precision of the target type, preventing fusion that would discard that rounding.
 </p>
 
@@ -5189,7 +5200,6 @@ as for non-constant <code>x</code>.
 <p>
 Converting a constant to a type that is not a <a href="#Type_parameters">type parameter</a>
 yields a typed constant.
-Converting a constant to a type parameter yields a non-constant value of that type.	
 </p>
 
 <pre>
@@ -5206,6 +5216,29 @@ string([]byte{'a'})      // not a constant: []byte{'a'} is not a constant
 int(1.2)                 // illegal: 1.2 cannot be represented as an int
 string(65.0)             // illegal: 65.0 is not an integer constant
 </pre>
+
+<p>
+Converting a constant to a type parameter yields a <i>non-constant</i> value of that type,
+with the value represented as a value of the type argument that the type parameter
+is instantiated with.
+For example, given the function:
+</p>
+
+<pre>
+func f[P ~float32|~float64]() {
+	… P(1.1) …
+}
+</pre>
+
+<p>
+the conversion <code>P(1.1)</code> results in a non-constant value of type <code>P</code>
+and the value <code>1.1</code> is represented as a <code>float32</code> or a <code>float64</code>
+depending on the type argument for <code>f</code>.
+Accordingly, if <code>f</code> is instantiated with a <code>float32</code> type,
+the numeric value of the expression <code>P(1.1) + 1.2</code> will be computed
+with the same precision as the corresponding non-constant <code>float32</code>
+addition.
+</p>
 
 <p>
 A non-constant value <code>x</code> can be converted to type <code>T</code>
@@ -5321,19 +5354,19 @@ For the conversion of non-constant numeric values, the following rules apply:
 
 <ol>
 <li>
-When converting between integer types, if the value is a signed integer, it is
+When converting between <a href="#Numeric_types">integer types</a>, if the value is a signed integer, it is
 sign extended to implicit infinite precision; otherwise it is zero extended.
 It is then truncated to fit in the result type's size.
 For example, if <code>v := uint16(0x10F0)</code>, then <code>uint32(int8(v)) == 0xFFFFFFF0</code>.
 The conversion always yields a valid value; there is no indication of overflow.
 </li>
 <li>
-When converting a floating-point number to an integer, the fraction is discarded
+When converting a <a href="#Numeric_types">floating-point number</a> to an integer, the fraction is discarded
 (truncation towards zero).
 </li>
 <li>
 When converting an integer or floating-point number to a floating-point type,
-or a complex number to another complex type, the result value is rounded
+or a <a href="#Numeric_types">complex number</a> to another complex type, the result value is rounded
 to the precision specified by the destination type.
 For instance, the value of a variable <code>x</code> of type <code>float32</code>
 may be stored using additional precision beyond that of an IEEE-754 32-bit number,
@@ -6221,6 +6254,32 @@ if v == nil {
 </pre>
 
 <p>
+A <a href="#Type_parameters">type parameter</a> or a <a href="#Type_declarations">parameterized type</a>
+may be used as a type in a case. If upon <a href="#Instantiations">instantiation</a> that type turns
+out to duplicate another entry in the switch, the first matching case is chosen.
+</p>
+
+<pre>
+func f[P any](x any) int {
+	switch x.(type) {
+	case P:
+		return 0
+	case string:
+		return 1
+	case []P:
+		return 2
+	case []byte:
+		return 3
+	default:
+		return 4
+	}
+}
+
+var v1 = f[string]("foo")   // v1 == 0
+var v2 = f[byte]([]byte{})  // v2 == 2
+</pre>
+
+<p>
 The type switch guard may be preceded by a simple statement, which
 executes before the guard is evaluated.
 </p>
@@ -7037,7 +7096,7 @@ make(T, n)       channel    buffered channel of type T, buffer size n
 
 
 <p>
-Each of the size arguments <code>n</code> and <code>m</code> must be of integer type
+Each of the size arguments <code>n</code> and <code>m</code> must be of <a href="#Numeric_types">integer type</a>
 or an untyped <a href="#Constants">constant</a>.
 A constant size argument must be non-negative and <a href="#Representability">representable</a>
 by a value of type <code>int</code>; if it is an untyped constant it is given type <code>int</code>.
@@ -7182,7 +7241,8 @@ imag(complexT) floatT
 <p>
 The type of the arguments and return value correspond.
 For <code>complex</code>, the two arguments must be of the same
-floating-point type and the return type is the complex type
+<a href="#Numeric_types">floating-point type</a> and the return type is the
+<a href="#Numeric_types">complex type</a>
 with the corresponding floating-point constituents:
 <code>complex64</code> for <code>float32</code> arguments, and
 <code>complex128</code> for <code>float64</code> arguments.
@@ -7897,7 +7957,7 @@ of constant size.
 <p>
 The function <code>Add</code> adds <code>len</code> to <code>ptr</code>
 and returns the updated pointer <code>unsafe.Pointer(uintptr(ptr) + uintptr(len))</code>.
-The <code>len</code> argument must be of integer type or an untyped <a href="#Constants">constant</a>.
+The <code>len</code> argument must be of <a href="#Numeric_types">integer type</a> or an untyped <a href="#Constants">constant</a>.
 A constant <code>len</code> argument must be <a href="#Representability">representable</a> by a value of type <code>int</code>;
 if it is an untyped constant it is given type <code>int</code>.
 The rules for <a href="/pkg/unsafe#Pointer">valid uses</a> of <code>Pointer</code> still apply.
@@ -7920,7 +7980,7 @@ is <code>nil</code> and <code>len</code> is zero,
 </p>
 
 <p>
-The <code>len</code> argument must be of integer type or an untyped <a href="#Constants">constant</a>.
+The <code>len</code> argument must be of <a href="#Numeric_types">integer type</a> or an untyped <a href="#Constants">constant</a>.
 A constant <code>len</code> argument must be non-negative and <a href="#Representability">representable</a> by a value of type <code>int</code>;
 if it is an untyped constant it is given type <code>int</code>.
 At run time, if <code>len</code> is negative,
