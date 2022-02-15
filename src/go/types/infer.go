@@ -40,6 +40,13 @@ func (check *Checker) infer(posn positioner, tparams []*TypeParam, targs []Type,
 		}()
 	}
 
+	if traceInference {
+		check.dump("-- inferA %s%s ➞ %s", tparams, params, targs)
+		defer func() {
+			check.dump("=> inferA %s ➞ %s", tparams, result)
+		}()
+	}
+
 	// There must be at least one type parameter, and no more type arguments than type parameters.
 	n := len(tparams)
 	assert(n > 0 && len(targs) <= n)
@@ -52,6 +59,64 @@ func (check *Checker) infer(posn positioner, tparams []*TypeParam, targs []Type,
 		return targs
 	}
 	// len(targs) < n
+
+	const enableTparamRenaming = true
+	if enableTparamRenaming {
+		// For the purpose of type inference we must differentiate type parameters
+		// occurring in explicit type or value function arguments from the type
+		// parameters we are solving for via unification, because they may be the
+		// same in self-recursive calls. For example:
+		//
+		//  func f[P *Q, Q any](p P, q Q) {
+		//    f(p)
+		//  }
+		//
+		// In this example, the fact that the P used in the instantation f[P] has
+		// the same pointer identity as the P we are trying to solve for via
+		// unification is coincidental: there is nothing special about recursive
+		// calls that should cause them to conflate the identity of type arguments
+		// with type parameters. To put it another way: any such self-recursive
+		// call is equivalent to a mutually recursive call, which does not run into
+		// any problems of type parameter identity. For example, the following code
+		// is equivalent to the code above.
+		//
+		//  func f[P interface{*Q}, Q any](p P, q Q) {
+		//    f2(p)
+		//  }
+		//
+		//  func f2[P interface{*Q}, Q any](p P, q Q) {
+		//    f(p)
+		//  }
+		//
+		// We can turn the first example into the second example by renaming type
+		// parameters in the original signature to give them a new identity. As an
+		// optimization, we do this only for self-recursive calls.
+
+		// We can detect if we are in a self-recursive call by comparing the
+		// identity of the first type parameter in the current function with the
+		// first type parameter in tparams. This works because type parameters are
+		// unique to their type parameter list.
+		selfRecursive := check.sig != nil && check.sig.tparams.Len() > 0 && tparams[0] == check.sig.tparams.At(0)
+
+		if selfRecursive {
+			// In self-recursive inference, rename the type parameters with new type
+			// parameters that are the same but for their pointer identity.
+			tparams2 := make([]*TypeParam, len(tparams))
+			for i, tparam := range tparams {
+				tname := NewTypeName(tparam.Obj().Pos(), tparam.Obj().Pkg(), tparam.Obj().Name(), nil)
+				tparams2[i] = NewTypeParam(tname, nil)
+				tparams2[i].index = tparam.index // == i
+			}
+
+			renameMap := makeRenameMap(tparams, tparams2)
+			for i, tparam := range tparams {
+				tparams2[i].bound = check.subst(posn.Pos(), tparam.bound, renameMap, nil)
+			}
+
+			tparams = tparams2
+			params = check.subst(posn.Pos(), params, renameMap, nil).(*Tuple)
+		}
+	}
 
 	// If we have more than 2 arguments, we may have arguments with named and unnamed types.
 	// If that is the case, permutate params and args such that the arguments with named
@@ -402,6 +467,13 @@ func (w *tpWalker) isParameterizedTypeList(list []Type) bool {
 func (check *Checker) inferB(posn positioner, tparams []*TypeParam, targs []Type) (types []Type, index int) {
 	assert(len(tparams) >= len(targs) && len(targs) > 0)
 
+	if traceInference {
+		check.dump("-- inferB %s ➞ %s", tparams, targs)
+		defer func() {
+			check.dump("=> inferB %s ➞ %s", tparams, types)
+		}()
+	}
+
 	// Setup bidirectional unification between constraints
 	// and the corresponding type arguments (which may be nil!).
 	u := newUnifier(false)
@@ -417,17 +489,11 @@ func (check *Checker) inferB(posn positioner, tparams []*TypeParam, targs []Type
 
 	// If a constraint has a core type, unify the corresponding type parameter with it.
 	for _, tpar := range tparams {
-		sbound := coreType(tpar)
-		if sbound != nil {
-			// If the core type is the underlying type of a single
-			// defined type in the constraint, use that defined type instead.
-			if named, _ := tpar.singleType().(*Named); named != nil {
-				sbound = named
-			}
-			if !u.unify(tpar, sbound) {
+		if ctype := adjCoreType(tpar); ctype != nil {
+			if !u.unify(tpar, ctype) {
 				// TODO(gri) improve error message by providing the type arguments
 				//           which we know already
-				check.errorf(posn, _InvalidTypeArg, "%s does not match %s", tpar, sbound)
+				check.errorf(posn, _InvalidTypeArg, "%s does not match %s", tpar, ctype)
 				return nil, 0
 			}
 		}
@@ -522,6 +588,19 @@ func (check *Checker) inferB(posn positioner, tparams []*TypeParam, targs []Type
 	}
 
 	return
+}
+
+func adjCoreType(tpar *TypeParam) Type {
+	// If the type parameter embeds a single, possibly named
+	// type, use that one instead of the core type (which is
+	// always the underlying type of that single type).
+	if single := tpar.singleType(); single != nil {
+		if debug {
+			assert(under(single) == coreType(tpar))
+		}
+		return single
+	}
+	return coreType(tpar)
 }
 
 type cycleFinder struct {
