@@ -135,6 +135,16 @@ Do not send CLs removing the interior tags from such phrases.
       the predeclared functions <code>real</code>, <code>imag</code>, and <code>complex</code>.
       We hope to remove this restriction in Go 1.19.
     </li>
+    <li><!-- https://golang.org/issue/51183 -->
+      The Go compiler currently only supports calling a method <code>m</code> on a value
+      <code>x</code> of type parameter type <code>P</code> if <code>m</code> is explictly
+      declared by <code>P</code>'s constraint interface.
+      Similarly, method values <code>x.m</code> and method expressions
+      <code>P.m</code> also are only supported if <code>m</code> is explicitly
+      declared by <code>P</code>, even though <code>m</code> might be in the method set
+      of <code>P</code> by virtue of the fact that all types in <code>P</code> implement
+      <code>m</code>. We hope to remove this restriction in Go 1.19.
+    </li>
     <li><!-- https://golang.org/issue/49030 -->
       Embedding a type parameter, or a pointer to a type parameter, as
       an unnamed field in a struct type is not permitted. Similarly,
@@ -182,7 +192,7 @@ Do not send CLs removing the interior tags from such phrases.
 
 <p><!-- CL 349595 -->
   Go 1.18 introduces the new <code>GOAMD64</code> environment variable, which selects at compile time
-  a mininum target version of the AMD64 architecture. Allowed values are <code>v1</code>,
+  a minimum target version of the AMD64 architecture. Allowed values are <code>v1</code>,
   <code>v2</code>, <code>v3</code>, or <code>v4</code>. Each higher level requires,
   and takes advantage of, additional processor features. A detailed
   description can be found
@@ -197,6 +207,12 @@ Do not send CLs removing the interior tags from such phrases.
 <p><!-- golang.org/issue/47100, CL 334872 -->
   The 64-bit RISC-V architecture on Linux (the <code>linux/riscv64</code> port)
   now supports the <code>c-archive</code> and <code>c-shared</code> build modes.
+</p>
+
+<h3 id="linux">Linux</h3>
+
+<p><!-- golang.org/issue/45964 -->
+  Go 1.18 requires Linux kernel version 2.6.32 or later.
 </p>
 
 <h3 id="windows">Windows</h3>
@@ -1140,6 +1156,16 @@ For more details, see <a href="https://go.dev/issue/44505">go.dev/issue/44505</a
     </p>
   </dd>
 </dl><!-- runtime/debug -->
+
+<dl id="runtime/pprof"><dt><a href="/pkg/runtime/pprof/">runtime/pprof</a></dt>
+  <dd>
+    <p><!-- CL 324129 -->
+      The CPU profiler now uses per-thread timers on Linux. This increases the
+      maximum CPU usage that a profile can observe, and reduces some forms of
+      bias.
+    </p>
+  </dd>
+</dl><!-- runtime/pprof -->
 
 <dl id="strconv"><dt><a href="/pkg/strconv/">strconv</a></dt>
   <dd>
