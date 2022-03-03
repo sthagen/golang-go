@@ -6,13 +6,11 @@ package main
 
 import (
 	"a"
-	"b"
 	"fmt"
 )
 
 func main() {
 	var x a.I[a.JsonRaw]
-	var y b.InteractionRequest[a.JsonRaw]
 
-	fmt.Printf("%v %v\n", x, y)
+	fmt.Printf("%v\n", x)
 }
