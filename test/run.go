@@ -1999,7 +1999,8 @@ var types2Failures32Bit = setOf(
 )
 
 var g3Failures = setOf(
-	"typeparam/nested.go", // -G=3 doesn't support function-local types with generics
+	"typeparam/nested.go",     // -G=3 doesn't support function-local types with generics
+	"typeparam/issue51521.go", // -G=3 produces bad panic message and link error
 )
 
 // In all of these cases, -G=0 reports reasonable errors, but either -G=0 or types2
@@ -2038,11 +2039,6 @@ var unifiedFailures = setOf(
 	"fixedbugs/issue42058b.go", // unified IR doesn't report channel element too large
 	"fixedbugs/issue49767.go",  // unified IR doesn't report channel element too large
 	"fixedbugs/issue49814.go",  // unified IR doesn't report array type too large
-	"typeparam/issue50002.go",  // pure stenciling leads to a static type assertion error
-	"typeparam/typeswitch1.go", // duplicate case failure due to stenciling
-	"typeparam/typeswitch2.go", // duplicate case failure due to stenciling
-	"typeparam/typeswitch3.go", // duplicate case failure due to stenciling
-	"typeparam/typeswitch4.go", // duplicate case failure due to stenciling
 )
 
 func setOf(keys ...string) map[string]bool {

@@ -519,7 +519,6 @@ func tcSwitchExpr(n *ir.SwitchStmt) {
 	}
 
 	var defCase ir.Node
-	var cs constSet
 	for _, ncase := range n.Cases {
 		ls := ncase.List
 		if len(ls) == 0 { // default:
@@ -553,16 +552,6 @@ func tcSwitchExpr(n *ir.SwitchStmt) {
 						base.ErrorfAt(ncase.Pos(), "invalid case %v in switch (mismatched types %v and bool)", n1, n1.Type())
 					}
 				}
-			}
-
-			// Don't check for duplicate bools. Although the spec allows it,
-			// (1) the compiler hasn't checked it in the past, so compatibility mandates it, and
-			// (2) it would disallow useful things like
-			//       case GOARCH == "arm" && GOARM == "5":
-			//       case GOARCH == "arm":
-			//     which would both evaluate to false for non-ARM compiles.
-			if !n1.Type().IsBoolean() {
-				cs.add(ncase.Pos(), n1, "case", "switch")
 			}
 		}
 
@@ -615,6 +604,9 @@ func tcSwitchType(n *ir.SwitchStmt) {
 				}
 				continue
 			}
+			if n1.Op() == ir.ODYNAMICTYPE {
+				continue
+			}
 			if n1.Op() != ir.OTYPE {
 				base.ErrorfAt(ncase.Pos(), "%L is not a type", n1)
 				continue
@@ -640,7 +632,7 @@ func tcSwitchType(n *ir.SwitchStmt) {
 			// Assign the clause variable's type.
 			vt := t
 			if len(ls) == 1 {
-				if ls[0].Op() == ir.OTYPE {
+				if ls[0].Op() == ir.OTYPE || ls[0].Op() == ir.ODYNAMICTYPE {
 					vt = ls[0].Type()
 				} else if !ir.IsNil(ls[0]) {
 					// Invalid single-type case;
