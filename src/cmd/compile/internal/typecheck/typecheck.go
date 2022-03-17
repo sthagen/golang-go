@@ -127,8 +127,6 @@ const (
 // marks variables that escape the local frame.
 // rewrites n.Op to be more specific in some cases.
 
-var typecheckdefstack []*ir.Name
-
 // Resolve resolves an ONONAME node to a definition, if any. If n is not an ONONAME node,
 // Resolve returns n unchanged. If n is an ONONAME node and not in the same package,
 // then n.Sym() is resolved using import data. Otherwise, Resolve returns
@@ -150,13 +148,6 @@ func Resolve(n ir.Node) (res ir.Node) {
 
 	r := ir.AsNode(n.Sym().Def)
 	if r == nil {
-		return n
-	}
-
-	if r.Op() == ir.OIOTA {
-		if x := getIotaValue(); x >= 0 {
-			return ir.NewInt(x)
-		}
 		return n
 	}
 
@@ -465,10 +456,6 @@ func indexlit(n ir.Node) ir.Node {
 
 // typecheck1 should ONLY be called from typecheck.
 func typecheck1(n ir.Node, top int) ir.Node {
-	if n, ok := n.(*ir.Name); ok {
-		typecheckdef(n)
-	}
-
 	switch n.Op() {
 	default:
 		ir.Dump("typecheck", n)
@@ -1693,204 +1680,6 @@ func stringtoruneslit(n *ir.ConvExpr) ir.Node {
 	return Expr(nn)
 }
 
-func typecheckdeftype(n *ir.Name) {
-	if base.EnableTrace && base.Flag.LowerT {
-		defer tracePrint("typecheckdeftype", n)(nil)
-	}
-
-	t := types.NewNamed(n)
-	if n.Curfn != nil {
-		t.SetVargen()
-	}
-
-	if n.Pragma()&ir.NotInHeap != 0 {
-		t.SetNotInHeap(true)
-	}
-
-	n.SetType(t)
-	n.SetTypecheck(1)
-	n.SetWalkdef(1)
-
-	types.DeferCheckSize()
-	errorsBefore := base.Errors()
-	n.Ntype = typecheckNtype(n.Ntype)
-	if underlying := n.Ntype.Type(); underlying != nil {
-		t.SetUnderlying(underlying)
-	} else {
-		n.SetDiag(true)
-		n.SetType(nil)
-	}
-	if t.Kind() == types.TFORW && base.Errors() > errorsBefore {
-		// Something went wrong during type-checking,
-		// but it was reported. Silence future errors.
-		t.SetBroke(true)
-	}
-	types.ResumeCheckSize()
-}
-
-func typecheckdef(n *ir.Name) {
-	if base.EnableTrace && base.Flag.LowerT {
-		defer tracePrint("typecheckdef", n)(nil)
-	}
-
-	if n.Walkdef() == 1 {
-		return
-	}
-
-	if n.Type() != nil { // builtin
-		// Mark as Walkdef so that if n.SetType(nil) is called later, we
-		// won't try walking again.
-		if got := n.Walkdef(); got != 0 {
-			base.Fatalf("unexpected walkdef: %v", got)
-		}
-		n.SetWalkdef(1)
-		return
-	}
-
-	lno := ir.SetPos(n)
-	typecheckdefstack = append(typecheckdefstack, n)
-	if n.Walkdef() == 2 {
-		base.FlushErrors()
-		fmt.Printf("typecheckdef loop:")
-		for i := len(typecheckdefstack) - 1; i >= 0; i-- {
-			n := typecheckdefstack[i]
-			fmt.Printf(" %v", n.Sym())
-		}
-		fmt.Printf("\n")
-		base.Fatalf("typecheckdef loop")
-	}
-
-	n.SetWalkdef(2)
-
-	switch n.Op() {
-	default:
-		base.Fatalf("typecheckdef %v", n.Op())
-
-	case ir.OLITERAL:
-		if n.Ntype != nil {
-			n.Ntype = typecheckNtype(n.Ntype)
-			n.SetType(n.Ntype.Type())
-			n.Ntype = nil
-			if n.Type() == nil {
-				n.SetDiag(true)
-				goto ret
-			}
-		}
-
-		e := n.Defn
-		n.Defn = nil
-		if e == nil {
-			ir.Dump("typecheckdef nil defn", n)
-			base.ErrorfAt(n.Pos(), "xxx")
-		}
-
-		e = Expr(e)
-		if e.Type() == nil {
-			goto ret
-		}
-		if !ir.IsConstNode(e) {
-			if !e.Diag() {
-				if e.Op() == ir.ONIL {
-					base.ErrorfAt(n.Pos(), "const initializer cannot be nil")
-				} else {
-					base.ErrorfAt(n.Pos(), "const initializer %v is not a constant", e)
-				}
-				e.SetDiag(true)
-			}
-			goto ret
-		}
-
-		t := n.Type()
-		if t != nil {
-			if !ir.OKForConst[t.Kind()] {
-				base.ErrorfAt(n.Pos(), "invalid constant type %v", t)
-				goto ret
-			}
-
-			if !e.Type().IsUntyped() && !types.Identical(t, e.Type()) {
-				base.ErrorfAt(n.Pos(), "cannot use %L as type %v in const initializer", e, t)
-				goto ret
-			}
-
-			e = convlit(e, t)
-		}
-
-		n.SetType(e.Type())
-		if n.Type() != nil {
-			n.SetVal(e.Val())
-		}
-
-	case ir.ONAME:
-		if n.Ntype != nil {
-			n.Ntype = typecheckNtype(n.Ntype)
-			n.SetType(n.Ntype.Type())
-			if n.Type() == nil {
-				n.SetDiag(true)
-				goto ret
-			}
-		}
-
-		if n.Type() != nil {
-			break
-		}
-		if n.Defn == nil {
-			if n.BuiltinOp != 0 { // like OPRINTN
-				break
-			}
-			if base.Errors() > 0 {
-				// Can have undefined variables in x := foo
-				// that make x have an n.name.Defn == nil.
-				// If there are other errors anyway, don't
-				// bother adding to the noise.
-				break
-			}
-
-			base.Fatalf("var without type, init: %v", n.Sym())
-		}
-
-		if n.Defn.Op() == ir.ONAME {
-			n.Defn = Expr(n.Defn)
-			n.SetType(n.Defn.Type())
-			break
-		}
-
-		n.Defn = Stmt(n.Defn) // fills in n.Type
-
-	case ir.OTYPE:
-		if n.Alias() {
-			// Type alias declaration: Simply use the rhs type - no need
-			// to create a new type.
-			// If we have a syntax error, name.Ntype may be nil.
-			if n.Ntype != nil {
-				n.Ntype = typecheckNtype(n.Ntype)
-				n.SetType(n.Ntype.Type())
-				if n.Type() == nil {
-					n.SetDiag(true)
-					goto ret
-				}
-			}
-			break
-		}
-
-		// regular type declaration
-		typecheckdeftype(n)
-	}
-
-ret:
-	if n.Op() != ir.OLITERAL && n.Type() != nil && n.Type().IsUntyped() {
-		base.Fatalf("got %v for %v", n.Type(), n)
-	}
-	last := len(typecheckdefstack) - 1
-	if typecheckdefstack[last] != n {
-		base.Fatalf("typecheckdefstack mismatch")
-	}
-	typecheckdefstack[last] = nil
-	typecheckdefstack = typecheckdefstack[:last]
-
-	base.Pos = lno
-	n.SetWalkdef(1)
-}
-
 func checkmake(t *types.Type, arg string, np *ir.Node) bool {
 	n := *np
 	if !n.Type().IsInteger() && n.Type().Kind() != types.TIDEAL {
@@ -2150,22 +1939,6 @@ func CheckReturn(fn *ir.Func) {
 			base.ErrorfAt(fn.Endlineno, "missing return at end of function")
 		}
 	}
-}
-
-// getIotaValue returns the current value for "iota",
-// or -1 if not within a ConstSpec.
-func getIotaValue() int64 {
-	if i := len(typecheckdefstack); i > 0 {
-		if x := typecheckdefstack[i-1]; x.Op() == ir.OLITERAL {
-			return x.Iota()
-		}
-	}
-
-	if ir.CurFunc != nil && ir.CurFunc.Iota >= 0 {
-		return ir.CurFunc.Iota
-	}
-
-	return -1
 }
 
 // curpkg returns the current package, based on Curfn.

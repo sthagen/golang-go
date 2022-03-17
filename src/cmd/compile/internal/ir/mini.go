@@ -7,6 +7,7 @@
 package ir
 
 import (
+	"cmd/compile/internal/base"
 	"cmd/compile/internal/types"
 	"cmd/internal/src"
 	"fmt"
@@ -54,10 +55,8 @@ func (n *miniNode) Esc() uint16       { return n.esc }
 func (n *miniNode) SetEsc(x uint16)   { n.esc = x }
 
 const (
-	miniWalkdefShift   = 0 // TODO(mdempsky): Move to Name.flags.
-	miniTypecheckShift = 2
-	miniDiag           = 1 << 4
-	miniWalked         = 1 << 5 // to prevent/catch re-walking
+	miniTypecheckShift = 0
+	miniWalked         = 1 << 2 // to prevent/catch re-walking
 )
 
 func (n *miniNode) Typecheck() uint8 { return n.bits.get2(miniTypecheckShift) }
@@ -68,8 +67,8 @@ func (n *miniNode) SetTypecheck(x uint8) {
 	n.bits.set2(miniTypecheckShift, x)
 }
 
-func (n *miniNode) Diag() bool     { return n.bits&miniDiag != 0 }
-func (n *miniNode) SetDiag(x bool) { n.bits.set(miniDiag, x) }
+func (n *miniNode) Diag() bool     { return false }
+func (n *miniNode) SetDiag(x bool) { base.AssertfAt(!x, n.Pos(), "SetDiag") }
 
 func (n *miniNode) Walked() bool     { return n.bits&miniWalked != 0 }
 func (n *miniNode) SetWalked(x bool) { n.bits.set(miniWalked, x) }
