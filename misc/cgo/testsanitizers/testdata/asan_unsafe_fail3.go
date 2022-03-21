@@ -14,7 +14,7 @@ func main() {
 	b := 2
 	// The local variables.
 	// When -asan is enabled, the unsafe.Pointer(&a) conversion is escaping.
-	var p *int = (*int)(unsafe.Pointer(uintptr(unsafe.Pointer(&a)) + 1*unsafe.Sizeof(int(1))))
+	var p *int = (*int)(unsafe.Add(unsafe.Pointer(&a), 1*unsafe.Sizeof(int(1))))
 	*p = 20 // BOOM
 	d := a + b
 	fmt.Println(d)

@@ -21,7 +21,7 @@ func main() {
 func add(a1, b1 int) (ret int) {
 	// The return value
 	// When -asan is enabled, the unsafe.Pointer(&ret) conversion is escaping.
-	var p *int = (*int)(unsafe.Pointer(uintptr(unsafe.Pointer(&ret)) + 1*unsafe.Sizeof(int(1))))
+	var p *int = (*int)(unsafe.Add(unsafe.Pointer(&ret), 1*unsafe.Sizeof(int(1))))
 	*p = 123 // BOOM
 	ret = a1 + b1
 	return

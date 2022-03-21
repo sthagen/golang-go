@@ -8,7 +8,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"internal/buildcfg"
 	"io"
 	"log"
 	"os"
@@ -28,7 +27,7 @@ import (
 )
 
 // The 'path' used for GOROOT_FINAL when -trimpath is specified
-const trimPathGoRootFinal = "go"
+const trimPathGoRootFinal string = "$GOROOT"
 
 var runtimePackages = map[string]struct{}{
 	"internal/abi":            struct{}{},
@@ -245,7 +244,7 @@ CheckFlags:
 	}
 
 	// TODO: Test and delete these conditions.
-	if buildcfg.Experiment.FieldTrack || buildcfg.Experiment.PreemptibleLoops {
+	if cfg.ExperimentErr != nil || cfg.Experiment.FieldTrack || cfg.Experiment.PreemptibleLoops {
 		canDashC = false
 	}
 

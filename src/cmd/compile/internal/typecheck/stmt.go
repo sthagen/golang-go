@@ -309,16 +309,14 @@ func tcGoDefer(n *ir.GoDeferStmt) {
 
 	// type is broken or missing, most likely a method call on a broken type
 	// we will warn about the broken type elsewhere. no need to emit a potentially confusing error
-	if n.Call.Type() == nil || n.Call.Type().Broke() {
+	if n.Call.Type() == nil {
 		return
 	}
 
-	if !n.Diag() {
-		// The syntax made sure it was a call, so this must be
-		// a conversion.
-		n.SetDiag(true)
-		base.ErrorfAt(n.Pos(), "%s requires function call, not conversion", what)
-	}
+	// The syntax made sure it was a call, so this must be
+	// a conversion.
+	n.SetDiag(true)
+	base.ErrorfAt(n.Pos(), "%s requires function call, not conversion", what)
 }
 
 // tcIf typechecks an OIF node.

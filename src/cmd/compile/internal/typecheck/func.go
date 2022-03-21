@@ -308,9 +308,6 @@ func tcFunc(n *ir.Func) {
 func tcCall(n *ir.CallExpr, top int) ir.Node {
 	Stmts(n.Init()) // imported rewritten f(g()) calls (#30907)
 	n.X = typecheck(n.X, ctxExpr|ctxType|ctxCallee)
-	if n.X.Diag() {
-		n.SetDiag(true)
-	}
 
 	l := n.X
 
@@ -360,9 +357,7 @@ func tcCall(n *ir.CallExpr, top int) ir.Node {
 	l = n.X
 	if l.Op() == ir.OTYPE {
 		if n.IsDDD {
-			if !l.Type().Broke() {
-				base.Errorf("invalid use of ... in type conversion to %v", l.Type())
-			}
+			base.Errorf("invalid use of ... in type conversion to %v", l.Type())
 			n.SetDiag(true)
 		}
 
