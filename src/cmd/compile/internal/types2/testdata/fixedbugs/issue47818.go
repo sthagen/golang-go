@@ -1,3 +1,5 @@
+// -lang=go1.17
+
 // Copyright 2021 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
@@ -6,15 +8,15 @@
 // needs to report any operations that are not permitted
 // before Go 1.18.
 
-package go1_17
+package p
 
-type T[P /* ERROR type parameters require go1\.18 or later */ any /* ERROR undeclared name: any \(requires version go1\.18 or later\) */ ] struct{}
+type T[P /* ERROR type parameter requires go1\.18 or later */ any /* ERROR undeclared name: any \(requires version go1\.18 or later\) */ ] struct{}
 
 // for init (and main, but we're not in package main) we should only get one error
 func init[P /* ERROR func init must have no type parameters */ any /* ERROR undeclared name: any \(requires version go1\.18 or later\) */ ]()   {}
-func main[P /* ERROR type parameters require go1\.18 or later */ any /* ERROR undeclared name: any \(requires version go1\.18 or later\) */ ]() {}
+func main[P /* ERROR type parameter requires go1\.18 or later */ any /* ERROR undeclared name: any \(requires version go1\.18 or later\) */ ]() {}
 
-func f[P /* ERROR type parameters require go1\.18 or later */ any /* ERROR undeclared name: any \(requires version go1\.18 or later\) */ ](x P) {
+func f[P /* ERROR type parameter requires go1\.18 or later */ any /* ERROR undeclared name: any \(requires version go1\.18 or later\) */ ](x P) {
 	var _ T[ /* ERROR type instantiation requires go1\.18 or later */ int]
 	var _ (T[ /* ERROR type instantiation requires go1\.18 or later */ int])
 	_ = T[ /* ERROR type instantiation requires go1\.18 or later */ int]{}

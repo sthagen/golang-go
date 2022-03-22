@@ -78,6 +78,7 @@ func (check *Checker) newNamed(obj *TypeName, orig *Named, underlying Type, tpar
 }
 
 func (t *Named) cleanup() {
+	assert(t.orig.orig == t.orig)
 	// Ensure that every defined type created in the course of type-checking has
 	// either non-*Named underlying, or is unresolved.
 	//
@@ -354,10 +355,18 @@ func (check *Checker) bestContext(ctxt *Context) *Context {
 // expandNamed ensures that the underlying type of n is instantiated.
 // The underlying type will be Typ[Invalid] if there was an error.
 func expandNamed(ctxt *Context, n *Named, instPos syntax.Pos) (tparams *TypeParamList, underlying Type, methods *methodList) {
+	check := n.check
+	if check != nil && check.conf.Trace {
+		check.trace(instPos, "-- expandNamed %s", n)
+		check.indent++
+		defer func() {
+			check.indent--
+			check.trace(instPos, "=> %s (tparams = %s, under = %s)", n, tparams.list(), underlying)
+		}()
+	}
+
 	n.orig.resolve(ctxt)
 	assert(n.orig.underlying != nil)
-
-	check := n.check
 
 	if _, unexpanded := n.orig.underlying.(*Named); unexpanded {
 		// We should only get an unexpanded underlying here during type checking
