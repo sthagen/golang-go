@@ -58,10 +58,6 @@ func tcShift(n, l, r ir.Node) (ir.Node, ir.Node, *types.Type) {
 		base.Errorf("invalid operation: %v (shift count type %v, must be integer)", n, r.Type())
 		return l, r, nil
 	}
-	if t.IsSigned() && !types.AllowsGoVersion(curpkg(), 1, 13) {
-		base.ErrorfVers("go1.13", "invalid operation: %v (signed shift count type %v)", n, r.Type())
-		return l, r, nil
-	}
 	t = l.Type()
 	if t != nil && t.Kind() != types.TIDEAL && !t.IsInteger() {
 		base.Errorf("invalid operation: %v (shift of type %v)", n, t)
@@ -413,11 +409,7 @@ func tcConv(n *ir.ConvExpr) ir.Node {
 	}
 	op, why := Convertop(n.X.Op() == ir.OLITERAL, t, n.Type())
 	if op == ir.OXXX {
-		base.Errorf("cannot convert %L to type %v%s", n.X, n.Type(), why)
-		n.SetDiag(true)
-		n.SetOp(ir.OCONV)
-		n.SetType(nil)
-		return n
+		base.Fatalf("cannot convert %L to type %v%s", n.X, n.Type(), why)
 	}
 
 	n.SetOp(op)

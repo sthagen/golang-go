@@ -45,17 +45,6 @@ func Callee(n ir.Node) ir.Node {
 	return typecheck(n, ctxExpr|ctxCallee)
 }
 
-func FuncBody(n *ir.Func) {
-	ir.CurFunc = n
-	errorsBefore := base.Errors()
-	Stmts(n.Body)
-	CheckUnused(n)
-	CheckReturn(n)
-	if ir.IsBlank(n.Nname) || base.Errors() > errorsBefore {
-		n.Body = nil // blank function or type errors; do not compile
-	}
-}
-
 var importlist []*ir.Func
 
 // AllImportedBodies reads in the bodies of all imported functions and typechecks
@@ -404,31 +393,16 @@ func typecheck(n ir.Node, top int) (res ir.Node) {
 	// this code a bit, especially the final case.
 	switch {
 	case top&(ctxStmt|ctxExpr) == ctxExpr && !isExpr && n.Op() != ir.OTYPE && !isMulti:
-		base.Errorf("%v used as value", n)
-		n.SetDiag(true)
-		if t != nil {
-			n.SetType(nil)
-		}
+		base.Fatalf("%v used as value", n)
 
 	case top&ctxType == 0 && n.Op() == ir.OTYPE && t != nil:
-		base.Errorf("type %v is not an expression", n.Type())
-		n.SetDiag(true)
+		base.Fatalf("type %v is not an expression", n.Type())
 
 	case top&(ctxStmt|ctxExpr) == ctxStmt && !isStmt && t != nil:
-		base.Errorf("%v evaluated but not used", n)
-		n.SetDiag(true)
-		n.SetType(nil)
+		base.Fatalf("%v evaluated but not used", n)
 
 	case top&(ctxType|ctxExpr) == ctxType && n.Op() != ir.OTYPE && n.Op() != ir.ONONAME && (t != nil || n.Op() == ir.ONAME):
-		base.Errorf("%v is not a type", n)
-		if t != nil {
-			if n.Op() == ir.ONAME {
-				t.SetBroke(true)
-			} else {
-				n.SetType(nil)
-			}
-		}
-
+		base.Fatalf("%v is not a type", n)
 	}
 
 	base.Pos = lno
@@ -469,10 +443,8 @@ func typecheck1(n ir.Node, top int) ir.Node {
 	case ir.ONONAME:
 		// Note: adderrorname looks for this string and
 		// adds context about the outer expression
-		base.ErrorfAt(n.Pos(), "undefined: %v", n.Sym())
-		n.SetDiag(true)
-		n.SetType(nil)
-		return n
+		base.FatalfAt(n.Pos(), "undefined: %v", n.Sym())
+		panic("unreachable")
 
 	case ir.ONAME:
 		n := n.(*ir.Name)
@@ -843,8 +815,7 @@ func typecheck1(n ir.Node, top int) ir.Node {
 
 	case ir.OTYPESW:
 		n := n.(*ir.TypeSwitchGuard)
-		base.Errorf("use of .(type) outside type switch")
-		n.SetDiag(true)
+		base.Fatalf("use of .(type) outside type switch")
 		return n
 
 	case ir.ODCLFUNC:
@@ -1164,7 +1135,7 @@ func Lookdot(n *ir.SelectorExpr, t *types.Type, dostrcmp int) *types.Field {
 	}
 
 	if f1 != nil {
-		if dostrcmp > 1 || f1.Broke() {
+		if dostrcmp > 1 {
 			// Already in the process of diagnosing an error.
 			return f1
 		}
@@ -1389,7 +1360,7 @@ notenough:
 			base.Errorf("not enough arguments to %v%s", op, details)
 		}
 		if n != nil {
-			n.SetDiag(true)
+			base.Fatalf("invalid call")
 		}
 	}
 	return
@@ -1536,13 +1507,7 @@ func typecheckarraylit(elemType *types.Type, bound int64, elts []ir.Node, ctx st
 			elt.Key = Expr(elt.Key)
 			key = IndexConst(elt.Key)
 			if key < 0 {
-				if key == -2 {
-					base.Errorf("index too large")
-				} else {
-					base.Errorf("index must be non-negative integer constant")
-				}
-				elt.Key.SetDiag(true)
-				key = -(1 << 30) // stay negative for a while
+				base.Fatalf("invalid index: %v", elt.Key)
 			}
 			kv = elt
 			r = elt.Value

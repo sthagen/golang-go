@@ -229,7 +229,6 @@ func (t *Type) IsShape() bool    { return t.flags&typeIsShape != 0 }
 func (t *Type) HasShape() bool   { return t.flags&typeHasShape != 0 }
 
 func (t *Type) SetNotInHeap(b bool)  { t.flags.set(typeNotInHeap, b) }
-func (t *Type) SetBroke(b bool)      { base.Assertf(!b, "SetBroke") }
 func (t *Type) SetNoalg(b bool)      { t.flags.set(typeNoalg, b) }
 func (t *Type) SetDeferwidth(b bool) { t.flags.set(typeDeferwidth, b) }
 func (t *Type) SetRecur(b bool)      { t.flags.set(typeRecur, b) }
@@ -522,16 +521,13 @@ type Field struct {
 
 const (
 	fieldIsDDD = 1 << iota // field is ... argument
-	fieldBroke             // broken field definition
 	fieldNointerface
 )
 
 func (f *Field) IsDDD() bool       { return f.flags&fieldIsDDD != 0 }
-func (f *Field) Broke() bool       { return f.flags&fieldBroke != 0 }
 func (f *Field) Nointerface() bool { return f.flags&fieldNointerface != 0 }
 
 func (f *Field) SetIsDDD(b bool)       { f.flags.set(fieldIsDDD, b) }
-func (f *Field) SetBroke(b bool)       { f.flags.set(fieldBroke, b) }
 func (f *Field) SetNointerface(b bool) { f.flags.set(fieldNointerface, b) }
 
 // End returns the offset of the first byte immediately after this field.
@@ -796,7 +792,7 @@ func NewField(pos src.XPos, sym *Sym, typ *Type) *Field {
 		Offset: BADWIDTH,
 	}
 	if typ == nil {
-		f.SetBroke(true)
+		base.Fatalf("typ is nil")
 	}
 	return f
 }
@@ -1854,9 +1850,6 @@ func NewInterface(pkg *Pkg, methods []*Field, implicit bool) *Type {
 			break
 		}
 	}
-	if anyBroke(methods) {
-		t.SetBroke(true)
-	}
 	t.extra.(*Interface).pkg = pkg
 	t.extra.(*Interface).implicit = implicit
 	return t
@@ -1995,9 +1988,6 @@ func NewSignature(pkg *Pkg, recv *Field, tparams, params, results []*Field) *Typ
 func NewStruct(pkg *Pkg, fields []*Field) *Type {
 	t := newType(TSTRUCT)
 	t.SetFields(fields)
-	if anyBroke(fields) {
-		t.SetBroke(true)
-	}
 	t.extra.(*Struct).pkg = pkg
 	if fieldsHasTParam(fields) {
 		t.SetHasTParam(true)
@@ -2006,15 +1996,6 @@ func NewStruct(pkg *Pkg, fields []*Field) *Type {
 		t.SetHasShape(true)
 	}
 	return t
-}
-
-func anyBroke(fields []*Field) bool {
-	for _, f := range fields {
-		if f.Broke() {
-			return true
-		}
-	}
-	return false
 }
 
 var (
