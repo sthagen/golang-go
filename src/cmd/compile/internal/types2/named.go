@@ -138,7 +138,7 @@ func (t *Named) Method(i int) *Func {
 	})
 }
 
-// instiateMethod instantiates the i'th method for an instantiated receiver.
+// instantiateMethod instantiates the i'th method for an instantiated receiver.
 func (t *Named) instantiateMethod(i int) *Func {
 	assert(t.TypeArgs().Len() > 0) // t must be an instance
 
@@ -191,7 +191,7 @@ func (t *Named) instantiateMethod(i int) *Func {
 		rtyp = t
 	}
 
-	sig.recv = NewParam(origSig.recv.pos, origSig.recv.pkg, origSig.recv.name, rtyp)
+	sig.recv = substVar(origSig.recv, rtyp)
 	return NewFunc(origm.pos, origm.pkg, origm.name, sig)
 }
 

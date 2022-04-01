@@ -186,14 +186,6 @@ type ClosureExpr struct {
 	IsGoWrap bool // whether this is wrapper closure of a go statement
 }
 
-// Deprecated: Use NewClosureFunc instead.
-func NewClosureExpr(pos src.XPos, fn *Func) *ClosureExpr {
-	n := &ClosureExpr{Func: fn}
-	n.op = OCLOSURE
-	n.pos = pos
-	return n
-}
-
 // A CompLitExpr is a composite literal Type{Vals}.
 // Before type-checking, the type is Ntype.
 type CompLitExpr struct {
@@ -252,8 +244,7 @@ func (n *ConstExpr) Val() constant.Value { return n.val }
 // It may end up being a value or a type.
 type ConvExpr struct {
 	miniExpr
-	X           Node
-	NonEscaping bool // The allocation needed for the conversion to interface is known not to escape
+	X Node
 }
 
 func NewConvExpr(pos src.XPos, op Op, typ *types.Type, x Node) *ConvExpr {

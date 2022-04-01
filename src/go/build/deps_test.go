@@ -310,11 +310,6 @@ var depsRules = `
 	go/build/constraint, go/doc, go/parser, internal/buildcfg, internal/goroot, internal/goversion
 	< go/build;
 
-	DEBUG, go/build, go/types, text/scanner
-  < internal/pkgbits
-	< go/internal/gcimporter, go/internal/gccgoimporter, go/internal/srcimporter
-	< go/importer;
-
 	# databases
 	FMT
 	< database/sql/internal
@@ -448,6 +443,11 @@ var depsRules = `
 	< crypto/tls;
 
 	# crypto-aware packages
+
+	CRYPTO, DEBUG, go/build, go/types, text/scanner
+	< internal/pkgbits
+	< go/internal/gcimporter, go/internal/gccgoimporter, go/internal/srcimporter
+	< go/importer;
 
 	NET, crypto/rand, mime/quotedprintable
 	< mime/multipart;
@@ -625,21 +625,6 @@ func TestDependencies(t *testing.T) {
 		if bad != nil {
 			t.Errorf("unexpected dependency: %s imports %v", pkg, bad)
 		}
-	}
-
-	// depPath returns the path between the given from and to packages.
-	// It returns the empty string if there's no dependency path.
-	var depPath func(string, string) string
-	depPath = func(from, to string) string {
-		if sawImport[from][to] {
-			return from + " => " + to
-		}
-		for pkg := range sawImport[from] {
-			if p := depPath(pkg, to); p != "" {
-				return from + " => " + p
-			}
-		}
-		return ""
 	}
 }
 

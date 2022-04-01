@@ -53,6 +53,7 @@ func progedit(ctxt *obj.Link, p *obj.Prog, newprog obj.ProgAlloc) {
 	if p.Reg == obj.REG_NONE {
 		switch p.As {
 		case AADDI, ASLTI, ASLTIU, AANDI, AORI, AXORI, ASLLI, ASRLI, ASRAI,
+			AADDIW, ASLLIW, ASRLIW, ASRAIW, AADDW, ASUBW, ASLLW, ASRLW, ASRAW,
 			AADD, AAND, AOR, AXOR, ASLL, ASRL, ASUB, ASRA,
 			AMUL, AMULH, AMULHU, AMULHSU, AMULW, ADIV, ADIVU, ADIVW, ADIVUW,
 			AREM, AREMU, AREMW, AREMUW:
@@ -82,6 +83,14 @@ func progedit(ctxt *obj.Link, p *obj.Prog, newprog obj.ProgAlloc) {
 			p.As = ASRLI
 		case ASRA:
 			p.As = ASRAI
+		case AADDW:
+			p.As = AADDIW
+		case ASLLW:
+			p.As = ASLLIW
+		case ASRLW:
+			p.As = ASRLIW
+		case ASRAW:
+			p.As = ASRAIW
 		}
 	}
 
@@ -1796,6 +1805,11 @@ func instructionsForStore(p *obj.Prog, as obj.As, rd int16) []*instruction {
 func instructionsForMOV(p *obj.Prog) []*instruction {
 	ins := instructionForProg(p)
 	inss := []*instruction{ins}
+
+	if p.Reg != 0 {
+		p.Ctxt.Diag("%v: illegal MOV instruction", p)
+		return nil
+	}
 
 	switch {
 	case p.From.Type == obj.TYPE_CONST && p.To.Type == obj.TYPE_REG:

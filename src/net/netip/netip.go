@@ -90,7 +90,7 @@ func AddrFrom4(addr [4]byte) Addr {
 }
 
 // AddrFrom16 returns the IPv6 address given by the bytes in addr.
-// An IPv6-mapped IPv4 address is left as an IPv6 address.
+// An IPv4-mapped IPv6 address is left as an IPv6 address.
 // (Use Unmap to convert them if needed.)
 func AddrFrom16(addr [16]byte) Addr {
 	return Addr{
@@ -675,7 +675,7 @@ const (
 )
 
 // As16 returns the IP address in its 16-byte representation.
-// IPv4 addresses are returned in their v6-mapped form.
+// IPv4 addresses are returned in their IPv4-mapped IPv6 form.
 // IPv6 addresses with zones are returned without their zone (use the
 // Zone method to get it).
 // The ip zero value returns all zeroes.
@@ -1290,6 +1290,8 @@ func (p Prefix) IsSingleIP() bool { return p.bits != 0 && int(p.bits) == p.ip.Bi
 // ParsePrefix parses s as an IP address prefix.
 // The string can be in the form "192.168.1.0/24" or "2001:db8::/32",
 // the CIDR notation defined in RFC 4632 and RFC 4291.
+// IPv6 zones are not permitted in prefixes, and an error will be returned if a
+// zone is present.
 //
 // Note that masked address bits are not zeroed. Use Masked for that.
 func ParsePrefix(s string) (Prefix, error) {
@@ -1301,6 +1303,11 @@ func ParsePrefix(s string) (Prefix, error) {
 	if err != nil {
 		return Prefix{}, errors.New("netip.ParsePrefix(" + strconv.Quote(s) + "): " + err.Error())
 	}
+	// IPv6 zones are not allowed: https://go.dev/issue/51899
+	if ip.Is6() && ip.z != z6noz {
+		return Prefix{}, errors.New("netip.ParsePrefix(" + strconv.Quote(s) + "): IPv6 zones cannot be present in a prefix")
+	}
+
 	bitsStr := s[i+1:]
 	bits, err := strconv.Atoi(bitsStr)
 	if err != nil {
@@ -1340,7 +1347,7 @@ func (p Prefix) Masked() Prefix {
 // Contains reports whether the network p includes ip.
 //
 // An IPv4 address will not match an IPv6 prefix.
-// A v6-mapped IPv6 address will not match an IPv4 prefix.
+// An IPv4-mapped IPv6 address will not match an IPv4 prefix.
 // A zero-value IP will not match any prefix.
 // If ip has an IPv6 zone, Contains returns false,
 // because Prefixes strip zones.
@@ -1372,8 +1379,8 @@ func (p Prefix) Contains(ip Addr) bool {
 // Overlaps reports whether p and o contain any IP addresses in common.
 //
 // If p and o are of different address families or either have a zero
-// IP, it reports false. Like the Contains method, a prefix with a
-// v6-mapped IPv4 IP is still treated as an IPv6 mask.
+// IP, it reports false. Like the Contains method, a prefix with an
+// IPv4-mapped IPv6 IP is still treated as an IPv6 mask.
 func (p Prefix) Overlaps(o Prefix) bool {
 	if !p.IsValid() || !o.IsValid() {
 		return false
