@@ -471,7 +471,6 @@ func isEmptyFuncDecl(dcl Decl) bool {
 // elements are accepted. list returns the position of the closing token.
 //
 // list = [ f { sep f } [sep] ] close .
-//
 func (p *parser) list(context string, sep, close token, f func() bool) Pos {
 	if debug && (sep != _Comma && sep != _Semi || close != _Rparen && close != _Rbrace && close != _Rbrack) {
 		panic("invalid sep or close argument for list")
@@ -1022,22 +1021,24 @@ func (p *parser) operand(keep_parens bool) Expr {
 	// as well (operand is only called from pexpr).
 }
 
-// PrimaryExpr =
-// 	Operand |
-// 	Conversion |
-// 	PrimaryExpr Selector |
-// 	PrimaryExpr Index |
-// 	PrimaryExpr Slice |
-// 	PrimaryExpr TypeAssertion |
-// 	PrimaryExpr Arguments .
+// pexpr parses a PrimaryExpr.
 //
-// Selector       = "." identifier .
-// Index          = "[" Expression "]" .
-// Slice          = "[" ( [ Expression ] ":" [ Expression ] ) |
-//                      ( [ Expression ] ":" Expression ":" Expression )
-//                  "]" .
-// TypeAssertion  = "." "(" Type ")" .
-// Arguments      = "(" [ ( ExpressionList | Type [ "," ExpressionList ] ) [ "..." ] [ "," ] ] ")" .
+//	PrimaryExpr =
+//		Operand |
+//		Conversion |
+//		PrimaryExpr Selector |
+//		PrimaryExpr Index |
+//		PrimaryExpr Slice |
+//		PrimaryExpr TypeAssertion |
+//		PrimaryExpr Arguments .
+//
+//	Selector       = "." identifier .
+//	Index          = "[" Expression "]" .
+//	Slice          = "[" ( [ Expression ] ":" [ Expression ] ) |
+//	                     ( [ Expression ] ":" Expression ":" Expression )
+//	                 "]" .
+//	TypeAssertion  = "." "(" Type ")" .
+//	Arguments      = "(" [ ( ExpressionList | Type [ "," ExpressionList ] ) [ "..." ] [ "," ] ] ")" .
 func (p *parser) pexpr(x Expr, keep_parens bool) Expr {
 	if trace {
 		defer p.trace("pexpr")()
@@ -1283,10 +1284,10 @@ func newIndirect(pos Pos, typ Expr) Expr {
 // typeOrNil is like type_ but it returns nil if there was no type
 // instead of reporting an error.
 //
-// Type     = TypeName | TypeLit | "(" Type ")" .
-// TypeName = identifier | QualifiedIdent .
-// TypeLit  = ArrayType | StructType | PointerType | FunctionType | InterfaceType |
-// 	      SliceType | MapType | Channel_Type .
+//	Type     = TypeName | TypeLit | "(" Type ")" .
+//	TypeName = identifier | QualifiedIdent .
+//	TypeLit  = ArrayType | StructType | PointerType | FunctionType | InterfaceType |
+//		      SliceType | MapType | Channel_Type .
 func (p *parser) typeOrNil() Expr {
 	if trace {
 		defer p.trace("typeOrNil")()
@@ -2519,11 +2520,13 @@ func (p *parser) commClause() *CommClause {
 	return c
 }
 
-// Statement =
-// 	Declaration | LabeledStmt | SimpleStmt |
-// 	GoStmt | ReturnStmt | BreakStmt | ContinueStmt | GotoStmt |
-// 	FallthroughStmt | Block | IfStmt | SwitchStmt | SelectStmt | ForStmt |
-// 	DeferStmt .
+// stmtOrNil parses a statement if one is present, or else returns nil.
+//
+//	Statement =
+//		Declaration | LabeledStmt | SimpleStmt |
+//		GoStmt | ReturnStmt | BreakStmt | ContinueStmt | GotoStmt |
+//		FallthroughStmt | Block | IfStmt | SwitchStmt | SelectStmt | ForStmt |
+//		DeferStmt .
 func (p *parser) stmtOrNil() Stmt {
 	if trace {
 		defer p.trace("stmt " + p.tok.String())()
