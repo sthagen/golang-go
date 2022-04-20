@@ -1833,8 +1833,18 @@ func (iter *MapIter) Reset(v Value) {
 //		...
 //	}
 func (v Value) MapRange() *MapIter {
-	v.mustBe(Map)
+	// This is inlinable to take advantage of "function outlining".
+	// The allocation of MapIter can be stack allocated if the caller
+	// does not allow it to escape.
+	// See https://blog.filippo.io/efficient-go-apis-with-the-inliner/
+	if v.kind() != Map {
+		v.panicNotMap()
+	}
 	return &MapIter{m: v}
+}
+
+func (f flag) panicNotMap() {
+	f.mustBe(Map)
 }
 
 // copyVal returns a Value containing the map key or value at ptr,
@@ -2465,12 +2475,17 @@ func (v Value) TrySend(x Value) bool {
 
 // Type returns v's type.
 func (v Value) Type() Type {
-	f := v.flag
-	if f == 0 {
+	if v.flag != 0 && v.flag&flagMethod == 0 {
+		return v.typ
+	}
+	return v.typeSlow()
+}
+
+func (v Value) typeSlow() Type {
+	if v.flag == 0 {
 		panic(&ValueError{"reflect.Value.Type", Invalid})
 	}
-	if f&flagMethod == 0 {
-		// Easy case
+	if v.flag&flagMethod == 0 {
 		return v.typ
 	}
 
