@@ -234,10 +234,6 @@ func Func(fn *ir.Func) {
 	}
 }
 
-func typecheckNtype(n ir.Ntype) ir.Ntype {
-	return typecheck(n, ctxType).(ir.Ntype)
-}
-
 // typecheck type checks node n.
 // The result of typecheck MUST be assigned back to n, e.g.
 //
@@ -476,10 +472,6 @@ func typecheck1(n ir.Node, top int) ir.Node {
 	// types (ODEREF is with exprs)
 	case ir.OTYPE:
 		return n
-
-	case ir.OTFUNC:
-		n := n.(*ir.FuncType)
-		return tcFuncType(n)
 
 	// type or expr
 	case ir.ODEREF:
@@ -1451,43 +1443,6 @@ func fielddup(name string, hash map[string]bool) {
 	hash[name] = true
 }
 
-// iscomptype reports whether type t is a composite literal type.
-func iscomptype(t *types.Type) bool {
-	switch t.Kind() {
-	case types.TARRAY, types.TSLICE, types.TSTRUCT, types.TMAP:
-		return true
-	default:
-		return false
-	}
-}
-
-// pushtype adds elided type information for composite literals if
-// appropriate, and returns the resulting expression.
-func pushtype(nn ir.Node, t *types.Type) ir.Node {
-	if nn == nil || nn.Op() != ir.OCOMPLIT {
-		return nn
-	}
-	n := nn.(*ir.CompLitExpr)
-	if n.Ntype != nil {
-		return n
-	}
-
-	switch {
-	case iscomptype(t):
-		// For T, return T{...}.
-		n.Ntype = ir.TypeNode(t)
-
-	case t.IsPtr() && iscomptype(t.Elem()):
-		// For *T, return &T{...}.
-		n.Ntype = ir.TypeNode(t.Elem())
-
-		addr := NodAddrAt(n.Pos(), n)
-		addr.SetImplicit(true)
-		return addr
-	}
-	return n
-}
-
 // typecheckarraylit type-checks a sequence of slice/array literal elements.
 func typecheckarraylit(elemType *types.Type, bound int64, elts []ir.Node, ctx string) int64 {
 	// If there are key/value pairs, create a map to keep seen
@@ -1516,7 +1471,6 @@ func typecheckarraylit(elemType *types.Type, bound int64, elts []ir.Node, ctx st
 			r = elt.Value
 		}
 
-		r = pushtype(r, elemType)
 		r = Expr(r)
 		r = AssignConv(r, elemType, ctx)
 		if kv != nil {
@@ -1624,9 +1578,7 @@ func stringtoruneslit(n *ir.ConvExpr) ir.Node {
 		i++
 	}
 
-	nn := ir.NewCompLitExpr(base.Pos, ir.OCOMPLIT, ir.TypeNode(n.Type()), nil)
-	nn.List = l
-	return Expr(nn)
+	return Expr(ir.NewCompLitExpr(base.Pos, ir.OCOMPLIT, n.Type(), l))
 }
 
 func checkmake(t *types.Type, arg string, np *ir.Node) bool {

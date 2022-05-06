@@ -643,6 +643,9 @@ func rewriteValuePPC64(v *Value) bool {
 		return rewriteValuePPC64_OpPrefetchCache(v)
 	case OpPrefetchCacheStreamed:
 		return rewriteValuePPC64_OpPrefetchCacheStreamed(v)
+	case OpPubBarrier:
+		v.Op = OpPPC64LoweredPubBarrier
+		return true
 	case OpRotateLeft16:
 		return rewriteValuePPC64_OpRotateLeft16(v)
 	case OpRotateLeft32:
@@ -11682,6 +11685,24 @@ func rewriteValuePPC64_OpPPC64OR(v *Value) bool {
 				continue
 			}
 			v.reset(OpPPC64ROTLW)
+			v.AddArg2(x, y)
+			return true
+		}
+		break
+	}
+	// match: (OR x (NOR y y))
+	// result: (ORN x y)
+	for {
+		for _i0 := 0; _i0 <= 1; _i0, v_0, v_1 = _i0+1, v_1, v_0 {
+			x := v_0
+			if v_1.Op != OpPPC64NOR {
+				continue
+			}
+			y := v_1.Args[1]
+			if y != v_1.Args[0] {
+				continue
+			}
+			v.reset(OpPPC64ORN)
 			v.AddArg2(x, y)
 			return true
 		}

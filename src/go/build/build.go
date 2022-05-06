@@ -13,13 +13,13 @@ import (
 	"go/doc"
 	"go/token"
 	"internal/buildcfg"
-	exec "internal/execabs"
 	"internal/goroot"
 	"internal/goversion"
 	"io"
 	"io/fs"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	pathpkg "path"
 	"path/filepath"
 	"runtime"
@@ -1876,6 +1876,7 @@ func (ctxt *Context) eval(x constraint.Expr, allTags map[string]bool) bool {
 //	cgo (if cgo is enabled)
 //	$GOOS
 //	$GOARCH
+//	boringcrypto
 //	ctxt.Compiler
 //	linux (if GOOS = android)
 //	solaris (if GOOS = illumos)
@@ -1905,6 +1906,9 @@ func (ctxt *Context) matchTag(name string, allTags map[string]bool) bool {
 	}
 	if name == "unix" && unixOS[ctxt.GOOS] {
 		return true
+	}
+	if name == "boringcrypto" {
+		name = "goexperiment.boringcrypto" // boringcrypto is an old name for goexperiment.boringcrypto
 	}
 
 	// other tags
