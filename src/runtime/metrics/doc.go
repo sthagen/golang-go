@@ -102,6 +102,9 @@ Below is the full list of supported metrics, ordered lexicographically.
 	/gc/pauses:seconds
 		Distribution individual GC-related stop-the-world pause latencies.
 
+	/gc/stack/starting-size:bytes
+		The stack size of new goroutines.
+
 	/memory/classes/heap/free:bytes
 		Memory that is completely free and eligible to be returned to
 		the underlying system, but has not been. This metric is the
@@ -163,6 +166,11 @@ Below is the full list of supported metrics, ordered lexicographically.
 		as read-write. Note that this does not include memory mapped
 		by code called via cgo or via the syscall package.
 		Sum of all metrics in /memory/classes.
+
+	/sched/gomaxprocs:threads
+		The current runtime.GOMAXPROCS setting, or the number of
+		operating system threads that can execute user-level Go code
+		simultaneously.
 
 	/sched/goroutines:goroutines
 		Count of live goroutines.

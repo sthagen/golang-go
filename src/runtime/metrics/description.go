@@ -141,6 +141,12 @@ var allDesc = []Description{
 		Cumulative:  true,
 	},
 	{
+		Name:        "/gc/stack/starting-size:bytes",
+		Description: "The stack size of new goroutines.",
+		Kind:        KindUint64,
+		Cumulative:  false,
+	},
+	{
 		Name: "/memory/classes/heap/free:bytes",
 		Description: "Memory that is completely free and eligible to be returned to the underlying system, " +
 			"but has not been. This metric is the runtime's estimate of free address space that is backed by " +
@@ -212,6 +218,11 @@ var allDesc = []Description{
 	{
 		Name:        "/memory/classes/total:bytes",
 		Description: "All memory mapped by the Go runtime into the current process as read-write. Note that this does not include memory mapped by code called via cgo or via the syscall package. Sum of all metrics in /memory/classes.",
+		Kind:        KindUint64,
+	},
+	{
+		Name:        "/sched/gomaxprocs:threads",
+		Description: "The current runtime.GOMAXPROCS setting, or the number of operating system threads that can execute user-level Go code simultaneously.",
 		Kind:        KindUint64,
 	},
 	{

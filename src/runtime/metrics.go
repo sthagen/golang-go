@@ -171,6 +171,12 @@ func initMetrics() {
 				}
 			},
 		},
+		"/gc/stack/starting-size:bytes": {
+			compute: func(in *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = uint64(startingStackSize)
+			},
+		},
 		"/memory/classes/heap/free:bytes": {
 			deps: makeStatDepSet(heapStatsDep),
 			compute: func(in *statAggregate, out *metricValue) {
@@ -272,6 +278,12 @@ func initMetrics() {
 					in.sysStats.stacksSys + in.sysStats.mSpanSys +
 					in.sysStats.mCacheSys + in.sysStats.buckHashSys +
 					in.sysStats.gcMiscSys + in.sysStats.otherSys
+			},
+		},
+		"/sched/gomaxprocs:threads": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = uint64(gomaxprocs)
 			},
 		},
 		"/sched/goroutines:goroutines": {

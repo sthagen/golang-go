@@ -677,7 +677,7 @@ func gcStart(trigger gcTrigger) {
 	gcController.startCycle(now, int(gomaxprocs), trigger)
 
 	// Notify the CPU limiter that assists may begin.
-	gcCPULimiter.startGCTransition(true, 0, now)
+	gcCPULimiter.startGCTransition(true, now)
 
 	// In STW mode, disable scheduling of user Gs. This may also
 	// disable scheduling of this goroutine, so it may block as
@@ -885,12 +885,14 @@ top:
 		goto top
 	}
 
+	gcComputeStartingStackSize()
+
 	// Disable assists and background workers. We must do
 	// this before waking blocked assists.
 	atomic.Store(&gcBlackenEnabled, 0)
 
-	// Notify the CPU limiter that assists will now cease.
-	gcCPULimiter.startGCTransition(false, gcController.assistTime.Load(), now)
+	// Notify the CPU limiter that GC assists will now cease.
+	gcCPULimiter.startGCTransition(false, now)
 
 	// Wake all blocked assists. These will run when we
 	// start the world again.
@@ -1015,6 +1017,12 @@ func gcMarkTermination() {
 	totalCpu := sched.totaltime + (now-sched.procresizetime)*int64(gomaxprocs)
 	memstats.gc_cpu_fraction = float64(work.totaltime) / float64(totalCpu)
 
+	// Reset assist time stat.
+	//
+	// Do this now, instead of at the start of the next GC cycle, because
+	// these two may keep accumulating even if the GC is not active.
+	mheap_.pages.scav.assistTime.Store(0)
+
 	// Reset sweep state.
 	sweep.nbgsweep = 0
 	sweep.npausesweep = 0
@@ -1111,7 +1119,7 @@ func gcMarkTermination() {
 		print(" ms cpu, ",
 			work.heap0>>20, "->", work.heap1>>20, "->", work.heap2>>20, " MB, ",
 			gcController.heapGoal()>>20, " MB goal, ",
-			gcController.stackScan>>20, " MB stacks, ",
+			atomic.Load64(&gcController.maxStackScan)>>20, " MB stacks, ",
 			gcController.globalsScan>>20, " MB globals, ",
 			work.maxprocs, " P")
 		if work.userForced {
