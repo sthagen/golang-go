@@ -65,6 +65,12 @@ func initMetrics() {
 
 	timeHistBuckets = timeHistogramMetricsBuckets()
 	metrics = map[string]metricData{
+		"/cgo/go-to-c-calls:calls": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = uint64(NumCgoCall())
+			},
+		},
 		"/gc/cycles/automatic:gc-cycles": {
 			deps: makeStatDepSet(sysStatsDep),
 			compute: func(in *statAggregate, out *metricValue) {
@@ -157,6 +163,12 @@ func initMetrics() {
 			compute: func(in *statAggregate, out *metricValue) {
 				out.kind = metricKindUint64
 				out.scalar = uint64(in.heapStats.tinyAllocCount)
+			},
+		},
+		"/gc/limiter/last-enabled:gc-cycle": {
+			compute: func(_ *statAggregate, out *metricValue) {
+				out.kind = metricKindUint64
+				out.scalar = uint64(gcCPULimiter.lastEnabledCycle.Load())
 			},
 		},
 		"/gc/pauses:seconds": {

@@ -40,8 +40,8 @@ type gcCPULimiterState struct {
 		// - fill <= capacity
 		fill, capacity uint64
 	}
-	// TODO(mknyszek): Export this as a runtime/metric to provide an estimate of
-	// how much GC work is being dropped on the floor.
+	// overflow is the cumulative amount of GC CPU time that we tried to fill the
+	// bucket with but exceeded its capacity.
 	overflow uint64
 
 	// gcEnabled is an internal copy of gcBlackenEnabled that determines
@@ -60,10 +60,16 @@ type gcCPULimiterState struct {
 	// assistTimePool is the accumulated assist time since the last update.
 	assistTimePool atomic.Int64
 
+	// idleMarkTimePool is the accumulated idle mark time since the last update.
+	idleMarkTimePool atomic.Int64
+
 	// lastUpdate is the nanotime timestamp of the last time update was called.
 	//
 	// Updated under lock, but may be read concurrently.
 	lastUpdate atomic.Int64
+
+	// lastEnabledCycle is the GC cycle that last had the limiter enabled.
+	lastEnabledCycle atomic.Uint32
 
 	// nprocs is an internal copy of gomaxprocs, used to determine total available
 	// CPU time.
@@ -140,6 +146,12 @@ func (l *gcCPULimiterState) addAssistTime(t int64) {
 	l.assistTimePool.Add(t)
 }
 
+// addIdleMarkTime notifies the limiter of additional idle mark worker time. It will be
+// subtracted from the total CPU time in the next update.
+func (l *gcCPULimiterState) addIdleMarkTime(t int64) {
+	l.idleMarkTimePool.Add(t)
+}
+
 // update updates the bucket given runtime-specific information. now is the
 // current monotonic time in nanoseconds.
 //
@@ -174,11 +186,38 @@ func (l *gcCPULimiterState) updateLocked(now int64) {
 		l.assistTimePool.Add(-assistTime)
 	}
 
-	// Accumulate.
+	// Drain the pool of idle mark time.
+	idleMarkTime := l.idleMarkTimePool.Load()
+	if idleMarkTime != 0 {
+		l.idleMarkTimePool.Add(-idleMarkTime)
+	}
+
+	// Compute total GC time.
 	windowGCTime := assistTime
 	if l.gcEnabled {
 		windowGCTime += int64(float64(windowTotalTime) * gcBackgroundUtilization)
 	}
+
+	// Subtract out idle mark time from the total time. Do this after computing
+	// GC time, because the background utilization is dependent on the *real*
+	// total time, not the total time after idle time is subtracted.
+	//
+	// Idle mark workers soak up time that the application spends idle. Any
+	// additional idle time can skew GC CPU utilization, because the GC might
+	// be executing continuously and thrashing, but the CPU utilization with
+	// respect to GOMAXPROCS will be quite low, so the limiter will otherwise
+	// never kick in. By subtracting idle mark time, we're removing time that
+	// we know the application was idle giving a more accurate picture of whether
+	// the GC is thrashing.
+	//
+	// TODO(mknyszek): Figure out if it's necessary to also track non-GC idle time.
+	//
+	// There is a corner case here where if the idle mark workers are disabled, such
+	// as when the periodic GC is executing, then we definitely won't be accounting
+	// for this correctly. However, if the periodic GC is running, the limiter is likely
+	// totally irrelevant because GC CPU utilization is extremely low anyway.
+	windowTotalTime -= idleMarkTime
+
 	l.accumulate(windowTotalTime-windowGCTime, windowGCTime)
 }
 
@@ -203,6 +242,7 @@ func (l *gcCPULimiterState) accumulate(mutatorTime, gcTime int64) {
 		l.bucket.fill = l.bucket.capacity
 		if !enabled {
 			l.enabled.Store(true)
+			l.lastEnabledCycle.Store(memstats.numgc + 1)
 		}
 		return
 	}
@@ -254,6 +294,7 @@ func (l *gcCPULimiterState) resetCapacity(now int64, nprocs int32) {
 	if l.bucket.fill > l.bucket.capacity {
 		l.bucket.fill = l.bucket.capacity
 		l.enabled.Store(true)
+		l.lastEnabledCycle.Store(memstats.numgc + 1)
 	} else if l.bucket.fill < l.bucket.capacity {
 		l.enabled.Store(false)
 	}
