@@ -731,12 +731,11 @@ func (c *gcControllerState) endCycle(now int64, procs int, userForced bool) {
 	}
 
 	if debug.gcpacertrace > 0 {
-		heapGoal := c.heapGoal()
 		printlock()
 		goal := gcGoalUtilization * 100
 		print("pacer: ", int(utilization*100), "% CPU (", int(goal), " exp.) for ")
 		print(c.heapScanWork.Load(), "+", c.stackScanWork.Load(), "+", c.globalsScanWork.Load(), " B work (", c.lastHeapScan+c.lastStackScan+c.globalsScan, " B exp.) ")
-		print("in ", c.triggered, " B -> ", c.heapLive, " B (∆goal ", int64(c.heapLive)-int64(heapGoal), ", cons/mark ", oldConsMark, ")")
+		print("in ", c.triggered, " B -> ", c.heapLive, " B (∆goal ", int64(c.heapLive)-int64(c.lastHeapGoal), ", cons/mark ", oldConsMark, ")")
 		if !ok {
 			print("[controller reset]")
 		}
@@ -1044,7 +1043,7 @@ func (c *gcControllerState) memoryLimitHeapGoal() uint64 {
 	//
 	// Let's take a step back. In an ideal world, this term would look something like just
 	// the heap goal. That is, we "reserve" enough space for the heap to grow to the heap
-	// goal, and subtract out everything else. This is of course impossible; the defintion
+	// goal, and subtract out everything else. This is of course impossible; the definition
 	// is circular! However, this impossible definition contains a key insight: the amount
 	// we're *going* to use matters just as much as whatever we're currently using.
 	//
@@ -1153,7 +1152,7 @@ func (c *gcControllerState) trigger() (uint64, uint64) {
 
 	// Below this point, c.heapMarked < goal.
 
-	// heapMarked is our absolute minumum, and it's possible the trigger
+	// heapMarked is our absolute minimum, and it's possible the trigger
 	// bound we get from heapGoalinternal is less than that.
 	if minTrigger < c.heapMarked {
 		minTrigger = c.heapMarked
@@ -1456,6 +1455,7 @@ func (c *piController) reset() {
 // If this returns false, the caller must NOT become an idle mark worker.
 //
 // nosplit because it may be called without a P.
+//
 //go:nosplit
 func (c *gcControllerState) addIdleMarkWorker() bool {
 	for {
@@ -1483,6 +1483,7 @@ func (c *gcControllerState) addIdleMarkWorker() bool {
 // useful for a quick check before an expensive operation.
 //
 // nosplit because it may be called without a P.
+//
 //go:nosplit
 func (c *gcControllerState) needIdleMarkWorker() bool {
 	p := c.idleMarkWorkers.Load()

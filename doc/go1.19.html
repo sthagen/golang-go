@@ -76,7 +76,8 @@ Do not send CLs removing the interior tags from such phrases.
   The compiler now uses
   a <a href="https://en.wikipedia.org/wiki/Branch_table">jump
   table</a> to implement large integer and string switch statements.
-  Performance improvements vary but can be on the order of 20% faster.
+  Performance improvements for the switch statement vary but can be
+  on the order of 20% faster.
   (<code>GOARCH=amd64</code> and <code>GOARCH=arm64</code> only)
 
 <p>
@@ -143,7 +144,7 @@ Do not send CLs removing the interior tags from such phrases.
       returns an "operation was canceled" error, the error will now
       satisfy <code>errors.Is(err, context.Canceled)</code>.
       These changes are intended to make it easier for code to test
-      for cases in which a context cancelation or timeout causes a net
+      for cases in which a context cancellation or timeout causes a net
       package function or method to return an error, while preserving
       backward compatibility for error messages.
     </p>
@@ -164,6 +165,16 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
   </dd>
 </dl> <!-- os/exec -->
+
+<dl id="reflect"><dt><a href="/pkg/reflect/">reflect</a></dt>
+  <dd>
+    <p><!-- CL 401434 -->
+      <a href="/pkg/strconv/#reflect.SliceHeader"></a><code>reflect.SliceHeader</code>
+      and <a href="/pkg/strconv/#reflect.StringHeader"></a><code>reflect.StringHeader</code>
+      are now deprecated, and their use should be avoided.
+    </p>
+  </dd>
+</dl><!-- reflect -->
 
 <dl id="runtime"><dt><a href="/pkg/runtime/">runtime</a></dt>
   <dd>

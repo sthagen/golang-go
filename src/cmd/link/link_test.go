@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"cmd/internal/sys"
 	"debug/macho"
+	"internal/buildcfg"
 	"internal/testenv"
 	"io/ioutil"
 	"os"
@@ -174,6 +175,8 @@ func TestIssue33979(t *testing.T) {
 
 	// Skip test on platforms that do not support cgo internal linking.
 	switch runtime.GOARCH {
+	case "loong64":
+		t.Skipf("Skipping on %s/%s", runtime.GOOS, runtime.GOARCH)
 	case "mips", "mipsle", "mips64", "mips64le":
 		t.Skipf("Skipping on %s/%s", runtime.GOOS, runtime.GOARCH)
 	}
@@ -1076,6 +1079,10 @@ func TestUnlinkableObj(t *testing.T) {
 	// Test that the linker emits an error with unlinkable object.
 	testenv.MustHaveGoBuild(t)
 	t.Parallel()
+
+	if buildcfg.Experiment.Unified {
+		t.Skip("TODO(mdempsky): Fix ICE when importing unlinkable objects for GOEXPERIMENT=unified")
+	}
 
 	tmpdir := t.TempDir()
 

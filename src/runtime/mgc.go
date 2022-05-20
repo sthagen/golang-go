@@ -279,7 +279,9 @@ func pollFractionalWorkerExit() bool {
 	return float64(selfTime)/float64(delta) > 1.2*gcController.fractionalUtilizationGoal
 }
 
-var work struct {
+var work workType
+
+type workType struct {
 	full  lfstack          // lock-free list of full blocks workbuf
 	empty lfstack          // lock-free list of empty blocks workbuf
 	pad0  cpu.CacheLinePad // prevents false-sharing between full/empty and nproc/nwait
@@ -1118,7 +1120,7 @@ func gcMarkTermination() {
 		}
 		print(" ms cpu, ",
 			work.heap0>>20, "->", work.heap1>>20, "->", work.heap2>>20, " MB, ",
-			gcController.heapGoal()>>20, " MB goal, ",
+			gcController.lastHeapGoal>>20, " MB goal, ",
 			atomic.Load64(&gcController.maxStackScan)>>20, " MB stacks, ",
 			gcController.globalsScan>>20, " MB globals, ",
 			work.maxprocs, " P")
