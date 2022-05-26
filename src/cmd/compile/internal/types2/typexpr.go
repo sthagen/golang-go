@@ -46,7 +46,7 @@ func (check *Checker) ident(x *operand, e *syntax.Name, def *Named, wantType boo
 		return
 	case universeAny, universeComparable:
 		if !check.allowVersion(check.pkg, 1, 18) {
-			check.errorf(e, "undeclared name: %s (requires version go1.18 or later)", e.Value)
+			check.versionErrorf(e, "go1.18", "predeclared %s", e.Value)
 			return // avoid follow-on errors
 		}
 	}
@@ -448,7 +448,7 @@ func (check *Checker) instantiatedType(x syntax.Expr, xlist []syntax.Expr, def *
 	if inst == nil {
 		// x may be a selector for an imported type; use its start pos rather than x.Pos().
 		tname := NewTypeName(syntax.StartPos(x), orig.obj.pkg, orig.obj.name, nil)
-		inst = check.newNamed(tname, orig, nil, nil, nil) // underlying, methods and tparams are set when named is resolved
+		inst = check.newNamed(tname, orig, nil, nil) // underlying, methods and tparams are set when named is resolved
 		inst.targs = newTypeList(targs)
 		inst = ctxt.update(h, orig, targs, inst).(*Named)
 	}
