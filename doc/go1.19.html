@@ -192,14 +192,6 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- go/parser -->
 
-<dl id="go.dev/x/crypto/ssh"><dt><a href="/pkg/go.dev/x/crypto/ssh/">go.dev/x/crypto/ssh</a></dt>
-  <dd>
-    <p><!-- CL 392134 -->
-      TODO: <a href="https://go.dev/cl/392134">https://go.dev/cl/392134</a>: ssh: add IUTF8 constant from RFC 8160
-    </p>
-  </dd>
-</dl><!-- go.dev/x/crypto/ssh -->
-
 <dl id="image/draw"><dt><a href="/pkg/image/draw/">image/draw</a></dt>
   <dd>
     <p><!-- CL 396795 -->
@@ -299,11 +291,6 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="reflect"><dt><a href="/pkg/reflect/">reflect</a></dt>
   <dd>
-    <p><!-- CL 401434 -->
-      <a href="/pkg/reflect/#SliceHeader"><code>SliceHeader</code></a>
-      and <a href="/pkg/reflect/#StringHeader"><code>StringHeader</code></a>
-      are now deprecated, and their use should be avoided.
-    </p>
     <p><!-- CL 357331 -->
       TODO: <a href="https://go.dev/cl/357331">https://go.dev/cl/357331</a>: allow Value.Bytes on addressable byte arrays
     </p>
@@ -321,16 +308,13 @@ Do not send CLs removing the interior tags from such phrases.
       the <code>-trimpath</code> flag set and the <code>GOROOT</code>
       variable is not set in the process environment.
     </p>
-    <p><!-- CL 333529 -->
-      TODO: <a href="https://go.dev/cl/333529">https://go.dev/cl/333529</a>: update runtime (v3)
-    </p>
   </dd>
 </dl><!-- runtime -->
 
-<dl id="runtime/race"><dt><a href="/pkg/runtime/race">runtime/race</a></dt>
+<dl id="runtime/race"><dt><a href="/pkg/runtime/race/">runtime/race</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/49761 -->
-      The race detector has been updgraded to use thread sanitizer
+    <p><!-- https://go.dev/issue/49761 --><!-- CL 333529 -->
+      The race detector has been upgraded to use thread sanitizer
       version v3.
       <ul>
         <li>
@@ -347,10 +331,22 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- runtime/race -->
 
+<dl id="runtime/trace"><dt><a href="/pkg/runtime/trace/">runtime/trace</a></dt>
+  <dd>
+    <p><!-- CL 400795 -->
+      When used together with the
+      <a href="/pkg/runtime/pprof#StartCPUProfile">CPU profiler</a>, the
+      execution trace includes CPU profile samples.
+    </p>
+  </dd>
+</dl><!-- runtime/trace -->
+
 <dl id="sort"><dt><a href="/pkg/sort/">sort</a></dt>
   <dd>
     <p><!-- CL 371574 -->
-      TODO: <a href="https://go.dev/cl/371574">https://go.dev/cl/371574</a>: use pdqsort
+      The sorting algorithm has been rewritten to use
+      <a href="https://arxiv.org/pdf/2106.05123.pdf">pattern-defeating quicksort</a>, which
+      is faster for several common scenarios.
     </p>
   </dd>
 </dl><!-- sort -->
@@ -358,7 +354,7 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="strconv"><dt><a href="/pkg/strconv/">strconv</a></dt>
   <dd>
     <p><!-- CL 397255 -->
-      <a href="/pkg/strconv/#strconv.Quote"><code>strconv.Quote</code></a>
+      <a href="/pkg/strconv/#Quote"><code>Quote</code></a>
       and related functions now quote the rune 007F as <code>\x7f</code>,
       not <code>\u007f</code>.
     </p>
