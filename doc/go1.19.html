@@ -32,9 +32,6 @@ Do not send CLs removing the interior tags from such phrases.
 </p>
 <h3 id="go-command">Go command</h3>
 <p>
-  TODO: <a href="https://go.dev/cl/398058">https://go.dev/cl/398058</a>: cmd/go: quote fragments in CGO_ env variables reported by 'go env'
-</p>
-<p>
   TODO: complete this section.
 </p>
 
@@ -53,6 +50,20 @@ Do not send CLs removing the interior tags from such phrases.
   with <code>-trimpath</code>.
 </p>
 
+<p><!-- CL 404134 -->
+  <code>go</code> <code>test</code> and <code>go</code> <code>generate</code> now place
+  <code>GOROOT/bin</code> at the beginning of the <code>PATH</code> used for the
+  subprocess, so tests and generators that execute the <code>go</code> command
+  will resolve it to same <code>GOROOT</code>.
+</p>
+
+<p><!-- CL 398058 -->
+  <code>go</code> <code>env</code> now quotes entries that contain spaces in
+  the <code>CGO_CFLAGS</code>, <code>CGO_CPPFLAGS</code>, <code>CGO_CXXFLAGS</code>, <code>CGO_FFLAGS</code>, <code>CGO_LDFLAGS</code>,
+  and <code>GOGCCFLAGS</code> variables it reports.
+</p>
+
+
 <h4 id="go-unix">New <code>unix</code> build constraint</h4>
 
 <p><!-- CL 389934 -->
@@ -70,12 +81,49 @@ Do not send CLs removing the interior tags from such phrases.
 </p>
 
 <h2 id="runtime">Runtime</h2>
-<p>
-  TODO: complete this section, or delete if not needed
+
+<p><!-- https://go.dev/issue/48409 -->
+  TODO: soft memory limit
 </p>
+
+<p><!-- https://go.dev/issue/44163 -->
+  TODO: idle mark workers
+</p>
+
+<p><!-- https://go.dev/issue/18138 --><!-- CL 345889 -->
+  The runtime will now allocate initial goroutine stacks based on the historic
+  average stack usage of goroutines. This avoids some of the early stack growth
+  and copying needed in the average case in exchange for at most 2x wasted
+  space on below-average goroutines.
+</p>
+
+<p><!-- https://go.dev/issue/46279 --><!-- CL 393354 -->
+  On Unix operating systems, Go programs that import package
+  <a href="/pkg/os/">os</a> now automatically increase the open file limit
+  (<code>RLIMIT_NOFILE</code>) to the maximum allowed value. Programs that need
+  a lower limit (for compatibility with <code>select</code>, for example) can
+  set the limit back as needed, or lower the hard limit prior to starting the
+  Go program.
+</p>
+
+<p><!-- https://go.dev/issue/51485 --><!-- CL 390421 -->
+  Unrecoverable fatal errors (such as concurrent map writes, or unlock of
+  unlocked mutexes) now print a simpler traceback excluding runtime metadata
+  (equivalent to a fatal panic) unless <code>GOTRACEBACK=system</code> or
+  <code>crash</code>. Runtime-internal fatal error tracebacks always include
+  full metadata regardless of the value of <code>GOTRACEBACK</code>
+</p>
+
+<p><!-- https://go.dev/issue/50614 --><!-- CL 395754 -->
+  Support for debugger-injected function calls has been added on ARM64,
+  enabling users to call functions from their binary in an interactive
+  debugging session when using a debugger that is updated to make use of this
+  functionality.
+</p>
+
 <h2 id="compiler">Compiler</h2>
 
-<p><!-- https://go.dev/issue/5496 CL 357330, 395714, 403979 -->
+<p><!-- https://go.dev/issue/5496 --><!-- CL 357330, 395714, 403979 -->
   The compiler now uses
   a <a href="https://en.wikipedia.org/wiki/Branch_table">jump
   table</a> to implement large integer and string switch statements.
@@ -96,10 +144,38 @@ Do not send CLs removing the interior tags from such phrases.
 <p>
   TODO: complete this section, or delete if not needed
 </p>
+
 <h2 id="library">Core library</h2>
+
+<h3 id="atomic_types">New atomic types</h3>
+<p><!-- https://go.dev/issue/50860 --><!-- CL 381317 -->
+  The <a href="/pkg/sync/atomic/"><code>sync/atomic</code></a> package defines new atomic types
+  <a href="/pkg/sync/atomic/#Bool"><code>Bool</code></a>,
+  <a href="/pkg/sync/atomic/#Int32"><code>Int32</code></a>,
+  <a href="/pkg/sync/atomic/#Int64"><code>Int64</code></a>,
+  <a href="/pkg/sync/atomic/#Uint32"><code>Uint32</code></a>,
+  <a href="/pkg/sync/atomic/#Uint64"><code>Uint64</code></a>,
+  <a href="/pkg/sync/atomic/#Uintptr"><code>Uintptr</code></a>, and
+  <a href="/pkg/sync/atomic/#Pointer"><code>Pointer</code></a>.
+  These types hide the underlying values so that all accesses are forced to use
+  the atomic APIs.
+  <a href="/pkg/sync/atomic/#Pointer"><code>Pointer</code></a> also avoids
+  the need to convert to
+  <a href="/pkg/unsafe/#Pointer"><code>unsafe.Pointer</code></a> at call sites.
+  <a href="/pkg/sync/atomic/#Int64"><code>Int64</code></a> and
+  <a href="/pkg/sync/atomic/#Uint64"><code>Uint64</code></a> automatically
+  receive 64-bit alignment on ARM, 386, and 32-bit MIPS required for 64-bit
+  atomics on these systems.
+</p>
+
+<p>
+  TODO: <a href="https://go.dev/issue/51940">https://go.dev/issue/51940</a>: all: move dev.boringcrypto into main branch behind GOEXPERIMENT
+</p>
+
 <p>
   TODO: complete this section
 </p>
+
 <h3 id="minor_library_changes">Minor changes to the library</h3>
 <p>
   As always, there are various minor changes and updates to the library,
@@ -327,6 +403,44 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- runtime -->
 
+<dl id="runtime/metrics"><dt><a href="/pkg/runtime/metrics/">runtime/metrics</a></dt>
+  <dd>
+    <p><!-- https://go.dev/issue/47216 --><!-- CL 404305 -->
+    The new <code>/sched/gomaxprocs:threads</code> metric reports the current
+    <code>runtime.GOMAXPROCS</code> value.
+    </p>
+
+    <p><!-- https://go.dev/issue/47216 --><!-- CL 404306 -->
+    The new <code>/cgo/go-to-c-calls:calls</code> metric reports the total
+    number of calls made from Go to C. This metric is identical to the <a
+      href="/pkg/runtime/#NumCgoCall"><code>runtime.NumCgoCall</code></a>
+    function.
+    </p>
+
+    <p><!-- https://go.dev/issue/48409 --><!-- CL 403614 -->
+    The new <code>/gc/limiter/last-enabled:gc-cycle</code> metric reports the
+    last GC cycle when the GC CPU limiter was enabled.
+    </p>
+  </dd>
+</dl><!-- runtime/metrics -->
+
+<dl id="runtime/pprof"><dt><a href="/pkg/runtime/pprof/">runtime/pprof</a></dt>
+  <dd>
+    <p><!-- https://go.dev/issue/33250 --><!-- CL 387415 -->
+      Stop-the-world pause times have been significantly reduced when
+      collecting goroutine profiles, reducing the overall latency impact to the
+      application.
+    </p>
+
+    <p><!-- CL 391434 -->
+      <code>MaxRSS</code> is now reported in heap profiles for all Unix
+      operating systems (it was previously only reported for
+      <code>GOOS=android</code>, <code>darwin</code>, <code>ios</code>, and
+      <code>linux</code>).
+    </p>
+  </dd>
+</dl><!-- runtime/pprof -->
+
 <dl id="runtime/race"><dt><a href="/pkg/runtime/race/">runtime/race</a></dt>
   <dd>
     <p><!-- https://go.dev/issue/49761 --><!-- CL 333529 -->
@@ -343,6 +457,10 @@ Do not send CLs removing the interior tags from such phrases.
           Supports unlimited numbers of goroutines
         </li>
       </ul>
+    </p>
+
+    <p><!-- CL 336549 -->
+      The race detector is now supported on S390.
     </p>
   </dd>
 </dl><!-- runtime/race -->
@@ -376,6 +494,24 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
   </dd>
 </dl><!-- strconv -->
+
+<dl id="syscall"><dt><a href="/pkg/syscall/">syscall</a></dt>
+  <dd>
+    <p><!-- https://go.dev/issue/51192 --><!-- CL 385796 -->
+      On PowerPC (<code>GOARCH=ppc64</code>, <code>ppc64le</code>),
+      <a href="/pkg/syscall/#Syscall"><code>Syscall</code></a>,
+      <a href="/pkg/syscall/#Syscall6"><code>Syscall6</code></a>,
+      <a href="/pkg/syscall/#RawSyscall"><code>RawSyscall</code></a>, and
+      <a href="/pkg/syscall/#RawSyscall6"><code>RawSyscall6</code></a>
+      now always return 0 for return value <code>r2</code> instead of an
+      undefined value.
+    </p>
+
+    <p><!-- CL 391434 -->
+      On AIX and Solaris, <code>Getrusage</code> is now defined.
+    </p>
+  </dd>
+</dl><!-- syscall -->
 
 <dl id="time"><dt><a href="/pkg/time/">time</a></dt>
   <dd>
