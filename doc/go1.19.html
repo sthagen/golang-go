@@ -134,8 +134,12 @@ Do not send CLs removing the interior tags from such phrases.
 <p>
   TODO: <a href="https://go.dev/cl/402374">https://go.dev/cl/402374</a>: enable regabi on riscv64 by default
 </p>
-<p>
-  TODO: <a href="https://go.dev/cl/391014">https://go.dev/cl/391014</a>: The Go compiler now requires the -p=importpath flag, which is already supplied by the go command and by Bazel. Any other build systems that invoke the Go compiler directly will need to make sure they pass this flag as well in order to use Go 1.19.: cmd/compile: require -p flag
+<p><!-- CL 391014 -->
+  The Go compiler now requires the <code>-p=importpath</code> flag to
+  build a linkable object file. This is already supplied by
+  the <code>go</code> command and by Bazel. Any other build systems
+  that invoke the Go compiler directly will need to make sure they
+  pass this flag as well.
 </p>
 <p>
   TODO: complete this section, or delete if not needed
@@ -268,6 +272,17 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- go/parser -->
 
+<dl id="go/types"><dt><a href="/pkg/go/types/">go/types</a></dt>
+  <dd>
+    <p><!-- CL 395535 -->
+      TODO: <a href="https://go.dev/cl/395535">https://go.dev/cl/395535</a>: add Var.Origin and Func.Origin
+    </p>
+    <p><!-- CL 404885 -->
+      TODO: <a href="https://go.dev/cl/404885">https://go.dev/cl/404885</a>: a finite number of types are reachable via Named.Underlying, Named.Method
+    </p>
+  </dd>
+</dl><!-- go/types -->
+
 <dl id="image/draw"><dt><a href="/pkg/image/draw/">image/draw</a></dt>
   <dd>
     <p><!-- CL 396795 -->
@@ -332,7 +347,20 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
   <dd>
     <p><!-- CL 400654 -->
-      TODO: <a href="https://go.dev/cl/400654">https://go.dev/cl/400654</a>: permit use of Resolver.PreferGo, netgo on Windows and Plan 9
+      <a href="/pkg/net/#Resolver.PreferGo"><code>Resolver.PreferGo</code></a>
+      is now implemented on Windows and Plan 9. It previously only worked on Unix
+      platforms. Combined with
+      <a href="/pkg/net/#Dialer.Resolver"><code>Dialer.Resolver</code></a> and
+      <a href="/pkg/net/#Resolver.Dial"><code>Resolver.Dial</code></a>, it's now
+      possible to write portable programs and be in control of all DNS name lookups
+      when dialing.
+    </p>
+    <p>
+      The <code>net</code> package now has initial support for the <code>netgo</code>
+      build tag on Windows. When used, the package uses the Go DNS client (as used
+      by <code>Resolver.PreferGo</code>) instead of asking Windows for
+      DNS results. The upstream DNS server it discovers from Windows
+      may not yet be correct with complex system network configurations, however.
     </p>
   </dd>
 </dl><!-- net -->
