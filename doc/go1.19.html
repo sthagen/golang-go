@@ -18,18 +18,37 @@ Do not send CLs removing the interior tags from such phrases.
     release notes. Go 1.19 is expected to be released in August 2022.
   </strong>
 </p>
+
 <h2 id="language">Changes to the language</h2>
 <p>
   TODO: complete this section
 </p>
+
+<p><!-- https://go.dev/issue/52038 -->
+  TODO: <a href="https://go.dev/issue/52038">https://go.dev/issue/52038</a>: adjust scope of type parameters declared by method receivers
+</p>
+
 <h2 id="ports">Ports</h2>
 <p>
   TODO: complete this section, or delete if not needed
 </p>
+<p><!-- https://go.dev/issue/46229 -->
+  Go 1.19 supports the Loongson 64-bit architecture LoongArch on Linux (<code>GOOS=linux</code>, <code>GOARCH=loong64</code>).
+</p>
+
 <h2 id="tools">Tools</h2>
 <p>
   TODO: complete this section, or delete if not needed
 </p>
+<p><!-- https://go.dev/issue/47528 -->:
+  TODO: https://go.dev/issue/47528 warn when errors.As target has type *error
+</p>
+
+<h3 id="go-doc">Doc Comments</h3>
+<p><!-- https://go.dev/issue/51082 -->
+  TODO: complete this section.
+</p>
+
 <h3 id="go-command">Go command</h3>
 <p>
   TODO: complete this section.
@@ -66,7 +85,7 @@ Do not send CLs removing the interior tags from such phrases.
 
 <h4 id="go-unix">New <code>unix</code> build constraint</h4>
 
-<p><!-- CL 389934 -->
+<p><!-- CL 389934 --><!-- https://go.dev/issue/20322 --><!-- https://go.dev/issue/51572 -->
   The build constraint <code>unix</code> is now recognized
   in <code>//go:build</code> lines. The constraint is satisfied
   if the target operating system, also known as <code>GOOS</code>, is
@@ -82,12 +101,45 @@ Do not send CLs removing the interior tags from such phrases.
 
 <h2 id="runtime">Runtime</h2>
 
-<p><!-- https://go.dev/issue/48409 -->
-  TODO: soft memory limit
+<p><!-- https://go.dev/issue/48409 --><!-- CL 397018 -->
+  The runtime now includes support for a soft memory limit. This memory limit
+  includes the Go heap and all other memory managed by the runtime, and
+  excludes external memory sources such as mappings of the binary itself,
+  memory managed in other languages, and memory held by the operating system on
+  behalf of the Go program. This limit may be managed via
+  <a href="/pkg/runtime/debug/#SetMemoryLimit"><code>runtime/debug.SetMemoryLimit</code></a>
+  or the equivalent
+  <a href="/pkg/runtime/#hdr-Environment_Variables"><code>GOMEMLIMIT</code></a>
+  environment variable. The limit works in conjunction with
+  <a href="/pkg/runtime/debug/#SetGCPercent"><code>runtime/debug.SetGCPercent</code></a>
+  / <a href="/pkg/runtime/#hdr-Environment_Variables"><code>GOGC</code></a>,
+  and will be respected even if <code>GOGC=off</code>, allowing Go programs to
+  always make maximal use of their memory limit, improving resource efficiency
+  in some cases. See <a href="https://go.dev/doc/gc-guide">the GC guide</a> for
+  a detailed guide explaining the soft memory limit in more detail, as well as
+  a variety of common use-cases and scenarios. Please note that small memory
+  limits, on the order of tens of megabytes or less, are less likely to be
+  respected due to external latency factors, such as OS scheduling. See
+  <a href="https://go.dev/issue/52433">issue 52433</a> for more details. Larger
+  memory limits, on the order of hundreds of megabytes or more, are stable and
+  production-ready.
+</p>
+
+<p><!-- CL 353989 -->
+  In order to limit the effects of GC thrashing when the program's live heap
+  size approaches the soft memory limit, the Go runtime also attempts to limit
+  total GC CPU utilization to 50%, excluding idle time, choosing to use more
+  memory over preventing application progress. In practice, we expect this limit
+  to only play a role in exceptional cases, and the new
+  <a href="/pkg/runtime/metrics/#hdr-Supported_metrics">runtime metric</a>
+  <code>/gc/limiter/last-enabled:gc-cycle</code> reports when this last
+  occurred.
 </p>
 
 <p><!-- https://go.dev/issue/44163 -->
-  TODO: idle mark workers
+  The runtime now schedules many fewer GC worker goroutines on idle operating
+  system threads when the application is idle enough to force a periodic GC
+  cycle.
 </p>
 
 <p><!-- https://go.dev/issue/18138 --><!-- CL 345889 -->
@@ -121,6 +173,10 @@ Do not send CLs removing the interior tags from such phrases.
   functionality.
 </p>
 
+<p><!-- https://go.dev/issue/44853 -->
+  TODO: <a href="https://go.dev/issue/44853">https://go.dev/issue/44853</a>: enable address sanitizer in Go
+</p>
+
 <h2 id="compiler">Compiler</h2>
 
 <p><!-- https://go.dev/issue/5496 --><!-- CL 357330, 395714, 403979 -->
@@ -131,7 +187,7 @@ Do not send CLs removing the interior tags from such phrases.
   on the order of 20% faster.
   (<code>GOARCH=amd64</code> and <code>GOARCH=arm64</code> only)
 </p>
-<p>
+<p><!-- CL 402374 -->
   TODO: <a href="https://go.dev/cl/402374">https://go.dev/cl/402374</a>: enable regabi on riscv64 by default
 </p>
 <p><!-- CL 391014 -->
@@ -141,15 +197,28 @@ Do not send CLs removing the interior tags from such phrases.
   that invoke the Go compiler directly will need to make sure they
   pass this flag as well.
 </p>
-<p>
-  TODO: complete this section, or delete if not needed
+
+<h2 id="assembler">Assembler</h2>
+<p><!-- CL 404298 -->
+  Like the compiler, the assembler now requires the
+  <code>-p=importpath</code> flag to build a linkable object file.
+  This is already supplied by the <code>go</code> command. Any other
+  build systems that invoke the Go assembler directly will need to
+  make sure they pass this flag as well.
 </p>
+
 <h2 id="linker">Linker</h2>
-<p>
-  TODO: complete this section, or delete if not needed
+<p><!-- https://go.dev/issue/50796, CL 380755 -->
+  On ELF platforms, the linker now emits compressed DWARF sections in
+  the standard gABI format (<code>SHF_COMPRESSED</code>), instead of
+  the legacy <code>.zdebug</code> format.
 </p>
 
 <h2 id="library">Core library</h2>
+
+<p>
+  TODO: complete this section
+</p>
 
 <h3 id="atomic_types">New atomic types</h3>
 <p><!-- https://go.dev/issue/50860 --><!-- CL 381317 -->
@@ -172,13 +241,26 @@ Do not send CLs removing the interior tags from such phrases.
   atomics on these systems.
 </p>
 
-<p>
-  TODO: <a href="https://go.dev/issue/51940">https://go.dev/issue/51940</a>: all: move dev.boringcrypto into main branch behind GOEXPERIMENT
+<h3 id="go/doc/comment">Doc comment parsing</h3>
+
+<p><!-- CL 384265 --><!-- CL 397276 --><!-- CL 397278 --><!-- CL 397279 --><!-- CL 397281 --><!-- CL 397284 -->
+  TODO: <a href="https://go.dev/cl/384265">https://go.dev/cl/384265</a>: go/doc: use go/doc/comment; modified api/next/51082.txt
+  TODO: <a href="https://go.dev/cl/397276">https://go.dev/cl/397276</a>: go/doc/comment: add data structures; modified api/next/51082.txt
+  TODO: <a href="https://go.dev/cl/397278">https://go.dev/cl/397278</a>: go/doc/comment: add paragraph parsing and test framework; modified api/next/51082.txt
+  TODO: <a href="https://go.dev/cl/397279">https://go.dev/cl/397279</a>: go/doc/comment: add Printer and basic comment printing; modified api/next/51082.txt
+  TODO: <a href="https://go.dev/cl/397281">https://go.dev/cl/397281</a>: go/doc/comment: parse and print doc links; modified api/next/51082.txt
+  TODO: <a href="https://go.dev/cl/397284">https://go.dev/cl/397284</a>: go/doc/comment: parse and print headings; modified api/next/51082.txt
 </p>
 
-<p>
-  TODO: complete this section
+<h3 id="os-exec-path">PATH lookups</h3>
+
+<p><!-- https://go.dev/issue/43724 --><!-- CL 381374 --><!-- CL 403274 -->
+   TODO: <a href="https://go.dev/issue/43724">https://go.dev/issue/43724</a>: return error when PATH lookup would use current directory
 </p>
+<p><!-- https://go.dev/issue/43947 -->
+   TODO: <a href="https://go.dev/issue/43947">https://go.dev/issue/43947</a>: on Windows use NeedCurrentDirectoryForExePathW for LookPath behavior
+</p>
+
 
 <h3 id="minor_library_changes">Minor changes to the library</h3>
 <p>
@@ -200,26 +282,30 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="crypto/rand"><dt><a href="/pkg/crypto/rand/">crypto/rand</a></dt>
   <dd>
-    <p><!-- CL 370894 -->
-      TODO: <a href="https://go.dev/cl/370894">https://go.dev/cl/370894</a>: batch and buffer calls to getrandom/getentropy
+    <p><!-- CL 370894 --><!-- CL 390038 -->
+      <a href="/pkg/crypto/rand/#Read"><code>Read</code></a> no longer buffers
+      random data obtained from the operating system between calls.
     </p>
 
     <p><!-- CL 375215 -->
-      TODO: <a href="https://go.dev/cl/375215">https://go.dev/cl/375215</a>: use fast key erasure RNG on plan9 instead of ANSI X9.31
-    </p>
-
-    <p><!-- CL 390038 -->
-      TODO: <a href="https://go.dev/cl/390038">https://go.dev/cl/390038</a>: remove all buffering
+      On Plan 9, <code>Read</code> has been reimplemented, replacing the ANSI
+      X9.31 algorithm with fast key erasure.
     </p>
   </dd>
 </dl><!-- crypto/rand -->
 
 <dl id="crypto/tls"><dt><a href="/pkg/crypto/tls/">crypto/tls</a></dt>
   <dd>
-    <p><!-- CL 400974 -->
+    <p><!-- CL 400974 --><!-- https://go.dev/issue/45428 -->
       The <code>tls10default</code> <code>GODEBUG</code> option has been
       removed. It is still possible to enable TLS 1.0 client-side by setting
-      <code>Config.MinVersion</code>.
+      <a href="/pkg/crypto/tls#Config.MinVersion"><code>Config.MinVersion</code></a>.
+    </p>
+
+    <p><!-- CL 384894 -->
+      The TLS server and client now reject duplicate extensions in TLS
+      handshakes, as required by RFC 5246, Section 7.4.1.4 and RFC 8446, Section
+      4.2.
     </p>
   </dd>
 </dl><!-- crypto/tls -->
@@ -227,30 +313,135 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="crypto/x509"><dt><a href="/pkg/crypto/x509/">crypto/x509</a></dt>
   <dd>
     <p><!-- CL 285872 -->
-      TODO: <a href="https://go.dev/cl/285872">https://go.dev/cl/285872</a>: disable signing with MD5WithRSA
+      <a href="/pkg/crypto/x509/#CreateCertificate"><code>CreateCertificate</code></a> 
+      no longer supports creating certificates with <code>SignatureAlgorithm</code> 
+      set to <code>MD5WithRSA</code>.
+    </p>
+
+    <p><!-- CL 400494 -->
+      <code>CreateCertificate</code> no longer accepts negative serial numbers.
+    </p>
+
+    <p><!-- CL 383215 -->
+      <a href="/pkg/crypto/x509/#ParseCertificate"><code>ParseCertificate</code></a>
+      and <a href="/pkg/crypto/x509/#ParseCertificateRequest"><code>ParseCertificateRequest</code></a>
+      now reject certificates and CSRs which contain duplicate extensions.
+    </p>
+
+    <p><!-- CL 400175 --><!-- CL 388915 -->
+      The new <a href="/pkg/crypto/x509/#CertPool.Clone"><code>CertPool.Clone</code></a>
+      and <a href="/pkg/crypto/x509/#CertPool.Equal"><code>CertPool.Equal</code></a>
+      methods allow cloning a <code>CertPool</code> and checking the equality of two
+      <code>CertPool</code>s respectively.
+    </p>
+
+    <p><!-- CL 390834 -->
+      The new function <a href="/pkg/crypto/x509/#ParseRevocationList"><code>ParseRevocationList</code></a>
+      provides a faster, safer to use CRL parser which returns a
+      <a href="/pkg/crypto/x509/#RevocationList"><code>RevocationList</code></a>.
+      To support this addition, <code>RevocationList</code> adds new fields
+      <code>RawIssuer</code>, <code>Signature</code>,
+      <code>AuthorityKeyId</code>, and <code>Extensions</code>.
+      
+      The new method <a href="/pkg/crypto/x509/#RevocationList.CheckSignatureFrom"><code>RevocationList.CheckSignatureFrom</a> 
+      checks that the signature on a CRL is a valid signature from a
+      <a href="/pkg/crypto/x509/#Certificate">Certificate</a>.
+
+      With the new CRL functionality, the existing functions
+      <a href="/pkg/crypto/x509/#ParseCRL"><code>ParseCRL</code></a> and
+      <a href="/pkg/crypto/x509/#ParseDERCRL"><code>ParseDERCRL</code></a> are deprecated.
+      Additionally the method <a href="/pkg/crypto/x509#Certificate.CheckCRLSignature"><code>Certificate.CheckCRLSignature</code></a>
+      is deprecated.
+    </p>
+
+    <p><!-- CL 389555 -->
+      When building paths, <a href="/pkg/crypto/x509/#Certificate.Verify"><code>Certificate.Verify</code></a>
+      now considers certificates to be equal when the subjects, public keys, and SANs 
+      are all equal. Before, it required byte-for-byte equality.
+    </p>
+
+    <p><!-- https://go.dev/issue/46057 --><!-- CL 398237 -->
+      TODO: <a href="https://go.dev/issue/46057">https://go.dev/issue/46057</a>: add CertPool.Equal
+    </p>
+
+    <p><!-- https://go.dev/issue/50674 -->
+      TODO: <a href="https://go.dev/issue/50674">https://go.dev/issue/50674</a>: add ParseRevocationList, deprecate ParseCRL &amp; ParseDERCRL
+    </p>
+
+    <p><!-- CL 390834 -->
+      TODO: <a href="https://go.dev/cl/390834">https://go.dev/cl/390834</a>: crypto/x509: add new CRL parser, deprecate old one; modified api/next/50674.txt
+    </p>
+
+    <p><!-- https://go.dev/issue/35044 --><!-- CL 400175 -->
+      TODO: <a href="https://go.dev/cl/400175">https://go.dev/cl/400175</a>: crypto/x509: add CertPool.Clone; modified api/next/35044.txt
+      TODO: <a href="https://go.dev/issue/35044">https://go.dev/issue/35044</a>: add CertPool.Clone
     </p>
   </dd>
 </dl><!-- crypto/x509 -->
 
+<dl id="crypto/x509/pkix"><dt><a href="/pkg/crypto/x509/pkix">crypto/x509/pkix</a></dt>
+  <dd>
+    <p><!-- CL 390834 -->
+      The types <a href="/pkg/crypto/x509/pkix#CertificateList"><code>CertificateList</code></a> and
+      <a href="/pkg/crypto/x509/pkix#TBSCertificateList"><code>TBSCertificateList</code></a>
+      have been deprecated. The new <a href="#crypto/x509"><code>crypto/x509</code></code> CRL functionality</a>
+      should be used instead.
+    </p>
+  </dd>
+</dl><!-- crypto/x509/pkix -->
+
+<dl id="debug"><dt><a href="/pkg/debug/">debug</a></dt>
+  <dd>
+    <p><!-- CL 396735 -->
+      TODO: <a href="https://go.dev/cl/396735">https://go.dev/cl/396735</a>: debug: define ELF relocation for loong64; modified api/next/46229.txt
+    </p>
+  </dd>
+</dl><!-- debug -->
+
+<dl id="debug/pe"><dt><a href="/pkg/debug/pe/">debug/pe</a></dt>
+  <dd>
+    <p><!-- https://go.dev/issue/51868 -->
+      TODO: <a href="https://go.dev/issue/51868">https://go.dev/issue/51868</a>: add APIs to support reading COMDAT info for sections
+    </p>
+
+    <p><!-- CL 394534 -->
+      TODO: <a href="https://go.dev/cl/394534">https://go.dev/cl/394534</a>: debug/pe: add APIs for reading section def aux info; modified api/next/51868.txt
+    </p>
+  </dd>
+</dl><!-- debug/pe -->
+
 <dl id="encoding/binary"><dt><a href="/pkg/encoding/binary/">encoding/binary</a></dt>
   <dd>
-    <p><!-- CL 386017 -->
+    <p><!-- https://go.dev/issue/50601 --><!-- CL 386017 --><!-- CL 389636 -->
       TODO: <a href="https://go.dev/cl/386017">https://go.dev/cl/386017</a>: add AppendByteOrder
     </p>
+    <p><!-- https://go.dev/issue/51644 --><!-- CL 400176 -->
+      TODO: <a href="https://go.dev/issue/51644">https://go.dev/issue/51644</a>: add AppendUvarint and AppendVarint
+    </p>
+
   </dd>
 </dl><!-- encoding/binary -->
 
 <dl id="encoding/csv"><dt><a href="/pkg/encoding/csv/">encoding/csv</a></dt>
   <dd>
-    <p><!-- CL 405675 -->
+    <p><!-- https://go.dev/issue/43401 --><!-- CL 405675 -->
       TODO: <a href="https://go.dev/cl/405675">https://go.dev/cl/405675</a>: add Reader.InputOffset method
     </p>
   </dd>
 </dl><!-- encoding/csv -->
 
+<dl id="encoding/xml"><dt><a href="/pkg/encoding/xml/">encoding/xml</a></dt>
+  <dd>
+    <p><!-- https://go.dev/issue/45628 --><!-- CL 311270 -->
+      TODO: <a href="https://go.dev/issue/45628">https://go.dev/issue/45628</a>: add Decoder.InputPos
+      TODO: <a href="https://go.dev/cl/311270">https://go.dev/cl/311270</a>: encoding/xml: expose decoder line and column; modified api/next/45628.txt
+    </p>
+  </dd>
+</dl><!-- encoding/xml -->
+
 <dl id="flag"><dt><a href="/pkg/flag/">flag</a></dt>
   <dd>
-    <p><!-- CL 313329 -->
+    <p><!-- https://go.dev/issue/45754 --><!-- CL 313329 -->
       TODO: <a href="https://go.dev/cl/313329">https://go.dev/cl/313329</a>: add TextVar function
     </p>
   </dd>
@@ -258,7 +449,7 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="fmt"><dt><a href="/pkg/fmt/">fmt</a></dt>
   <dd>
-    <p><!-- CL 406177 -->
+    <p><!-- https://go.dev/issue/47579 --><!-- CL 406177 -->
       TODO: <a href="https://go.dev/cl/406177">https://go.dev/cl/406177</a>: add Append, Appendln, Appendf
     </p>
   </dd>
@@ -274,14 +465,42 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="go/types"><dt><a href="/pkg/go/types/">go/types</a></dt>
   <dd>
-    <p><!-- CL 395535 -->
-      TODO: <a href="https://go.dev/cl/395535">https://go.dev/cl/395535</a>: add Var.Origin and Func.Origin
+    <p><!-- https://go.dev/issue/51682 --><!-- CL 395535 -->
+      The new methods <a href="/pkg/go/types/#Func.Origin"><code>Func.Origin</code></a>
+      and <a href="/pkg/go/types/#Var.Origin"><code>Var.Origin</code></a> return the
+      corresponding <a href="/pkg/go/types/#Object"><code>Object</code></a> of the
+      generic type for synthetic <a href="/pkg/go/types/#Func"><code>Func</code></a>
+      and <a href="/pkg/go/types/#Var"><code>Var</code></a> objects created during type
+      instantiation.
     </p>
-    <p><!-- CL 404885 -->
-      TODO: <a href="https://go.dev/cl/404885">https://go.dev/cl/404885</a>: a finite number of types are reachable via Named.Underlying, Named.Method
+    <p><!-- https://go.dev/issue/52728 --><!-- CL 404885 -->
+      It is no longer possible to produce an infinite number of distinct-but-identical
+      <a href="/pkg/go/types/#Named"><code>Named</code></a> type instantiations via
+      recursive calls to
+      <a href="/pkg/go/types/#Named.Underlying"><code>Named.Underlying</code></a> or
+      <a href="/pkg/go/types/#Named.Method"><code>Named.Method</code></a>.
     </p>
   </dd>
 </dl><!-- go/types -->
+
+
+<dl id="hash/maphash"><dt><a href="/pkg/hash/maphash/">hash/maphash</a></dt>
+  <dd>
+    <p><!-- https://go.dev/issue/42710 --><!-- CL 392494 -->
+      TODO: <a href="https://go.dev/cl/392494">https://go.dev/cl/392494</a>: hash/maphash: add Bytes and String; modified api/next/42710.txt
+      TODO: <a href="https://go.dev/issue/42710">https://go.dev/issue/42710</a>: add Bytes and String
+    </p>
+  </dd>
+</dl><!-- hash/maphash -->
+
+<dl id="html/template"><dt><a href="/pkg/html/template/">html/template</a></dt>
+  <dd>
+    <p><!-- https://go.dev/issue/46121 --><!-- CL 389156 -->
+      TODO: <a href="https://go.dev/issue/46121">https://go.dev/issue/46121</a>: make FuncMap an alias for text/template.FuncMap
+      TODO: <a href="https://go.dev/cl/389156">https://go.dev/cl/389156</a>: html/template: make FuncMap a type alias of text/template.FuncMap; modified api/except.txt, api/next/46121.txt
+    </p>
+  </dd>
+</dl><!-- html/template -->
 
 <dl id="image/draw"><dt><a href="/pkg/image/draw/">image/draw</a></dt>
   <dd>
@@ -297,8 +516,12 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="io"><dt><a href="/pkg/io/">io</a></dt>
   <dd>
-    <p><!-- CL 400236 -->
+    <p><!-- https://go.dev/issue/51566 --><!-- CL 400236 -->
       TODO: <a href="https://go.dev/cl/400236">https://go.dev/cl/400236</a>: NopCloser forward WriterTo implementations if the reader supports it
+    </p>
+
+    <p><!-- https://go.dev/issue/50842 -->
+      TODO: <a href="https://go.dev/issue/50842">https://go.dev/issue/50842</a>: implement WriterTo on result of MultiReader
     </p>
   </dd>
 </dl><!-- io -->
@@ -333,7 +556,7 @@ Do not send CLs removing the interior tags from such phrases.
       issue tracker</a>.
     </p>
 
-    <p><!-- CL 396877 -->
+    <p><!-- https://go.dev/issue/51428 --><!-- CL 396877 -->
       When a net package function or method returns an "I/O timeout"
       error, the error will now satisfy <code>errors.Is(err,
       context.DeadlineExceeded)</code>.  When a net package function
@@ -344,9 +567,7 @@ Do not send CLs removing the interior tags from such phrases.
       package function or method to return an error, while preserving
       backward compatibility for error messages.
     </p>
-  </dd>
-  <dd>
-    <p><!-- CL 400654 -->
+    <p><!-- https://go.dev/issue/33097 --><!-- CL 400654 -->
       <a href="/pkg/net/#Resolver.PreferGo"><code>Resolver.PreferGo</code></a>
       is now implemented on Windows and Plan 9. It previously only worked on Unix
       platforms. Combined with
@@ -368,7 +589,22 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="net/http"><dt><a href="/pkg/net/http/">net/http</a></dt>
   <dd>
     <p><!-- CL 269997 -->
-      TODO: <a href="https://go.dev/cl/269997">https://go.dev/cl/269997</a>: allow sending 1xx responses
+      <a href="/pkg/net/http/#ResponseWriter"><code>ResponseWriter.WriteHeader</code></a>
+      now supports sending user-defined 1xx informational headers.
+    </p>
+
+    <p><!-- CL 361397 -->
+      The <code>io.ReadCloser</code> returned by
+      <a href="/pkg/net/http/#MaxBytesReader"><code>MaxBytesReader</code></a>
+      will now return the defined error type
+      <a href="/pkg/net/http/#MaxBytesError"><code>MaxBytesError</code></a>
+      when its read limit is exceeded.
+    </p>
+
+    <p><!-- CL 375354 -->
+      The HTTP client will handle a 3xx response without a
+      <code>Location</code> header by returning it to the caller,
+      rather than treating it as an error.
     </p>
   </dd>
 </dl><!-- net/http -->
@@ -376,8 +612,25 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="net/url"><dt><a href="/pkg/net/url/">net/url</a></dt>
   <dd>
     <p><!-- CL 374654 -->
-      TODO: <a href="https://go.dev/cl/374654">https://go.dev/cl/374654</a>: add JoinPath, URL.JoinPath
+      The new
+      <a href="/pkg/net/url/#JoinPath"><code>JoinPath</code></a>
+      function and
+      <a href="/pkg/net/url/#URL.JoinPath"><code>URL.JoinPath</code></a>
+      method create a new <code>URL</code> by joining a list of path
+      elements.
     </p>
+    <p><!-- https://go.dev/issue/46059 -->
+      The <code>URL</code> type now distinguishes between URLs with no
+      authority and URLs with an empty authority. For example,
+      <code>http:///path</code> has an empty authority (host),
+      while <code>http:/path</code> has none.
+    </p>
+    <p>
+      The new <a href="/pkg/net/url/#URL"><code>URL</code></a> field
+      <code>OmitHost</code> is set to <code>true</code> when a
+      <code>URL</code> has an empty authority.
+    </p>
+
   </dd>
 </dl><!-- net/url -->
 
@@ -391,8 +644,8 @@ Do not send CLs removing the interior tags from such phrases.
 
 
 <dl id="os/exec"><dt><a href="/pkg/os/exec/">os/exec</a></dt>
-  <dd><!-- https://go.dev/issue/50599 -->
-    <p>
+  <dd>
+    <p><!-- https://go.dev/issue/50599 --><!-- CL 401340 -->
       An <code>exec.Cmd</code> with a non-empty <code>Dir</code> and a
       nil <code>Env</code> now implicitly sets the <code>PWD</code> environment
       variable for the subprocess to match <code>Dir</code>.
@@ -407,7 +660,7 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="reflect"><dt><a href="/pkg/reflect/">reflect</a></dt>
   <dd>
-    <p><!-- CL 357331 -->
+    <p><!-- https://go.dev/issue/47066 --><!-- CL 357331 -->
       The method <a href="/pkg/reflect/#Value.Bytes"><code>Value.Bytes</code></a> now accepts addressable arrays in addition to slices.
     </p>
     <p><!-- CL 400954 -->
@@ -415,6 +668,25 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
   </dd>
 </dl><!-- reflect -->
+
+<dl id="regexp"><dt><a href="/pkg/regexp/">regexp</a></dt>
+  <dd>
+    <p><!-- https://go.dev/issue/51684 --><!-- CL 401076 -->
+      TODO: <a href="https://go.dev/issue/51684">https://go.dev/issue/51684</a>: add ErrNestingDepth error
+      TODO: <a href="https://go.dev/cl/401076">https://go.dev/cl/401076</a>: regexp: change ErrInvalidDepth message to match proposal; modified api/next/51684.txt, api/next/regexpdepth.txt
+    </p>
+  </dd>
+</dl><!-- regexp -->
+
+<dl id="regexp/syntax"><dt><a href="/pkg/regexp/syntax/">regexp/syntax</a></dt>
+  <dd>
+    <p><!-- CL 384617 --><!-- CL 401854 -->
+      TODO: <a href="https://go.dev/cl/384617">https://go.dev/cl/384617</a>: regexp/syntax: add and use ErrInvalidDepth; modified api/next/regexpdepth.txt
+      TODO: <a href="https://go.dev/cl/401854">https://go.dev/cl/401854</a>: regexp/syntax: rename ErrInvalidDepth to ErrNestingDepth; modified api/next/51684.txt
+    </p>
+  </dd>
+</dl><!-- regexp/syntax -->
+
 
 <dl id="runtime"><dt><a href="/pkg/runtime/">runtime</a></dt>
   <dd>
@@ -427,23 +699,38 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- runtime -->
 
+<dl id="runtime/debug"><dt><a href="/pkg/runtime/debug/">runtime/debug</a></dt>
+  <dd>
+    <p><!-- CL 397018 -->
+      TODO: <a href="https://go.dev/cl/397018">https://go.dev/cl/397018</a>: runtime/debug: export SetMemoryLimit; modified api/next/48409.txt
+    </p>
+  </dd>
+</dl><!-- runtime/debug -->
+
 <dl id="runtime/metrics"><dt><a href="/pkg/runtime/metrics/">runtime/metrics</a></dt>
   <dd>
     <p><!-- https://go.dev/issue/47216 --><!-- CL 404305 -->
-    The new <code>/sched/gomaxprocs:threads</code> metric reports the current
-    <code>runtime.GOMAXPROCS</code> value.
+    The new <code>/sched/gomaxprocs:threads</code>
+    <a href="/pkg/runtime/metrics/#hdr-Supported_metrics">metric</a> reports
+    the current
+    <a href="/pkg/runtime/#GOMAXPROCS"><code>runtime.GOMAXPROCS</code></a>
+    value.
     </p>
 
     <p><!-- https://go.dev/issue/47216 --><!-- CL 404306 -->
-    The new <code>/cgo/go-to-c-calls:calls</code> metric reports the total
-    number of calls made from Go to C. This metric is identical to the <a
-      href="/pkg/runtime/#NumCgoCall"><code>runtime.NumCgoCall</code></a>
+    The new <code>/cgo/go-to-c-calls:calls</code>
+    <a href="/pkg/runtime/metrics/#hdr-Supported_metrics">metric</a>
+    reports the total number of calls made from Go to C. This metric is
+    identical to the
+    <a href="/pkg/runtime/#NumCgoCall"><code>runtime.NumCgoCall</code></a>
     function.
     </p>
 
     <p><!-- https://go.dev/issue/48409 --><!-- CL 403614 -->
-    The new <code>/gc/limiter/last-enabled:gc-cycle</code> metric reports the
-    last GC cycle when the GC CPU limiter was enabled.
+    The new <code>/gc/limiter/last-enabled:gc-cycle</code>
+    <a href="/pkg/runtime/metrics/#hdr-Supported_metrics">metric</a>
+    reports the last GC cycle when the GC CPU limiter was enabled. See the
+    <a href="#runtime">runtime notes</a> for details about the GC CPU limiter.
     </p>
   </dd>
 </dl><!-- runtime/metrics -->
@@ -469,22 +756,22 @@ Do not send CLs removing the interior tags from such phrases.
   <dd>
     <p><!-- https://go.dev/issue/49761 --><!-- CL 333529 -->
       The race detector has been upgraded to use thread sanitizer
-      version v3.
-      <ul>
-        <li>
-          Faster (typically 1.5 to 2 times faster)
-        </li>
-        <li>
-          Uses less memory (typically 1/2 as much)
-        </li>
-        <li>
-          Supports unlimited numbers of goroutines
-        </li>
-      </ul>
+      version v3 on all supported platforms
+      except <code>windows/amd64</code>
+      and <code>openbsd/amd64</code>, which remain on v2.
+      Compared to v2, it is now typically 1.5x to 2x faster, uses half
+      as much memory, and it supports an unlimited number of
+      goroutines.
     </p>
 
     <p><!-- CL 336549 -->
-      The race detector is now supported on S390.
+      The race detector is now supported on <code>GOARCH=s390x</code>.
+    </p>
+
+    <p><!-- https://go.dev/issue/52090 -->
+      Race detector support for <code>openbsd/amd64</code> has been
+      removed from thread sanitizer upstream, so it is unlikely to
+      ever be updated from v2.
     </p>
   </dd>
 </dl><!-- runtime/race -->
@@ -492,9 +779,10 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="runtime/trace"><dt><a href="/pkg/runtime/trace/">runtime/trace</a></dt>
   <dd>
     <p><!-- CL 400795 -->
-      When used together with the
-      <a href="/pkg/runtime/pprof#StartCPUProfile">CPU profiler</a>, the
-      execution trace includes CPU profile samples.
+      When tracing and the
+      <a href="/pkg/runtime/pprof#StartCPUProfile">CPU profiler</a> are
+      enabled simultaneously, the execution trace includes CPU profile
+      samples as instantaneous events.
     </p>
   </dd>
 </dl><!-- runtime/trace -->
@@ -506,6 +794,11 @@ Do not send CLs removing the interior tags from such phrases.
       <a href="https://arxiv.org/pdf/2106.05123.pdf">pattern-defeating quicksort</a>, which
       is faster for several common scenarios.
     </p>
+    <p><!-- https://go.dev/issue/50340 --><!-- CL 396514 -->
+      TODO: <a href="https://go.dev/issue/50340">https://go.dev/issue/50340</a>: add Find
+      TODO: <a href="https://go.dev/cl/396514">https://go.dev/cl/396514</a>: sort: add Find function; modified api/next/50340.txt
+    </p>
+  </dd>
   </dd>
 </dl><!-- sort -->
 
@@ -539,8 +832,34 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="time"><dt><a href="/pkg/time/">time</a></dt>
   <dd>
-    <p><!-- CL 393515 -->
+    <p><!-- https://go.dev/issue/51414 --><!-- CL 393515 -->
       TODO: <a href="https://go.dev/cl/393515">https://go.dev/cl/393515</a>: add Duration.Abs
+      TODO: <a href="https://go.dev/issue/51414">https://go.dev/issue/51414</a>: add Duration.Abs
+    </p>
+    <p><!-- https://go.dev/issue/50062 --><!-- CL 405374 -->
+      TODO: <a href="https://go.dev/issue/50062">https://go.dev/issue/50062</a>: add Time.ZoneBounds
+      TODO: <a href="https://go.dev/cl/405374">https://go.dev/cl/405374</a>: time: add Time.ZoneBounds; modified api/next/50062.txt
     </p>
   </dd>
 </dl><!-- time -->
+
+<!-- Silence these false positives from x/build/cmd/relnote: -->
+<!-- CL 382460 -->
+<!-- CL 384154 -->
+<!-- CL 384554 -->
+<!-- CL 392134 -->
+<!-- CL 392414 -->
+<!-- CL 396215 -->
+<!-- CL 403058 -->
+<!-- CL 410133 -->
+<!-- https://go.dev/issue/27837 -->
+<!-- https://go.dev/issue/38340 -->
+<!-- https://go.dev/issue/42516 -->
+<!-- https://go.dev/issue/45713 -->
+<!-- https://go.dev/issue/46654 -->
+<!-- https://go.dev/issue/48257 -->
+<!-- https://go.dev/issue/50447 -->
+<!-- https://go.dev/issue/50720 -->
+<!-- https://go.dev/issue/50792 -->
+<!-- https://go.dev/issue/51115 -->
+<!-- https://go.dev/issue/51447 -->
