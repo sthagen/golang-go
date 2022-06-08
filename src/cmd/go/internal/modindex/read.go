@@ -22,7 +22,6 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
@@ -40,7 +39,15 @@ import (
 // It will be removed before the release.
 // TODO(matloob): Remove enabled once we have more confidence on the
 // module index.
-var enabled, _ = strconv.ParseBool(os.Getenv("GOINDEX"))
+var enabled = func() bool {
+	debug := strings.Split(os.Getenv("GODEBUG"), ",")
+	for _, f := range debug {
+		if f == "goindex=0" {
+			return false
+		}
+	}
+	return true
+}()
 
 // ModuleIndex represents and encoded module index file. It is used to
 // do the equivalent of build.Import of packages in the module and answer other
@@ -105,6 +112,7 @@ func Get(modroot string) (*ModuleIndex, error) {
 	if modroot == "" {
 		panic("modindex.Get called with empty modroot")
 	}
+	modroot = filepath.Clean(modroot)
 	isModCache := str.HasFilePathPrefix(modroot, cfg.GOMODCACHE)
 	return openIndex(modroot, isModCache)
 }
@@ -125,7 +133,7 @@ func openIndex(modroot string, ismodcache bool) (*ModuleIndex, error) {
 		data, _, err := cache.Default().GetMmap(id)
 		if err != nil {
 			// Couldn't read from modindex. Assume we couldn't read from
-			// the index because the module has't been indexed yet.
+			// the index because the module hasn't been indexed yet.
 			data, err = indexModule(modroot)
 			if err != nil {
 				return result{nil, err}
@@ -210,7 +218,7 @@ func (mi *ModuleIndex) Packages() []string {
 
 // RelPath returns the path relative to the module's root.
 func (mi *ModuleIndex) RelPath(path string) string {
-	return str.TrimFilePathPrefix(path, mi.modroot)
+	return str.TrimFilePathPrefix(filepath.Clean(path), mi.modroot) // mi.modroot is already clean
 }
 
 // ImportPackage is the equivalent of build.Import given the information in ModuleIndex.
@@ -242,31 +250,47 @@ func (mi *ModuleIndex) Import(bctxt build.Context, relpath string, mode build.Im
 		return p, fmt.Errorf("import %q: import of unknown directory", p.Dir)
 	}
 
-	// goroot
+	// goroot and gopath
 	inTestdata := func(sub string) bool {
 		return strings.Contains(sub, "/testdata/") || strings.HasSuffix(sub, "/testdata") || str.HasPathPrefix(sub, "testdata")
 	}
-	if ctxt.GOROOT != "" && str.HasFilePathPrefix(mi.modroot, cfg.GOROOTsrc) && !inTestdata(relpath) {
-		modprefix := str.TrimFilePathPrefix(mi.modroot, cfg.GOROOTsrc)
-		p.Goroot = true
-		p.ImportPath = relpath
-		if modprefix != "" {
-			p.ImportPath = filepath.Join(modprefix, p.ImportPath)
-		}
+	if !inTestdata(relpath) {
 		// In build.go, p.Root should only be set in the non-local-import case, or in
 		// GOROOT or GOPATH. Since module mode only calls Import with path set to "."
 		// and the module index doesn't apply outside modules, the GOROOT case is
 		// the only case where GOROOT needs to be set.
-		// TODO(#37015): p.Root actually might be set in the local-import case outside
-		// GOROOT, if the directory is contained in GOPATH/src, even in module
-		// mode, but that's a bug.
-		p.Root = ctxt.GOROOT
+		// But: p.Root is actually set in the local-import case outside GOROOT, if
+		// the directory is contained in GOPATH/src
+		// TODO(#37015): fix that behavior in go/build and remove the gopath case
+		// below.
+		if ctxt.GOROOT != "" && str.HasFilePathPrefix(p.Dir, cfg.GOROOTsrc) && p.Dir != cfg.GOROOTsrc {
+			p.Root = ctxt.GOROOT
+			p.Goroot = true
+			modprefix := str.TrimFilePathPrefix(mi.modroot, cfg.GOROOTsrc)
+			p.ImportPath = relpath
+			if modprefix != "" {
+				p.ImportPath = filepath.Join(modprefix, p.ImportPath)
+			}
+		}
+		for _, root := range ctxt.gopath() {
+			// TODO(matloob): do we need to reimplement the conflictdir logic?
 
-		// Set GOROOT-specific fields
+			// TODO(matloob): ctxt.hasSubdir evaluates symlinks, so it
+			// can be slower than we'd like. Find out if we can drop this
+			// logic before the release.
+			if sub, ok := ctxt.hasSubdir(filepath.Join(root, "src"), p.Dir); ok {
+				p.ImportPath = sub
+				p.Root = root
+			}
+		}
+	}
+	if p.Root != "" {
+		// Set GOROOT-specific fields (sometimes for modules in a GOPATH directory).
 		// The fields set below (SrcRoot, PkgRoot, BinDir, PkgTargetRoot, and PkgObj)
 		// are only set in build.Import if p.Root != "". As noted in the comment
 		// on setting p.Root above, p.Root should only be set in the GOROOT case for the
-		// set of packages we care about.
+		// set of packages we care about, but is also set for modules in a GOPATH src
+		// directory.
 		var pkgtargetroot string
 		var pkga string
 		suffix := ""
