@@ -1,6 +1,6 @@
 <!--{
 	"Title": "The Go Programming Language Specification",
-	"Subtitle": "Version of May 12, 2022",
+	"Subtitle": "Version of June 13, 2022",
 	"Path": "/ref/spec"
 }-->
 
@@ -1025,7 +1025,7 @@ be <a href="#Uniqueness_of_identifiers">unique</a>.
 <pre class="ebnf">
 StructType    = "struct" "{" { FieldDecl ";" } "}" .
 FieldDecl     = (IdentifierList Type | EmbeddedField) [ Tag ] .
-EmbeddedField = [ "*" ] TypeName .
+EmbeddedField = [ "*" ] TypeName [ TypeArgs ] .
 Tag           = string_lit .
 </pre>
 
@@ -3029,7 +3029,7 @@ Each element may optionally be preceded by a corresponding key.
 <pre class="ebnf">
 CompositeLit  = LiteralType LiteralValue .
 LiteralType   = StructType | ArrayType | "[" "..." "]" ElementType |
-                SliceType | MapType | TypeName .
+                SliceType | MapType | TypeName [ TypeArgs ] .
 LiteralValue  = "{" [ ElementList [ "," ] ] "}" .
 ElementList   = KeyedElement { "," KeyedElement } .
 KeyedElement  = [ Key ":" ] Element .
@@ -7141,7 +7141,7 @@ A constant size argument must be non-negative and <a href="#Representability">re
 by a value of type <code>int</code>; if it is an untyped constant it is given type <code>int</code>.
 If both <code>n</code> and <code>m</code> are provided and are constant, then
 <code>n</code> must be no larger than <code>m</code>.
-If <code>n</code> is negative or larger than <code>m</code> at run time,
+For slices and channels, if <code>n</code> is negative or larger than <code>m</code> at run time,
 a <a href="#Run_time_panics">run-time panic</a> occurs.
 </p>
 

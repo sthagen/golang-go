@@ -109,6 +109,11 @@ as well as support for rendering them to HTML, Markdown, and text.
   and <code>GOGCCFLAGS</code> variables it reports.
 </p>
 
+<p><!-- CL 410821 -->
+  The <code>go</code> command now caches information necessary to load some modules,
+  which should result in a speed-up of some <code>go</code> <code>list</code> invocations.
+</p>
+
 <h3 id="vet">Vet</h3>
 
 <p><!-- https://go.dev/issue/47528 -->:
@@ -367,9 +372,9 @@ as well as support for rendering them to HTML, Markdown, and text.
       <code>RawIssuer</code>, <code>Signature</code>,
       <code>AuthorityKeyId</code>, and <code>Extensions</code>.
 
-      The new method <a href="/pkg/crypto/x509/#RevocationList.CheckSignatureFrom"><code>RevocationList.CheckSignatureFrom</a>
+      The new method <a href="/pkg/crypto/x509/#RevocationList.CheckSignatureFrom"><code>RevocationList.CheckSignatureFrom</code></a>
       checks that the signature on a CRL is a valid signature from a
-      <a href="/pkg/crypto/x509/#Certificate">Certificate</a>.
+      <a href="/pkg/crypto/x509/#Certificate"><code>Certificate</code></a>.
 
       With the new CRL functionality, the existing functions
       <a href="/pkg/crypto/x509/#ParseCRL"><code>ParseCRL</code></a> and
@@ -391,7 +396,7 @@ as well as support for rendering them to HTML, Markdown, and text.
     <p><!-- CL 390834 -->
       The types <a href="/pkg/crypto/x509/pkix#CertificateList"><code>CertificateList</code></a> and
       <a href="/pkg/crypto/x509/pkix#TBSCertificateList"><code>TBSCertificateList</code></a>
-      have been deprecated. The new <a href="#crypto/x509"><code>crypto/x509</code></code> CRL functionality</a>
+      have been deprecated. The new <a href="#crypto/x509"><code>crypto/x509</code> CRL functionality</a>
       should be used instead.
     </p>
   </dd>
