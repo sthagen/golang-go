@@ -12,11 +12,10 @@ import (
 	"go/build"
 	"go/build/constraint"
 	"go/token"
+	"internal/godebug"
 	"internal/goroot"
 	"internal/unsafeheader"
-	"io/fs"
 	"math"
-	"os"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -29,7 +28,6 @@ import (
 	"cmd/go/internal/base"
 	"cmd/go/internal/cache"
 	"cmd/go/internal/cfg"
-	"cmd/go/internal/fsys"
 	"cmd/go/internal/imports"
 	"cmd/go/internal/par"
 	"cmd/go/internal/str"
@@ -39,15 +37,7 @@ import (
 // It will be removed before the release.
 // TODO(matloob): Remove enabled once we have more confidence on the
 // module index.
-var enabled = func() bool {
-	debug := strings.Split(os.Getenv("GODEBUG"), ",")
-	for _, f := range debug {
-		if f == "goindex=0" {
-			return false
-		}
-	}
-	return true
-}()
+var enabled bool = godebug.Get("goindex") != "0"
 
 // ModuleIndex represents and encoded module index file. It is used to
 // do the equivalent of build.Import of packages in the module and answer other
@@ -61,57 +51,31 @@ type ModuleIndex struct {
 
 var fcache par.Cache
 
+var salt = godebug.Get("goindexsalt")
+
+// moduleHash returns an ActionID corresponding to the state of the module
+// located at filesystem path modroot.
 func moduleHash(modroot string, ismodcache bool) (cache.ActionID, error) {
 	// We expect modules stored within the module cache to be checksummed and
-	// immutable, and we expect released Go modules to change only infrequently
-	// (when the Go version changes).
-	if !ismodcache || !str.HasFilePathPrefix(modroot, cfg.GOROOT) {
+	// immutable, and we expect released modules within GOROOT to change only
+	// infrequently (when the Go version changes).
+	if !ismodcache {
+		// The contents of this module may change over time. We don't want to pay
+		// the cost to detect changes and re-index whenever they occur, so just
+		// don't index it at all.
+		//
+		// Note that this is true even for modules in GOROOT/src: non-release builds
+		// of the Go toolchain may have arbitrary development changes on top of the
+		// commit reported by runtime.Version, or could be completly artificial due
+		// to lacking a `git` binary (like "devel gomote.XXXXX", as synthesized by
+		// "gomote push" as of 2022-06-15). (Release builds shouldn't have
+		// modifications, but we don't want to use a behavior for releases that we
+		// haven't tested during development.)
 		return cache.ActionID{}, ErrNotIndexed
 	}
 
 	h := cache.NewHash("moduleIndex")
-	fmt.Fprintf(h, "module index %s %s %v\n", runtime.Version(), indexVersion, modroot)
-
-	if strings.HasPrefix(runtime.Version(), "devel ") {
-		// This copy of the standard library is a development version, not a
-		// release. It could be based on a Git commit (like "devel go1.19-2a78e8afc0
-		// Wed Jun 15 00:06:24 2022 +0000") with or without changes on top of that
-		// commit, or it could be completly artificial due to lacking a `git` binary
-		// (like "devel gomote.XXXXX", as synthesized by "gomote push" as of
-		// 2022-06-15). Compute an inexpensive hash of its files using mtimes so
-		// that during development we can continue to exercise the logic for cached
-		// GOROOT indexes.
-		//
-		// mtimes may be granular, imprecise, and loosely updated (see
-		// https://apenwarr.ca/log/20181113), but we don't expect Go contributors to
-		// be mucking around with the import graphs in GOROOT often enough for mtime
-		// collisions to matter essentially ever.
-		//
-		// Note that fsys.Walk walks paths in deterministic order, so this hash
-		// should be completely deterministic if the files are unchanged.
-		err := fsys.Walk(modroot, func(path string, info fs.FileInfo, err error) error {
-			if err := moduleWalkErr(modroot, path, info, err); err != nil {
-				return err
-			}
-
-			if info.IsDir() {
-				return nil
-			}
-			fmt.Fprintf(h, "file %v %v\n", info.Name(), info.ModTime())
-			if info.Mode()&fs.ModeSymlink != 0 {
-				targ, err := fsys.Stat(path)
-				if err != nil {
-					return err
-				}
-				fmt.Fprintf(h, "target %v %v\n", targ.Name(), targ.ModTime())
-			}
-			return nil
-		})
-		if err != nil {
-			return cache.ActionID{}, err
-		}
-	}
-
+	fmt.Fprintf(h, "module index %s %s %s %v\n", runtime.Version(), salt, indexVersion, modroot)
 	return h.Sum(), nil
 }
 
