@@ -440,7 +440,7 @@ retry:
 	// will just cause steals to fail until credit is accumulated
 	// again, so in the long run it doesn't really matter, but we
 	// do have to handle the negative credit case.
-	bgScanCredit := atomic.Loadint64(&gcController.bgScanCredit)
+	bgScanCredit := gcController.bgScanCredit.Load()
 	stolen := int64(0)
 	if bgScanCredit > 0 {
 		if bgScanCredit < scanWork {
@@ -450,7 +450,7 @@ retry:
 			stolen = scanWork
 			gp.gcAssistBytes += debtBytes
 		}
-		atomic.Xaddint64(&gcController.bgScanCredit, -stolen)
+		gcController.bgScanCredit.Add(-stolen)
 
 		scanWork -= stolen
 
@@ -639,7 +639,7 @@ func gcParkAssist() bool {
 	// the queue, but can still back out. This avoids a
 	// race in case background marking has flushed more
 	// credit since we checked above.
-	if atomic.Loadint64(&gcController.bgScanCredit) > 0 {
+	if gcController.bgScanCredit.Load() > 0 {
 		work.assistQueue.q = oldList
 		if oldList.tail != 0 {
 			oldList.tail.ptr().schedlink.set(nil)
@@ -668,7 +668,7 @@ func gcFlushBgCredit(scanWork int64) {
 		// small window here where an assist may add itself to
 		// the blocked queue and park. If that happens, we'll
 		// just get it on the next flush.
-		atomic.Xaddint64(&gcController.bgScanCredit, scanWork)
+		gcController.bgScanCredit.Add(scanWork)
 		return
 	}
 
@@ -708,7 +708,7 @@ func gcFlushBgCredit(scanWork int64) {
 		// Convert from scan bytes back to work.
 		assistWorkPerByte := gcController.assistWorkPerByte.Load()
 		scanWork = int64(float64(scanBytes) * assistWorkPerByte)
-		atomic.Xaddint64(&gcController.bgScanCredit, scanWork)
+		gcController.bgScanCredit.Add(scanWork)
 	}
 	unlock(&work.assistQueue.lock)
 }
@@ -1265,7 +1265,6 @@ func scanobject(b uintptr, gcw *gcWork) {
 	// b is either the beginning of an object, in which case this
 	// is the size of the object to scan, or it points to an
 	// oblet, in which case we compute the size to scan below.
-	hbits := heapBitsForAddr(b)
 	s := spanOfUnchecked(b)
 	n := s.elemsize
 	if n == 0 {
@@ -1308,20 +1307,24 @@ func scanobject(b uintptr, gcw *gcWork) {
 		}
 	}
 
-	var i uintptr
-	for i = 0; i < n; i, hbits = i+goarch.PtrSize, hbits.next() {
-		// Load bits once. See CL 22712 and issue 16973 for discussion.
-		bits := hbits.bits()
-		if bits&bitScan == 0 {
-			break // no more pointers in this object
+	hbits := heapBitsForAddr(b, n)
+	var scanSize uintptr
+	for {
+		var addr uintptr
+		if hbits, addr = hbits.nextFast(); addr == 0 {
+			if hbits, addr = hbits.next(); addr == 0 {
+				break
+			}
 		}
-		if bits&bitPointer == 0 {
-			continue // not a pointer
-		}
+
+		// Keep track of farthest pointer we found, so we can
+		// update heapScanWork. TODO: is there a better metric,
+		// now that we can skip scalar portions pretty efficiently?
+		scanSize = addr - b + goarch.PtrSize
 
 		// Work here is duplicated in scanblock and above.
 		// If you make changes here, make changes there too.
-		obj := *(*uintptr)(unsafe.Pointer(b + i))
+		obj := *(*uintptr)(unsafe.Pointer(addr))
 
 		// At this point we have extracted the next potential pointer.
 		// Quickly filter out nil and pointers back to the current object.
@@ -1335,13 +1338,13 @@ func scanobject(b uintptr, gcw *gcWork) {
 			// heap. In this case, we know the object was
 			// just allocated and hence will be marked by
 			// allocation itself.
-			if obj, span, objIndex := findObject(obj, b, i); obj != 0 {
-				greyobject(obj, b, i, span, gcw, objIndex)
+			if obj, span, objIndex := findObject(obj, b, addr-b); obj != 0 {
+				greyobject(obj, b, addr-b, span, gcw, objIndex)
 			}
 		}
 	}
 	gcw.bytesMarked += uint64(n)
-	gcw.heapScanWork += int64(i)
+	gcw.heapScanWork += int64(scanSize)
 }
 
 // scanConservative scans block [b, b+n) conservatively, treating any

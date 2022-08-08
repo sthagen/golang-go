@@ -556,7 +556,7 @@ func (t gcTrigger) test() bool {
 		// atomically wrote gcController.heapLive anyway and we'll see our
 		// own write.
 		trigger, _ := gcController.trigger()
-		return atomic.Load64(&gcController.heapLive) >= trigger
+		return gcController.heapLive.Load() >= trigger
 	case gcTriggerTime:
 		if gcController.gcPercent.Load() < 0 {
 			return false
@@ -652,7 +652,7 @@ func gcStart(trigger gcTrigger) {
 		// so it can't be more than ncpu, even if GOMAXPROCS is.
 		work.stwprocs = ncpu
 	}
-	work.heap0 = atomic.Load64(&gcController.heapLive)
+	work.heap0 = gcController.heapLive.Load()
 	work.pauseNS = 0
 	work.mode = mode
 
@@ -924,7 +924,7 @@ func gcMarkTermination() {
 	// Start marktermination (write barrier remains enabled for now).
 	setGCPhase(_GCmarktermination)
 
-	work.heap1 = gcController.heapLive
+	work.heap1 = gcController.heapLive.Load()
 	startTime := nanotime()
 
 	mp := acquirem()
@@ -1009,7 +1009,7 @@ func gcMarkTermination() {
 	sweepTermCpu := int64(work.stwprocs) * (work.tMark - work.tSweepTerm)
 	// We report idle marking time below, but omit it from the
 	// overall utilization here since it's "free".
-	markCpu := gcController.assistTime.Load() + gcController.dedicatedMarkTime + gcController.fractionalMarkTime
+	markCpu := gcController.assistTime.Load() + gcController.dedicatedMarkTime.Load() + gcController.fractionalMarkTime.Load()
 	markTermCpu := int64(work.stwprocs) * (work.tEnd - work.tMarkTerm)
 	cycleCpu := sweepTermCpu + markCpu + markTermCpu
 	work.totaltime += cycleCpu
@@ -1105,8 +1105,8 @@ func gcMarkTermination() {
 		for i, ns := range []int64{
 			sweepTermCpu,
 			gcController.assistTime.Load(),
-			gcController.dedicatedMarkTime + gcController.fractionalMarkTime,
-			gcController.idleMarkTime,
+			gcController.dedicatedMarkTime.Load() + gcController.fractionalMarkTime.Load(),
+			gcController.idleMarkTime.Load(),
 			markTermCpu,
 		} {
 			if i == 2 || i == 3 {
@@ -1120,8 +1120,8 @@ func gcMarkTermination() {
 		print(" ms cpu, ",
 			work.heap0>>20, "->", work.heap1>>20, "->", work.heap2>>20, " MB, ",
 			gcController.lastHeapGoal>>20, " MB goal, ",
-			atomic.Load64(&gcController.maxStackScan)>>20, " MB stacks, ",
-			gcController.globalsScan>>20, " MB globals, ",
+			gcController.maxStackScan.Load()>>20, " MB stacks, ",
+			gcController.globalsScan.Load()>>20, " MB globals, ",
 			work.maxprocs, " P")
 		if work.userForced {
 			print(" (forced)")
@@ -1565,7 +1565,7 @@ func gcResetMarkState() {
 	}
 
 	work.bytesMarked = 0
-	work.initialHeapLive = atomic.Load64(&gcController.heapLive)
+	work.initialHeapLive = gcController.heapLive.Load()
 }
 
 // Hooks for other packages
