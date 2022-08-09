@@ -528,6 +528,9 @@ func checkPIE(t *testing.T, name string) {
 }
 
 func TestTrivialPIE(t *testing.T) {
+	if strings.HasSuffix(os.Getenv("GO_BUILDER_NAME"), "-alpine") {
+		t.Skip("skipping on alpine until issue #54354 resolved")
+	}
 	name := "trivial_pie"
 	goCmd(t, "build", "-buildmode=pie", "-o="+name, "./trivial")
 	defer os.Remove(name)
@@ -589,12 +592,12 @@ func testABIHashNote(t *testing.T, f *elf.File, note *note) {
 		return
 	}
 	for _, sym := range symbols {
-		if sym.Name == "go.link.abihashbytes" {
+		if sym.Name == "go:link.abihashbytes" {
 			hashbytes = sym
 		}
 	}
 	if hashbytes.Name == "" {
-		t.Errorf("no symbol called go.link.abihashbytes")
+		t.Errorf("no symbol called go:link.abihashbytes")
 		return
 	}
 	if elf.ST_BIND(hashbytes.Info) != elf.STB_LOCAL {

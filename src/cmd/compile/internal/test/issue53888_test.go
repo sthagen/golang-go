@@ -7,10 +7,12 @@
 package test
 
 import (
+	"internal/testenv"
 	"testing"
 )
 
 func TestAppendOfMake(t *testing.T) {
+	testenv.SkipIfOptimizationOff(t)
 	for n := 32; n < 33; n++ { // avoid stack allocation of make()
 		b := make([]byte, n)
 		f := func() {

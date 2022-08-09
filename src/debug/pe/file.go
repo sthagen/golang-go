@@ -90,6 +90,9 @@ func NewFile(r io.ReaderAt) (*File, error) {
 		IMAGE_FILE_MACHINE_ARM64,
 		IMAGE_FILE_MACHINE_ARMNT,
 		IMAGE_FILE_MACHINE_I386,
+		IMAGE_FILE_MACHINE_RISCV32,
+		IMAGE_FILE_MACHINE_RISCV64,
+		IMAGE_FILE_MACHINE_RISCV128,
 		IMAGE_FILE_MACHINE_UNKNOWN:
 		// ok
 	default:
@@ -322,7 +325,7 @@ func (f *File) ImportedSymbols() ([]string, error) {
 		return nil, nil
 	}
 
-	pe64 := f.Machine == IMAGE_FILE_MACHINE_AMD64 || f.Machine == IMAGE_FILE_MACHINE_ARM64
+	_, pe64 := f.OptionalHeader.(*OptionalHeader64)
 
 	// grab the number of data directory entries
 	var dd_length uint32
