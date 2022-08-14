@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"sync/atomic"
 	"time"
 )
 
@@ -122,7 +121,7 @@ func (hs *serverHandshakeState) handshake() error {
 	}
 
 	c.ekm = ekmFromMasterSecret(c.vers, hs.suite, hs.masterSecret, hs.clientHello.random, hs.hello.random)
-	atomic.StoreUint32(&c.handshakeStatus, 1)
+	c.isHandshakeComplete.Store(true)
 
 	return nil
 }
@@ -661,7 +660,7 @@ func (hs *serverHandshakeState) doFullHandshake() error {
 			}
 		}
 
-		signed := hs.finishedHash.hashForClientCertificate(sigType, sigHash, hs.masterSecret)
+		signed := hs.finishedHash.hashForClientCertificate(sigType, sigHash)
 		if err := verifyHandshakeSignature(sigType, pub, sigHash, signed, certVerify.signature); err != nil {
 			c.sendAlert(alertDecryptError)
 			return errors.New("tls: invalid signature by the client certificate: " + err.Error())

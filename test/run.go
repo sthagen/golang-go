@@ -75,10 +75,14 @@ var env = func() (res envVars) {
 	return
 }()
 
-// TODO(mdempsky): This will give false negatives if the unified
-// experiment is enabled by default, but presumably at that point we
-// won't need to disable tests for it anymore anyway.
-var unifiedEnabled = strings.Contains(","+env.GOEXPERIMENT+",", ",unified,")
+var unifiedEnabled = func() bool {
+	for _, tag := range build.Default.ToolTags {
+		if tag == "goexperiment.unified" {
+			return true
+		}
+	}
+	return false
+}()
 
 // defaultAllCodeGen returns the default value of the -all_codegen
 // flag. By default, we prefer to be fast (returning false), except on
@@ -1883,14 +1887,6 @@ func checkShouldTest() {
 	assert(shouldTest("// +build !windows !plan9", "windows", "amd64"))
 }
 
-func getenv(key, def string) string {
-	value := os.Getenv(key)
-	if value != "" {
-		return value
-	}
-	return def
-}
-
 // overlayDir makes a minimal-overhead copy of srcRoot in which new files may be added.
 func overlayDir(dstRoot, srcRoot string) error {
 	dstRoot = filepath.Clean(dstRoot)
@@ -1980,11 +1976,14 @@ var types2Failures32Bit = setOf(
 )
 
 var go118Failures = setOf(
+	"fixedbugs/issue53702.go",  // 1.18 compiler failed with "Value live at entry" error
+	"fixedbugs/issue54343.go",  // 1.18 compiler assigns receiver parameter to global variable
 	"typeparam/nested.go",      // 1.18 compiler doesn't support function-local types with generics
 	"typeparam/issue51521.go",  // 1.18 compiler produces bad panic message and link error
 	"typeparam/mdempsky/16.go", // 1.18 compiler uses interface shape type in failed type assertions
 	"typeparam/mdempsky/17.go", // 1.18 compiler mishandles implicit conversions from range loops
 	"typeparam/mdempsky/18.go", // 1.18 compiler mishandles implicit conversions in select statements
+	"typeparam/mdempsky/20.go", // 1.18 compiler crashes on method expressions promoted to derived types
 )
 
 // In all of these cases, the 1.17 compiler reports reasonable errors, but either the

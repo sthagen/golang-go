@@ -43,7 +43,9 @@ const (
 	exprGlobal          // global variable or function
 	exprCompLit
 	exprFuncLit
-	exprSelector
+	exprFieldVal
+	exprMethodVal
+	exprMethodExpr
 	exprIndex
 	exprSlice
 	exprAssert
@@ -54,6 +56,8 @@ const (
 	exprNew
 	exprMake
 	exprNil
+	exprFuncInst
+	exprRecv
 )
 
 type codeAssign int

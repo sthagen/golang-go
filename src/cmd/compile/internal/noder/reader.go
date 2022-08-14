@@ -164,18 +164,6 @@ type readerDict struct {
 
 	derived      []derivedInfo // reloc index of the derived type's descriptor
 	derivedTypes []*types.Type // slice of previously computed derived types
-
-	funcs    []objInfo
-	funcsObj []ir.Node
-
-	itabs []itabInfo2
-
-	methodExprs []ir.Node
-}
-
-type itabInfo2 struct {
-	typ  *types.Type
-	lsym *obj.LSym
 }
 
 func setType(n ir.Node, typ *types.Type) {
@@ -558,24 +546,7 @@ var objReader = map[*types.Sym]pkgReaderIndex{}
 // obj reads an instantiated object reference from the bitstream.
 func (r *reader) obj() ir.Node {
 	r.Sync(pkgbits.SyncObject)
-
-	if r.Bool() {
-		idx := r.Len()
-		obj := r.dict.funcsObj[idx]
-		if obj == nil {
-			fn := r.dict.funcs[idx]
-			targs := make([]*types.Type, len(fn.explicits))
-			for i, targ := range fn.explicits {
-				targs[i] = r.p.typIdx(targ, r.dict, true)
-			}
-
-			obj = r.p.objIdx(fn.idx, nil, targs)
-			assert(r.dict.funcsObj[idx] == nil)
-			r.dict.funcsObj[idx] = obj
-		}
-		return obj
-	}
-
+	assert(!r.Bool()) // TODO(mdempsky): Remove; was derived func inst.
 	idx := r.Reloc(pkgbits.RelocObj)
 
 	explicits := make([]*types.Type, r.Len())
@@ -759,41 +730,6 @@ func (pr *pkgReader) objDictIdx(sym *types.Sym, idx pkgbits.Index, implicits, ex
 	dict.derivedTypes = make([]*types.Type, len(dict.derived))
 	for i := range dict.derived {
 		dict.derived[i] = derivedInfo{r.Reloc(pkgbits.RelocType), r.Bool()}
-	}
-
-	dict.funcs = make([]objInfo, r.Len())
-	dict.funcsObj = make([]ir.Node, len(dict.funcs))
-	for i := range dict.funcs {
-		objIdx := r.Reloc(pkgbits.RelocObj)
-		targs := make([]typeInfo, r.Len())
-		for j := range targs {
-			targs[j] = r.typInfo()
-		}
-		dict.funcs[i] = objInfo{idx: objIdx, explicits: targs}
-	}
-
-	dict.itabs = make([]itabInfo2, r.Len())
-	for i := range dict.itabs {
-		typ := pr.typIdx(typeInfo{idx: pkgbits.Index(r.Len()), derived: true}, &dict, true)
-		ifaceInfo := r.typInfo()
-
-		var lsym *obj.LSym
-		if typ.IsInterface() {
-			lsym = reflectdata.TypeLinksym(typ)
-		} else {
-			iface := pr.typIdx(ifaceInfo, &dict, true)
-			lsym = reflectdata.ITabLsym(typ, iface)
-		}
-
-		dict.itabs[i] = itabInfo2{typ: typ, lsym: lsym}
-	}
-
-	dict.methodExprs = make([]ir.Node, r.Len())
-	for i := range dict.methodExprs {
-		recv := pr.typIdx(typeInfo{idx: pkgbits.Index(r.Len()), derived: true}, &dict, true)
-		_, sym := r.selector()
-
-		dict.methodExprs[i] = typecheck.Expr(ir.NewSelectorExpr(src.NoXPos, ir.OXDOT, ir.TypeNode(recv), sym))
 	}
 
 	return &dict
@@ -1860,6 +1796,9 @@ func (r *reader) expr() (res ir.Node) {
 		// TODO(mdempsky): Handle builtins directly in exprCall, like method calls?
 		return typecheck.Callee(r.obj())
 
+	case exprFuncInst:
+		return r.obj()
+
 	case exprConst:
 		pos := r.pos()
 		typ := r.typ()
@@ -1879,35 +1818,36 @@ func (r *reader) expr() (res ir.Node) {
 	case exprFuncLit:
 		return r.funcLit()
 
-	case exprSelector:
-		var x ir.Node
-		if r.Bool() { // MethodExpr
-			if r.Bool() {
-				return r.dict.methodExprs[r.Len()]
-			}
+	case exprFieldVal:
+		x := r.expr()
+		pos := r.pos()
+		_, sym := r.selector()
 
-			n := ir.TypeNode(r.typ())
-			n.SetTypecheck(1)
-			x = n
-		} else { // FieldVal, MethodVal
-			x = r.expr()
-		}
+		return typecheck.Expr(ir.NewSelectorExpr(pos, ir.OXDOT, x, sym)).(*ir.SelectorExpr)
+
+	case exprMethodVal:
+		x := r.expr()
 		pos := r.pos()
 		_, sym := r.selector()
 
 		n := typecheck.Expr(ir.NewSelectorExpr(pos, ir.OXDOT, x, sym)).(*ir.SelectorExpr)
-		if n.Op() == ir.OMETHVALUE {
-			wrapper := methodValueWrapper{
-				rcvr:   n.X.Type(),
-				method: n.Selection,
-			}
-			if r.importedDef() {
-				haveMethodValueWrappers = append(haveMethodValueWrappers, wrapper)
-			} else {
-				needMethodValueWrappers = append(needMethodValueWrappers, wrapper)
-			}
+		wrapper := methodValueWrapper{
+			rcvr:   n.X.Type(),
+			method: n.Selection,
+		}
+		if r.importedDef() {
+			haveMethodValueWrappers = append(haveMethodValueWrappers, wrapper)
+		} else {
+			needMethodValueWrappers = append(needMethodValueWrappers, wrapper)
 		}
 		return n
+
+	case exprMethodExpr:
+		typ := r.typ()
+		pos := r.pos()
+		_, sym := r.selector()
+
+		return typecheck.Expr(ir.NewSelectorExpr(pos, ir.OXDOT, ir.TypeNode(typ), sym)).(*ir.SelectorExpr)
 
 	case exprIndex:
 		x := r.expr()
@@ -1973,6 +1913,19 @@ func (r *reader) expr() (res ir.Node) {
 			return typecheck.Expr(ir.NewLogicalExpr(pos, op, x, y))
 		}
 		return typecheck.Expr(ir.NewBinaryExpr(pos, op, x, y))
+
+	case exprRecv:
+		x := r.expr()
+		pos := r.pos()
+		for i, n := 0, r.Len(); i < n; i++ {
+			x = Implicit(DotField(pos, x, r.Len()))
+		}
+		if r.Bool() { // needs deref
+			x = Implicit(Deref(pos, x.Type().Elem(), x))
+		} else if r.Bool() { // needs addr
+			x = Implicit(Addr(pos, x))
+		}
+		return x
 
 	case exprCall:
 		fun := r.expr()
@@ -2252,7 +2205,17 @@ func (r *reader) rtypeInfo(pos src.XPos, info typeInfo) ir.Node {
 		typ := r.p.typIdx(info, r.dict, true)
 		return reflectdata.TypePtrAt(pos, typ)
 	}
+	assert(r.dict.derived[info.idx].needed)
 	return typecheck.Expr(ir.NewConvExpr(pos, ir.OCONVNOP, types.NewPtr(types.Types[types.TUINT8]), r.dictWord(pos, int64(info.idx))))
+}
+
+// itabInfo returns an expression of type *runtime.itab representing
+// the itab for the given decoded type and interface reference pair.
+func (r *reader) itabInfo(pos src.XPos, typInfo, ifaceInfo typeInfo) ir.Node {
+	typ := r.p.typIdx(typInfo, r.dict, true)
+	iface := r.p.typIdx(ifaceInfo, r.dict, true)
+	lsym := reflectdata.ITabLsym(typ, iface)
+	return typecheck.LinksymAddr(pos, lsym, types.Types[types.TUINT8])
 }
 
 // convRTTI returns expressions appropriate for populating an
@@ -2276,7 +2239,7 @@ func (r *reader) convRTTI(pos src.XPos) (typeWord, srcRType ir.Node) {
 			typeWord = r.rtypeInfo(pos, srcInfo) // direct eface construction
 		}
 	case !src.IsInterface():
-		typeWord = reflectdata.ITabAddrAt(pos, src, dst) // direct iface construction
+		typeWord = r.itabInfo(pos, srcInfo, dstInfo) // direct iface construction
 	default:
 		typeWord = r.rtypeInfo(pos, dstInfo) // convI2I
 	}
@@ -2295,35 +2258,28 @@ func (r *reader) exprType() ir.Node {
 	pos := r.pos()
 	setBasePos(pos)
 
-	lsymPtr := func(lsym *obj.LSym) ir.Node {
-		return typecheck.Expr(typecheck.NodAddrAt(pos, ir.NewLinksymExpr(pos, lsym, types.Types[types.TUINT8])))
-	}
-
-	var typ *types.Type
 	var rtype, itab ir.Node
 
-	if r.Bool() {
-		info := r.dict.itabs[r.Len()]
-		typ = info.typ
+	typInfo := r.typInfo()
+	typ := r.p.typIdx(typInfo, r.dict, true)
 
-		// TODO(mdempsky): Populate rtype unconditionally?
+	if r.Bool() {
+		ifaceInfo := r.typInfo()
+
 		if typ.IsInterface() {
-			rtype = lsymPtr(info.lsym)
+			rtype = r.rtypeInfo(pos, typInfo)
 		} else {
-			itab = lsymPtr(info.lsym)
+			itab = r.itabInfo(pos, typInfo, ifaceInfo)
 		}
 	} else {
-		info := r.typInfo()
-		typ = r.p.typIdx(info, r.dict, true)
-
-		if !info.derived {
+		if !typInfo.derived {
 			// TODO(mdempsky): ir.TypeNode should probably return a typecheck'd node.
 			n := ir.TypeNode(typ)
 			n.SetTypecheck(1)
 			return n
 		}
 
-		rtype = r.rtypeInfo(pos, info)
+		rtype = r.rtypeInfo(pos, typInfo)
 	}
 
 	dt := ir.NewDynamicType(pos, rtype)

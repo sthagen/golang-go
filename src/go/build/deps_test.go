@@ -123,6 +123,9 @@ var depsRules = `
 
 	unicode !< strconv;
 
+	io
+	< internal/saferio;
+
 	# STR is basic string and buffer manipulation.
 	RUNTIME, io, unicode/utf8, unicode/utf16, unicode
 	< bytes, strings
@@ -240,7 +243,7 @@ var depsRules = `
 	< index/suffixarray;
 
 	# executable parsing
-	FMT, encoding/binary, compress/zlib
+	FMT, encoding/binary, compress/zlib, internal/saferio
 	< runtime/debug
 	< debug/dwarf
 	< debug/elf, debug/gosym, debug/macho, debug/pe, debug/plan9obj, internal/xcoff
@@ -379,10 +382,11 @@ var depsRules = `
 	< crypto
 	< crypto/subtle
 	< crypto/internal/subtle
+	< crypto/internal/randutil
 	< crypto/internal/nistec/fiat
 	< crypto/internal/nistec
-	< crypto/internal/edwards25519/field, golang.org/x/crypto/curve25519/internal/field
-	< crypto/internal/edwards25519
+	< crypto/internal/edwards25519/field
+	< crypto/internal/edwards25519, crypto/ecdh
 	< crypto/cipher;
 
 	crypto/cipher,
@@ -396,15 +400,13 @@ var depsRules = `
 	CGO, fmt, net !< CRYPTO;
 
 	# CRYPTO-MATH is core bignum-based crypto - no cgo, net; fmt now ok.
-	CRYPTO, FMT, math/big, embed
+	CRYPTO, FMT, math/big
 	< crypto/internal/boring/bbig
-	< crypto/internal/randutil
 	< crypto/rand
 	< crypto/ed25519
 	< encoding/asn1
 	< golang.org/x/crypto/cryptobyte/asn1
 	< golang.org/x/crypto/cryptobyte
-	< golang.org/x/crypto/curve25519
 	< crypto/dsa, crypto/elliptic, crypto/rsa
 	< crypto/ecdsa
 	< CRYPTO-MATH;
