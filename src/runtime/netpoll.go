@@ -8,6 +8,7 @@ package runtime
 
 import (
 	"runtime/internal/atomic"
+	"runtime/internal/sys"
 	"unsafe"
 )
 
@@ -68,9 +69,8 @@ const pollBlockSize = 4 * 1024
 // Network poller descriptor.
 //
 // No heap pointers.
-//
-//go:notinheap
 type pollDesc struct {
+	_    sys.NotInHeap
 	link *pollDesc // in pollcache, protected by pollcache.lock
 	fd   uintptr   // constant for pollDesc usage lifetime
 
@@ -177,7 +177,7 @@ type pollCache struct {
 
 var (
 	netpollInitLock mutex
-	netpollInited   uint32
+	netpollInited   atomic.Uint32
 
 	pollcache      pollCache
 	netpollWaiters uint32
@@ -189,19 +189,19 @@ func poll_runtime_pollServerInit() {
 }
 
 func netpollGenericInit() {
-	if atomic.Load(&netpollInited) == 0 {
+	if netpollInited.Load() == 0 {
 		lockInit(&netpollInitLock, lockRankNetpollInit)
 		lock(&netpollInitLock)
-		if netpollInited == 0 {
+		if netpollInited.Load() == 0 {
 			netpollinit()
-			atomic.Store(&netpollInited, 1)
+			netpollInited.Store(1)
 		}
 		unlock(&netpollInitLock)
 	}
 }
 
 func netpollinited() bool {
-	return atomic.Load(&netpollInited) != 0
+	return netpollInited.Load() != 0
 }
 
 //go:linkname poll_runtime_isPollServerDescriptor internal/poll.runtime_isPollServerDescriptor
@@ -492,7 +492,7 @@ func netpollgoready(gp *g, traceskip int) {
 	goready(gp, traceskip+1)
 }
 
-// returns true if IO is ready, or false if timedout or closed
+// returns true if IO is ready, or false if timed out or closed
 // waitio - wait only for completed IO, ignore errors
 // Concurrent calls to netpollblock in the same mode are forbidden, as pollDesc
 // can hold only a single waiting goroutine for each mode.
@@ -641,8 +641,8 @@ func (c *pollCache) alloc() *pollDesc {
 // makeArg converts pd to an interface{}.
 // makeArg does not do any allocation. Normally, such
 // a conversion requires an allocation because pointers to
-// go:notinheap types (which pollDesc is) must be stored
-// in interfaces indirectly. See issue 42076.
+// types which embed runtime/internal/sys.NotInHeap (which pollDesc is)
+// must be stored in interfaces indirectly. See issue 42076.
 func (pd *pollDesc) makeArg() (i any) {
 	x := (*eface)(unsafe.Pointer(&i))
 	x._type = pdType

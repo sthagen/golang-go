@@ -15,6 +15,7 @@ import (
 	"testing"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 )
 
 func eq(a, b []string) bool {
@@ -1699,6 +1700,48 @@ func TestCut(t *testing.T) {
 	}
 }
 
+var cutPrefixTests = []struct {
+	s, sep string
+	after  string
+	found  bool
+}{
+	{"abc", "a", "bc", true},
+	{"abc", "abc", "", true},
+	{"abc", "", "abc", true},
+	{"abc", "d", "abc", false},
+	{"", "d", "", false},
+	{"", "", "", true},
+}
+
+func TestCutPrefix(t *testing.T) {
+	for _, tt := range cutPrefixTests {
+		if after, found := CutPrefix([]byte(tt.s), []byte(tt.sep)); string(after) != tt.after || found != tt.found {
+			t.Errorf("CutPrefix(%q, %q) = %q, %v, want %q, %v", tt.s, tt.sep, after, found, tt.after, tt.found)
+		}
+	}
+}
+
+var cutSuffixTests = []struct {
+	s, sep string
+	after  string
+	found  bool
+}{
+	{"abc", "bc", "a", true},
+	{"abc", "abc", "", true},
+	{"abc", "", "abc", true},
+	{"abc", "d", "abc", false},
+	{"", "d", "", false},
+	{"", "", "", true},
+}
+
+func TestCutSuffix(t *testing.T) {
+	for _, tt := range cutSuffixTests {
+		if after, found := CutSuffix([]byte(tt.s), []byte(tt.sep)); string(after) != tt.after || found != tt.found {
+			t.Errorf("CutSuffix(%q, %q) = %q, %v, want %q, %v", tt.s, tt.sep, after, found, tt.after, tt.found)
+		}
+	}
+}
+
 func TestBufferGrowNegative(t *testing.T) {
 	defer func() {
 		if err := recover(); err == nil {
@@ -2116,5 +2159,37 @@ func BenchmarkIndexPeriodic(b *testing.B) {
 				Index(buf, key)
 			}
 		})
+	}
+}
+
+func TestClone(t *testing.T) {
+	var cloneTests = [][]byte{
+		[]byte(nil),
+		[]byte{},
+		Clone([]byte{}),
+		[]byte(strings.Repeat("a", 42))[:0],
+		[]byte(strings.Repeat("a", 42))[:0:0],
+		[]byte("short"),
+		[]byte(strings.Repeat("a", 42)),
+	}
+	for _, input := range cloneTests {
+		clone := Clone(input)
+		if !Equal(clone, input) {
+			t.Errorf("Clone(%q) = %q; want %q", input, clone, input)
+		}
+
+		if input == nil && clone != nil {
+			t.Errorf("Clone(%#v) return value should be equal to nil slice.", input)
+		}
+
+		if input != nil && clone == nil {
+			t.Errorf("Clone(%#v) return value should not be equal to nil slice.", input)
+		}
+
+		inputHeader := (*reflect.SliceHeader)(unsafe.Pointer(&input))
+		cloneHeader := (*reflect.SliceHeader)(unsafe.Pointer(&clone))
+		if cap(input) != 0 && cloneHeader.Data == inputHeader.Data {
+			t.Errorf("Clone(%q) return value should not reference inputs backing memory.", input)
+		}
 	}
 }

@@ -101,7 +101,7 @@ func TestScript(t *testing.T) {
 
 // A testScript holds execution state for a single test script.
 type testScript struct {
-	t           *testing.T
+	t           testing.TB
 	ctx         context.Context
 	cancel      context.CancelFunc
 	gracePeriod time.Duration
@@ -161,17 +161,23 @@ func (ts *testScript) setup() {
 	ts.check(os.MkdirAll(filepath.Join(ts.workdir, "tmp"), 0777))
 	ts.check(os.MkdirAll(filepath.Join(ts.workdir, "gopath/src"), 0777))
 	ts.cd = filepath.Join(ts.workdir, "gopath/src")
+	version, err := goVersion()
+	if err != nil {
+		ts.t.Fatal(err)
+	}
 	ts.env = []string{
 		"WORK=" + ts.workdir, // must be first for ts.abbrev
 		pathEnvName() + "=" + testBin + string(filepath.ListSeparator) + os.Getenv(pathEnvName()),
 		homeEnvName() + "=/no-home",
 		"CCACHE_DISABLE=1", // ccache breaks with non-existent HOME
 		"GOARCH=" + runtime.GOARCH,
+		"TESTGO_GOHOSTARCH=" + goHostArch,
 		"GOCACHE=" + testGOCACHE,
 		"GODEBUG=" + os.Getenv("GODEBUG"),
 		"GOEXE=" + cfg.ExeSuffix,
 		"GOEXPERIMENT=" + os.Getenv("GOEXPERIMENT"),
 		"GOOS=" + runtime.GOOS,
+		"TESTGO_GOHOSTOS=" + goHostOS,
 		"GOPATH=" + filepath.Join(ts.workdir, "gopath"),
 		"GOPROXY=" + proxyURL,
 		"GOPRIVATE=",
@@ -186,7 +192,7 @@ func (ts *testScript) setup() {
 		"PWD=" + ts.cd,
 		tempEnvName() + "=" + filepath.Join(ts.workdir, "tmp"),
 		"devnull=" + os.DevNull,
-		"goversion=" + goVersion(ts),
+		"goversion=" + version,
 		"CMDGO_TEST_RUN_MAIN=true",
 	}
 	if testenv.Builder() != "" || os.Getenv("GIT_TRACE_CURL") == "1" {
@@ -199,6 +205,12 @@ func (ts *testScript) setup() {
 	}
 	if !testenv.HasExternalNetwork() {
 		ts.env = append(ts.env, "TESTGONETWORK=panic", "TESTGOVCS=panic")
+	}
+	if os.Getenv("CGO_ENABLED") != "" || runtime.GOOS != goHostOS || runtime.GOARCH != goHostArch {
+		// If the actual CGO_ENABLED might not match the cmd/go default, set it
+		// explicitly in the environment. Otherwise, leave it unset so that we also
+		// cover the default behaviors.
+		ts.env = append(ts.env, "CGO_ENABLED="+cgoEnabled)
 	}
 
 	for _, key := range extraEnvKeys {
@@ -223,13 +235,13 @@ func (ts *testScript) setup() {
 }
 
 // goVersion returns the current Go version.
-func goVersion(ts *testScript) string {
+func goVersion() (string, error) {
 	tags := build.Default.ReleaseTags
 	version := tags[len(tags)-1]
 	if !regexp.MustCompile(`^go([1-9][0-9]*)\.(0|[1-9][0-9]*)$`).MatchString(version) {
-		ts.fatalf("invalid go version %q", version)
+		return "", fmt.Errorf("invalid go version %q", version)
 	}
-	return version[2:]
+	return version[2:], nil
 }
 
 var execCache par.Cache
@@ -360,6 +372,8 @@ Script:
 			switch cond.tag {
 			case runtime.GOOS, runtime.GOARCH, runtime.Compiler:
 				ok = true
+			case "cross":
+				ok = goHostOS != runtime.GOOS || goHostArch != runtime.GOARCH
 			case "short":
 				ok = testing.Short()
 			case "cgo":
@@ -383,7 +397,10 @@ Script:
 			case "symlink":
 				ok = testenv.HasSymlink()
 			case "case-sensitive":
-				ok = isCaseSensitive(ts.t)
+				ok, err = isCaseSensitive()
+				if err != nil {
+					ts.fatalf("%v", err)
+				}
 			case "trimpath":
 				if info, _ := debug.ReadBuildInfo(); info == nil {
 					ts.fatalf("missing build info")
@@ -466,19 +483,22 @@ Script:
 var (
 	onceCaseSensitive sync.Once
 	caseSensitive     bool
+	caseSensitiveErr  error
 )
 
-func isCaseSensitive(t *testing.T) bool {
+func isCaseSensitive() (bool, error) {
 	onceCaseSensitive.Do(func() {
 		tmpdir, err := os.MkdirTemp("", "case-sensitive")
 		if err != nil {
-			t.Fatal("failed to create directory to determine case-sensitivity:", err)
+			caseSensitiveErr = fmt.Errorf("failed to create directory to determine case-sensitivity: %w", err)
+			return
 		}
 		defer os.RemoveAll(tmpdir)
 
 		fcap := filepath.Join(tmpdir, "FILE")
 		if err := os.WriteFile(fcap, []byte{}, 0644); err != nil {
-			t.Fatal("error writing file to determine case-sensitivity:", err)
+			caseSensitiveErr = fmt.Errorf("error writing file to determine case-sensitivity: %w", err)
+			return
 		}
 
 		flow := filepath.Join(tmpdir, "file")
@@ -491,11 +511,11 @@ func isCaseSensitive(t *testing.T) bool {
 			caseSensitive = true
 			return
 		default:
-			t.Fatal("unexpected error reading file when determining case-sensitivity:", err)
+			caseSensitiveErr = fmt.Errorf("unexpected error reading file when determining case-sensitivity: %w", err)
 		}
 	})
 
-	return caseSensitive
+	return caseSensitive, caseSensitiveErr
 }
 
 // scriptCmds are the script command implementations.
@@ -943,9 +963,9 @@ func (ts *testScript) cmdStale(want simpleStatus, args []string) {
 	tmpl := "{{if .Error}}{{.ImportPath}}: {{.Error.Err}}{{else}}"
 	switch want {
 	case failure:
-		tmpl += "{{if .Stale}}{{.ImportPath}} is unexpectedly stale: {{.StaleReason}}{{end}}"
+		tmpl += `{{if .Stale}}{{.ImportPath}} ({{.Target}}) is unexpectedly stale:{{"\n\t"}}{{.StaleReason}}{{end}}`
 	case success:
-		tmpl += "{{if not .Stale}}{{.ImportPath}} is unexpectedly NOT stale{{end}}"
+		tmpl += "{{if not .Stale}}{{.ImportPath}} ({{.Target}}) is unexpectedly NOT stale{{end}}"
 	default:
 		ts.fatalf("unsupported: %v stale", want)
 	}
@@ -953,10 +973,15 @@ func (ts *testScript) cmdStale(want simpleStatus, args []string) {
 	goArgs := append([]string{"list", "-e", "-f=" + tmpl}, args...)
 	stdout, stderr, err := ts.exec(testGo, goArgs...)
 	if err != nil {
+		// Print stdout before stderr, because stderr may explain the error
+		// independent of whatever we may have printed to stdout.
 		ts.fatalf("go list: %v\n%s%s", err, stdout, stderr)
 	}
 	if stdout != "" {
-		ts.fatalf("%s", stdout)
+		// Print stderr before stdout, because stderr may contain verbose
+		// debugging info (for example, if GODEBUG=gocachehash=1 is set)
+		// and we know that stdout contains a useful summary.
+		ts.fatalf("%s%s", stderr, stdout)
 	}
 }
 

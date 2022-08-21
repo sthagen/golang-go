@@ -17,7 +17,6 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
-	"path"
 	pathpkg "path"
 	"path/filepath"
 	"runtime"
@@ -1776,9 +1775,9 @@ func (p *Package) load(ctx context.Context, opts PackageOpts, path string, stk *
 			setError(e)
 			return
 		}
-		elem := p.DefaultExecName()
-		full := cfg.BuildContext.GOOS + "_" + cfg.BuildContext.GOARCH + "/" + elem
-		if cfg.BuildContext.GOOS != base.ToolGOOS || cfg.BuildContext.GOARCH != base.ToolGOARCH {
+		elem := p.DefaultExecName() + cfg.ExeSuffix
+		full := cfg.BuildContext.GOOS + "_" + cfg.BuildContext.GOARCH + string(filepath.Separator) + elem
+		if cfg.BuildContext.GOOS != runtime.GOOS || cfg.BuildContext.GOARCH != runtime.GOARCH {
 			// Install cross-compiled binaries to subdirectories of bin.
 			elem = full
 		}
@@ -1788,7 +1787,7 @@ func (p *Package) load(ctx context.Context, opts PackageOpts, path string, stk *
 		if p.Internal.Build.BinDir != "" {
 			// Install to GOBIN or bin of GOPATH entry.
 			p.Target = filepath.Join(p.Internal.Build.BinDir, elem)
-			if !p.Goroot && strings.Contains(elem, "/") && cfg.GOBIN != "" {
+			if !p.Goroot && strings.Contains(elem, string(filepath.Separator)) && cfg.GOBIN != "" {
 				// Do not create $GOBIN/goos_goarch/elem.
 				p.Target = ""
 				p.Internal.GobinSubdir = true
@@ -1798,13 +1797,10 @@ func (p *Package) load(ctx context.Context, opts PackageOpts, path string, stk *
 			// This is for 'go tool'.
 			// Override all the usual logic and force it into the tool directory.
 			if cfg.BuildToolchainName == "gccgo" {
-				p.Target = filepath.Join(base.ToolDir, elem)
+				p.Target = filepath.Join(build.ToolDir, elem)
 			} else {
 				p.Target = filepath.Join(cfg.GOROOTpkg, "tool", full)
 			}
-		}
-		if p.Target != "" && cfg.BuildContext.GOOS == "windows" {
-			p.Target += ".exe"
 		}
 	} else if p.Internal.Local {
 		// Local import turned into absolute path.
@@ -1974,7 +1970,7 @@ func (p *Package) load(ctx context.Context, opts PackageOpts, path string, stk *
 		// Consider starting this as a background goroutine and retrieving the result
 		// asynchronously when we're actually ready to build the package, or when we
 		// actually need to evaluate whether the package's metadata is stale.
-		p.setBuildInfo(opts.LoadVCS)
+		p.setBuildInfo(opts.AutoVCS)
 	}
 
 	// unsafe is a fake package.
@@ -2071,7 +2067,7 @@ func resolveEmbed(pkgdir string, patterns []string) (files []string, pmap map[st
 			glob = pattern[len("all:"):]
 		}
 		// Check pattern is valid for //go:embed.
-		if _, err := path.Match(glob, ""); err != nil || !validEmbedPattern(glob) {
+		if _, err := pathpkg.Match(glob, ""); err != nil || !validEmbedPattern(glob) {
 			return nil, nil, fmt.Errorf("invalid pattern syntax")
 		}
 
@@ -2264,7 +2260,7 @@ var vcsStatusCache par.Cache
 //
 // Note that the GoVersion field is not set here to avoid encoding it twice.
 // It is stored separately in the binary, mostly for historical reasons.
-func (p *Package) setBuildInfo(includeVCS bool) {
+func (p *Package) setBuildInfo(autoVCS bool) {
 	setPkgErrorf := func(format string, args ...any) {
 		if p.Error == nil {
 			p.Error = &PackageError{Err: fmt.Errorf(format, args...)}
@@ -2420,7 +2416,19 @@ func (p *Package) setBuildInfo(includeVCS bool) {
 	var vcsCmd *vcs.Cmd
 	var err error
 	const allowNesting = true
-	if includeVCS && cfg.BuildBuildvcs != "false" && p.Module != nil && p.Module.Version == "" && !p.Standard && !p.IsTestOnly() {
+
+	wantVCS := false
+	switch cfg.BuildBuildvcs {
+	case "true":
+		wantVCS = true // Include VCS metadata even for tests if requested explicitly; see https://go.dev/issue/52648.
+	case "auto":
+		wantVCS = autoVCS && !p.IsTestOnly()
+	case "false":
+	default:
+		panic(fmt.Sprintf("unexpected value for cfg.BuildBuildvcs: %q", cfg.BuildBuildvcs))
+	}
+
+	if wantVCS && p.Module != nil && p.Module.Version == "" && !p.Standard {
 		repoDir, vcsCmd, err = vcs.FromDir(base.Cwd(), "", allowNesting)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			setVCSError(err)
@@ -2724,8 +2732,9 @@ type PackageOpts struct {
 	// may be printed for non-literal arguments that match no main packages.
 	MainOnly bool
 
-	// LoadVCS controls whether we also load version-control metadata for main packages.
-	LoadVCS bool
+	// AutoVCS controls whether we also load version-control metadata for main packages
+	// when -buildvcs=auto (the default).
+	AutoVCS bool
 
 	// SuppressDeps is true if the caller does not need Deps and DepsErrors to be populated
 	// on the package. TestPackagesAndErrors examines the  Deps field to determine if the test
@@ -2902,7 +2911,7 @@ func mainPackagesOnly(pkgs []*Package, matches []*search.Match) []*Package {
 
 	var mains []*Package
 	for _, pkg := range pkgs {
-		if pkg.Name == "main" {
+		if pkg.Name == "main" || (pkg.Name == "" && pkg.Error != nil) {
 			treatAsMain[pkg.ImportPath] = true
 			mains = append(mains, pkg)
 			continue
@@ -3099,7 +3108,7 @@ func PackagesAndErrorsOutsideModule(ctx context.Context, opts PackageOpts, args 
 			return nil, fmt.Errorf("%s: argument must be a package path, not an absolute path", arg)
 		case search.IsMetaPackage(p):
 			return nil, fmt.Errorf("%s: argument must be a package path, not a meta-package", arg)
-		case path.Clean(p) != p:
+		case pathpkg.Clean(p) != p:
 			return nil, fmt.Errorf("%s: argument must be a clean package path", arg)
 		case !strings.Contains(p, "...") && search.IsStandardImportPath(p) && modindex.IsStandardPackage(cfg.GOROOT, cfg.BuildContext.Compiler, p):
 			return nil, fmt.Errorf("%s: argument must not be a package in the standard library", arg)

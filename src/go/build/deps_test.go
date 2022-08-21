@@ -123,9 +123,6 @@ var depsRules = `
 
 	unicode !< strconv;
 
-	io
-	< internal/saferio;
-
 	# STR is basic string and buffer manipulation.
 	RUNTIME, io, unicode/utf8, unicode/utf16, unicode
 	< bytes, strings
@@ -190,6 +187,9 @@ var depsRules = `
 	  text/scanner,
 	  text/tabwriter;
 
+	io, reflect
+	< internal/saferio;
+
 	# encodings
 	# core ones do not use fmt.
 	io, strconv
@@ -203,7 +203,7 @@ var depsRules = `
 
 	fmt !< encoding/base32, encoding/base64;
 
-	FMT, encoding/base32, encoding/base64
+	FMT, encoding/base32, encoding/base64, internal/saferio
 	< encoding/ascii85, encoding/csv, encoding/gob, encoding/hex,
 	  encoding/json, encoding/pem, encoding/xml, mime;
 
@@ -381,7 +381,7 @@ var depsRules = `
 	hash, embed
 	< crypto
 	< crypto/subtle
-	< crypto/internal/subtle
+	< crypto/internal/alias
 	< crypto/internal/randutil
 	< crypto/internal/nistec/fiat
 	< crypto/internal/nistec
@@ -415,6 +415,7 @@ var depsRules = `
 
 	# TLS, Prince of Dependencies.
 	CRYPTO-MATH, NET, container/list, encoding/hex, encoding/pem
+	< golang.org/x/crypto/internal/alias
 	< golang.org/x/crypto/internal/subtle
 	< golang.org/x/crypto/chacha20
 	< golang.org/x/crypto/internal/poly1305

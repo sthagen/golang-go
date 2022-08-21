@@ -354,7 +354,6 @@ func (w *writer) Sym(s *LSym) {
 		case strings.HasPrefix(s.Name, "go:string."),
 			strings.HasPrefix(name, "type:.namedata."),
 			strings.HasPrefix(name, "type:.importpath."),
-			strings.HasPrefix(name, "runtime.gcbits."),
 			strings.HasSuffix(name, ".opendefer"),
 			strings.HasSuffix(name, ".arginfo0"),
 			strings.HasSuffix(name, ".arginfo1"),
@@ -698,7 +697,6 @@ func nAuxSym(s *LSym) int {
 // generate symbols for FuncInfo.
 func genFuncInfoSyms(ctxt *Link) {
 	infosyms := make([]*LSym, 0, len(ctxt.Text))
-	hashedsyms := make([]*LSym, 0, 4*len(ctxt.Text))
 	var b bytes.Buffer
 	symidx := int32(len(ctxt.defs))
 	for _, s := range ctxt.Text {
@@ -760,7 +758,6 @@ func genFuncInfoSyms(ctxt *Link) {
 		}
 	}
 	ctxt.defs = append(ctxt.defs, infosyms...)
-	ctxt.hasheddefs = append(ctxt.hasheddefs, hashedsyms...)
 }
 
 func writeAuxSymDebug(ctxt *Link, par *LSym, aux *LSym) {

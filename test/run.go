@@ -92,6 +92,10 @@ func defaultAllCodeGen() bool {
 	return os.Getenv("GO_BUILDER_NAME") == "linux-amd64"
 }
 
+func optimizationOff() bool {
+	return strings.HasSuffix(os.Getenv("GO_BUILDER_NAME"), "-noopt")
+}
+
 var (
 	goos          = env.GOOS
 	goarch        = env.GOARCH
@@ -529,7 +533,13 @@ func (ctxt *context) match(name string) bool {
 	return false
 }
 
-func init() { checkShouldTest() }
+func init() {
+	checkShouldTest()
+	// TODO(cuonglm): remove once we fix non-unified frontend or when it gone.
+	if optimizationOff() {
+		delete(go118Failures, "fixedbugs/issue53702.go")
+	}
+}
 
 // goGcflags returns the -gcflags argument to use with go build / go run.
 // This must match the flags used for building the standard library,
@@ -1980,6 +1990,7 @@ var go118Failures = setOf(
 	"fixedbugs/issue54343.go",  // 1.18 compiler assigns receiver parameter to global variable
 	"typeparam/nested.go",      // 1.18 compiler doesn't support function-local types with generics
 	"typeparam/issue51521.go",  // 1.18 compiler produces bad panic message and link error
+	"typeparam/issue54497.go",  // 1.18 compiler is more conservative about inlining due to repeated issues
 	"typeparam/mdempsky/16.go", // 1.18 compiler uses interface shape type in failed type assertions
 	"typeparam/mdempsky/17.go", // 1.18 compiler mishandles implicit conversions from range loops
 	"typeparam/mdempsky/18.go", // 1.18 compiler mishandles implicit conversions in select statements

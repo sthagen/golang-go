@@ -185,7 +185,7 @@ func eliminate(t *testing.T, errmap map[string][]string, errlist []error) {
 
 // parseFlags parses flags from the first line of the given source
 // (from src if present, or by reading from the file) if the line
-// starts with "//" (line comment) followed by "-" (possiby with
+// starts with "//" (line comment) followed by "-" (possibly with
 // spaces between). Otherwise the line is ignored.
 func parseFlags(filename string, src []byte, flags *flag.FlagSet) error {
 	// If there is no src, read from the file.
@@ -352,7 +352,7 @@ func TestManual(t *testing.T) {
 }
 
 func TestLongConstants(t *testing.T) {
-	format := "package longconst\n\nconst _ = %s\nconst _ = %s // ERROR excessively long constant"
+	format := "package longconst\n\nconst _ = %s /* ERROR constant overflow */ \nconst _ = %s // ERROR excessively long constant"
 	src := fmt.Sprintf(format, strings.Repeat("1", 9999), strings.Repeat("1", 10001))
 	testFiles(t, nil, []string{"longconst.go"}, [][]byte{[]byte(src)}, false, nil)
 }
