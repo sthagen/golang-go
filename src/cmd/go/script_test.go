@@ -576,10 +576,13 @@ func (ts *testScript) cmdCc(want simpleStatus, args []string) {
 		ts.fatalf("usage: cc args... [&]")
 	}
 
-	var b work.Builder
-	b.Init()
+	b := work.NewBuilder(ts.workdir)
+	defer func() {
+		if err := b.Close(); err != nil {
+			ts.fatalf("%v", err)
+		}
+	}()
 	ts.cmdExec(want, append(b.GccCmd(".", ""), args...))
-	robustio.RemoveAll(b.WorkDir)
 }
 
 // cd changes to a different directory.

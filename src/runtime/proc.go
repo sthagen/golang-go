@@ -295,10 +295,10 @@ func forcegchelper() {
 	lockInit(&forcegc.lock, lockRankForcegc)
 	for {
 		lock(&forcegc.lock)
-		if forcegc.idle != 0 {
+		if forcegc.idle.Load() {
 			throw("forcegc: phase error")
 		}
-		atomic.Store(&forcegc.idle, 1)
+		forcegc.idle.Store(true)
 		goparkunlock(&forcegc.lock, waitReasonForceGCIdle, traceEvGoBlock, 1)
 		// this goroutine is explicitly resumed by sysmon
 		if debug.gctrace > 0 {
@@ -2659,7 +2659,7 @@ top:
 	// blocked thread (e.g. it has already returned from netpoll, but does
 	// not set lastpoll yet), this thread will do blocking netpoll below
 	// anyway.
-	if netpollinited() && atomic.Load(&netpollWaiters) > 0 && sched.lastpoll.Load() != 0 {
+	if netpollinited() && netpollWaiters.Load() > 0 && sched.lastpoll.Load() != 0 {
 		if list := netpoll(0); !list.empty() { // non-blocking
 			gp := list.pop()
 			injectglist(&list)
@@ -2851,7 +2851,7 @@ top:
 	}
 
 	// Poll network until next timer.
-	if netpollinited() && (atomic.Load(&netpollWaiters) > 0 || pollUntil != 0) && sched.lastpoll.Swap(0) != 0 {
+	if netpollinited() && (netpollWaiters.Load() > 0 || pollUntil != 0) && sched.lastpoll.Swap(0) != 0 {
 		sched.pollUntil.Store(pollUntil)
 		if mp.p != 0 {
 			throw("findrunnable: netpoll with p")
@@ -2924,7 +2924,7 @@ func pollWork() bool {
 	if !runqempty(p) {
 		return true
 	}
-	if netpollinited() && atomic.Load(&netpollWaiters) > 0 && sched.lastpoll.Load() != 0 {
+	if netpollinited() && netpollWaiters.Load() > 0 && sched.lastpoll.Load() != 0 {
 		if list := netpoll(0); !list.empty() {
 			injectglist(&list)
 			return true
@@ -5312,9 +5312,9 @@ func sysmon() {
 			idle++
 		}
 		// check if we need to force a GC
-		if t := (gcTrigger{kind: gcTriggerTime, now: now}); t.test() && atomic.Load(&forcegc.idle) != 0 {
+		if t := (gcTrigger{kind: gcTriggerTime, now: now}); t.test() && forcegc.idle.Load() {
 			lock(&forcegc.lock)
-			forcegc.idle = 0
+			forcegc.idle.Store(false)
 			var list gList
 			list.push(forcegc.g)
 			injectglist(&list)

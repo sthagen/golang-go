@@ -588,7 +588,7 @@ func (t Time) GoString() string {
 		// Of these, Location(loc.name) is the least disruptive. This is an edge
 		// case we hope not to hit too often.
 		buf = append(buf, `time.Location(`...)
-		buf = append(buf, []byte(quote(loc.name))...)
+		buf = append(buf, quote(loc.name)...)
 		buf = append(buf, ')')
 	}
 	buf = append(buf, ')')
@@ -1135,6 +1135,9 @@ func parse(layout, value string, defaultLocation, local *Location) (Time, error)
 			}
 		case stdSecond, stdZeroSecond:
 			sec, value, err = getnum(value, std == stdZeroSecond)
+			if err != nil {
+				break
+			}
 			if sec < 0 || 60 <= sec {
 				rangeErrString = "second"
 				break
@@ -1230,12 +1233,12 @@ func parse(layout, value string, defaultLocation, local *Location) (Time, error)
 				sign, hour, min, seconds, value = value[0:1], value[1:3], value[3:5], "00", value[5:]
 			}
 			var hr, mm, ss int
-			hr, err = atoi(hour)
+			hr, _, err = getnum(hour, true)
 			if err == nil {
-				mm, err = atoi(min)
+				mm, _, err = getnum(min, true)
 			}
 			if err == nil {
-				ss, err = atoi(seconds)
+				ss, _, err = getnum(seconds, true)
 			}
 			zoneOffset = (hr*60+mm)*60 + ss // offset is in seconds
 			switch sign[0] {
@@ -1278,7 +1281,7 @@ func parse(layout, value string, defaultLocation, local *Location) (Time, error)
 			// Take any number of digits, even more than asked for,
 			// because it is what the stdSecond case would do.
 			i := 0
-			for i < 9 && i+1 < len(value) && '0' <= value[i+1] && value[i+1] <= '9' {
+			for i+1 < len(value) && '0' <= value[i+1] && value[i+1] <= '9' {
 				i++
 			}
 			nsec, rangeErrString, err = parseNanoseconds(value, 1+i)

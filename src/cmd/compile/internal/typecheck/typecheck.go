@@ -359,7 +359,7 @@ func typecheck(n ir.Node, top int) (res ir.Node) {
 	case ir.OAPPEND:
 		// Must be used (and not BinaryExpr/UnaryExpr).
 		isStmt = false
-	case ir.OCLOSE, ir.ODELETE, ir.OPANIC, ir.OPRINT, ir.OPRINTN, ir.OVARKILL, ir.OVARLIVE:
+	case ir.OCLOSE, ir.ODELETE, ir.OPANIC, ir.OPRINT, ir.OPRINTN:
 		// Must not be used.
 		isExpr = false
 		isStmt = true
@@ -749,9 +749,7 @@ func typecheck1(n ir.Node, top int) ir.Node {
 		ir.OCONTINUE,
 		ir.ODCL,
 		ir.OGOTO,
-		ir.OFALL,
-		ir.OVARKILL,
-		ir.OVARLIVE:
+		ir.OFALL:
 		return n
 
 	case ir.OBLOCK:
@@ -1820,7 +1818,7 @@ func isTermNode(n ir.Node) bool {
 }
 
 func Conv(n ir.Node, t *types.Type) ir.Node {
-	if types.Identical(n.Type(), t) {
+	if types.IdenticalStrict(n.Type(), t) {
 		return n
 	}
 	n = ir.NewConvExpr(base.Pos, ir.OCONV, nil, n)
@@ -1832,7 +1830,7 @@ func Conv(n ir.Node, t *types.Type) ir.Node {
 // ConvNop converts node n to type t using the OCONVNOP op
 // and typechecks the result with ctxExpr.
 func ConvNop(n ir.Node, t *types.Type) ir.Node {
-	if types.Identical(n.Type(), t) {
+	if types.IdenticalStrict(n.Type(), t) {
 		return n
 	}
 	n = ir.NewConvExpr(base.Pos, ir.OCONVNOP, nil, n)

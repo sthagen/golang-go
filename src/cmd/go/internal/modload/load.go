@@ -767,28 +767,6 @@ func (mms *MainModuleSet) DirImportPath(ctx context.Context, dir string) (path s
 	return ".", module.Version{}
 }
 
-// ImportMap returns the actual package import path
-// for an import path found in source code.
-// If the given import path does not appear in the source code
-// for the packages that have been loaded, ImportMap returns the empty string.
-func ImportMap(path string) string {
-	pkg, ok := loaded.pkgCache.Get(path).(*loadPkg)
-	if !ok {
-		return ""
-	}
-	return pkg.path
-}
-
-// PackageDir returns the directory containing the source code
-// for the package named by the import path.
-func PackageDir(path string) string {
-	pkg, ok := loaded.pkgCache.Get(path).(*loadPkg)
-	if !ok {
-		return ""
-	}
-	return pkg.dir
-}
-
 // PackageModule returns the module providing the package named by the import path.
 func PackageModule(path string) module.Version {
 	pkg, ok := loaded.pkgCache.Get(path).(*loadPkg)
@@ -954,7 +932,7 @@ func (f loadPkgFlags) has(cond loadPkgFlags) bool {
 // An atomicLoadPkgFlags stores a loadPkgFlags for which individual flags can be
 // added atomically.
 type atomicLoadPkgFlags struct {
-	bits int32
+	bits atomic.Int32
 }
 
 // update sets the given flags in af (in addition to any flags already set).
@@ -963,9 +941,9 @@ type atomicLoadPkgFlags struct {
 // flags were newly-set.
 func (af *atomicLoadPkgFlags) update(flags loadPkgFlags) (old loadPkgFlags) {
 	for {
-		old := atomic.LoadInt32(&af.bits)
+		old := af.bits.Load()
 		new := old | int32(flags)
-		if new == old || atomic.CompareAndSwapInt32(&af.bits, old, new) {
+		if new == old || af.bits.CompareAndSwap(old, new) {
 			return loadPkgFlags(old)
 		}
 	}
@@ -973,7 +951,7 @@ func (af *atomicLoadPkgFlags) update(flags loadPkgFlags) (old loadPkgFlags) {
 
 // has reports whether all of the flags in cond are set in af.
 func (af *atomicLoadPkgFlags) has(cond loadPkgFlags) bool {
-	return loadPkgFlags(atomic.LoadInt32(&af.bits))&cond == cond
+	return loadPkgFlags(af.bits.Load())&cond == cond
 }
 
 // isTest reports whether pkg is a test of another package.

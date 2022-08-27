@@ -927,8 +927,11 @@ func (w *writer) qualifiedIdent(obj types2.Object) {
 		decl, ok := w.p.typDecls[obj.(*types2.TypeName)]
 		assert(ok)
 		if decl.gen != 0 {
-			// TODO(mdempsky): Find a better solution than embedding middle
-			// dot in the symbol name; this is terrible.
+			// For local defined types, we embed a scope-disambiguation
+			// number directly into their name. types.SplitVargenSuffix then
+			// knows to look for this.
+			//
+			// TODO(mdempsky): Find a better solution; this is terrible.
 			name = fmt.Sprintf("%s·%v", name, decl.gen)
 		}
 	}
@@ -1620,6 +1623,16 @@ func (w *writer) expr(expr syntax.Expr) {
 			w.typ(tv.Type)
 			return
 		}
+
+		// With shape types (and particular pointer shaping), we may have
+		// an expression of type "go.shape.*uint8", but need to reshape it
+		// to another shape-identical type to allow use in field
+		// selection, indexing, etc.
+		if typ := tv.Type; !tv.IsBuiltin() && !isTuple(typ) && !isUntyped(typ) {
+			w.Code(exprReshape)
+			w.typ(typ)
+			// fallthrough
+		}
 	}
 
 	if obj != nil {
@@ -1960,7 +1973,7 @@ func (w *writer) methodExpr(expr *syntax.SelectorExpr, recv types2.Type, sel *ty
 	sig := fun.Type().(*types2.Signature)
 
 	w.typ(recv)
-	w.signature(sig)
+	w.typ(sig)
 	w.pos(expr)
 	w.selector(fun)
 
@@ -2188,6 +2201,11 @@ func (w *writer) varDictIndex(obj *types2.Var) {
 func isUntyped(typ types2.Type) bool {
 	basic, ok := typ.(*types2.Basic)
 	return ok && basic.Info()&types2.IsUntyped != 0
+}
+
+func isTuple(typ types2.Type) bool {
+	_, ok := typ.(*types2.Tuple)
+	return ok
 }
 
 func (w *writer) itab(typ, iface types2.Type) {

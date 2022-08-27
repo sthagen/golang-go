@@ -224,10 +224,15 @@ func (r *Resolver) LookupIP(ctx context.Context, network, host string) ([]IP, er
 	default:
 		return nil, UnknownNetworkError(network)
 	}
+
+	if host == "" {
+		return nil, &DNSError{Err: errNoSuchHost.Error(), Name: host, IsNotFound: true}
+	}
 	addrs, err := r.internetAddrList(ctx, afnet, host)
 	if err != nil {
 		return nil, err
 	}
+
 	ips := make([]IP, 0, len(addrs))
 	for _, addr := range addrs {
 		ips = append(ips, addr.(*IPAddr).IP)
@@ -316,14 +321,15 @@ func (r *Resolver) lookupIPAddr(ctx context.Context, network, host string) ([]IP
 
 	lookupKey := network + "\000" + host
 	dnsWaitGroup.Add(1)
-	ch, called := r.getLookupGroup().DoChan(lookupKey, func() (any, error) {
-		defer dnsWaitGroup.Done()
+	ch := r.getLookupGroup().DoChan(lookupKey, func() (any, error) {
 		return testHookLookupIP(lookupGroupCtx, resolverFunc, network, host)
 	})
-	if !called {
-		dnsWaitGroup.Done()
-	}
 
+	dnsWaitGroupDone := func(ch <-chan singleflight.Result, cancelFn context.CancelFunc) {
+		<-ch
+		dnsWaitGroup.Done()
+		cancelFn()
+	}
 	select {
 	case <-ctx.Done():
 		// Our context was canceled. If we are the only
@@ -335,11 +341,9 @@ func (r *Resolver) lookupIPAddr(ctx context.Context, network, host string) ([]IP
 		// See issues 8602, 20703, 22724.
 		if r.getLookupGroup().ForgetUnshared(lookupKey) {
 			lookupGroupCancel()
+			go dnsWaitGroupDone(ch, func() {})
 		} else {
-			go func() {
-				<-ch
-				lookupGroupCancel()
-			}()
+			go dnsWaitGroupDone(ch, lookupGroupCancel)
 		}
 		ctxErr := ctx.Err()
 		err := &DNSError{
@@ -352,6 +356,7 @@ func (r *Resolver) lookupIPAddr(ctx context.Context, network, host string) ([]IP
 		}
 		return nil, err
 	case r := <-ch:
+		dnsWaitGroup.Done()
 		lookupGroupCancel()
 		err := r.Err
 		if err != nil {

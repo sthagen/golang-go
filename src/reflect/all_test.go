@@ -47,6 +47,8 @@ type T struct {
 	d *int
 }
 
+var _ = T{} == T{} // tests depend on T being comparable
+
 type pair struct {
 	i any
 	s string
@@ -1364,9 +1366,16 @@ func TestIsZero(t *testing.T) {
 		{uintptr(128), false},
 		// Array
 		{Zero(TypeOf([5]string{})).Interface(), true},
-		{[5]string{"", "", "", "", ""}, true},
-		{[5]string{}, true},
-		{[5]string{"", "", "", "a", ""}, false},
+		{[5]string{}, true},                     // comparable array
+		{[5]string{"", "", "", "a", ""}, false}, // comparable array
+		{[1]*int{}, true},                       // direct pointer array
+		{[1]*int{new(int)}, false},              // direct pointer array
+		{[3][]int{}, true},                      // incomparable array
+		{[3][]int{{1}}, false},                  // incomparable array
+		{[1 << 12]byte{}, true},
+		{[1 << 12]byte{1}, false},
+		{[3]Value{}, true},
+		{[3]Value{{}, ValueOf(0), {}}, false},
 		// Chan
 		{(chan string)(nil), true},
 		{make(chan string), false},
@@ -1393,8 +1402,14 @@ func TestIsZero(t *testing.T) {
 		{"", true},
 		{"not-zero", false},
 		// Structs
-		{T{}, true},
-		{T{123, 456.75, "hello", &_i}, false},
+		{T{}, true},                           // comparable struct
+		{T{123, 456.75, "hello", &_i}, false}, // comparable struct
+		{struct{ p *int }{}, true},            // direct pointer struct
+		{struct{ p *int }{new(int)}, false},   // direct pointer struct
+		{struct{ s []int }{}, true},           // incomparable struct
+		{struct{ s []int }{[]int{1}}, false},  // incomparable struct
+		{struct{ Value }{}, true},
+		{struct{ Value }{ValueOf(0)}, false},
 		// UnsafePointer
 		{(unsafe.Pointer)(nil), true},
 		{(unsafe.Pointer)(new(int)), false},
@@ -1414,6 +1429,13 @@ func TestIsZero(t *testing.T) {
 		if !Zero(TypeOf(tt.x)).IsZero() {
 			t.Errorf("%d: IsZero(Zero(TypeOf((%s)(%+v)))) is false", i, x.Kind(), tt.x)
 		}
+
+		p := New(x.Type()).Elem()
+		p.Set(x)
+		p.SetZero()
+		if !p.IsZero() {
+			t.Errorf("%d: IsZero((%s)(%+v)) is true after SetZero", i, p.Kind(), tt.x)
+		}
 	}
 
 	func() {
@@ -1424,6 +1446,65 @@ func TestIsZero(t *testing.T) {
 		}()
 		(Value{}).IsZero()
 	}()
+}
+
+func BenchmarkIsZero(b *testing.B) {
+	source := ValueOf(struct {
+		ArrayComparable    [4]T
+		ArrayIncomparable  [4]_Complex
+		StructComparable   T
+		StructIncomparable _Complex
+	}{})
+
+	for i := 0; i < source.NumField(); i++ {
+		name := source.Type().Field(i).Name
+		value := source.Field(i)
+		b.Run(name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				sink = value.IsZero()
+			}
+		})
+	}
+}
+
+func BenchmarkSetZero(b *testing.B) {
+	source := ValueOf(new(struct {
+		Bool      bool
+		Int       int64
+		Uint      uint64
+		Float     float64
+		Complex   complex128
+		Array     [4]Value
+		Chan      chan Value
+		Func      func() Value
+		Interface interface{ String() string }
+		Map       map[string]Value
+		Pointer   *Value
+		Slice     []Value
+		String    string
+		Struct    Value
+	})).Elem()
+
+	for i := 0; i < source.NumField(); i++ {
+		name := source.Type().Field(i).Name
+		value := source.Field(i)
+		zero := Zero(value.Type())
+		b.Run(name+"/Direct", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				value.SetZero()
+			}
+		})
+		b.Run(name+"/CachedZero", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				value.Set(zero)
+			}
+		})
+		b.Run(name+"/NewZero", func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				value.Set(Zero(value.Type()))
+			}
+		})
+	}
 }
 
 func TestInterfaceExtraction(t *testing.T) {
@@ -6228,6 +6309,13 @@ func TestFuncOf(t *testing.T) {
 	FuncOf([]Type{TypeOf(1), TypeOf(""), SliceOf(TypeOf(false))}, nil, true)
 	shouldPanic("must be slice", func() { FuncOf([]Type{TypeOf(0), TypeOf(""), TypeOf(false)}, nil, true) })
 	shouldPanic("must be slice", func() { FuncOf(nil, nil, true) })
+
+	//testcase for  #54669
+	var in []Type
+	for i := 0; i < 51; i++ {
+		in = append(in, TypeOf(1))
+	}
+	FuncOf(in, nil, false)
 }
 
 type B1 struct {
@@ -8124,5 +8212,368 @@ func TestValue_Len(t *testing.T) {
 	wantStr := "reflect: call of reflect.Value.Len on ptr to non-array Value"
 	if e != wantStr {
 		t.Errorf("error is %q, want %q", e, wantStr)
+	}
+}
+
+func TestValue_Comparable(t *testing.T) {
+	var a int
+	var s []int
+	var i interface{} = a
+	var iSlice interface{} = s
+	var iArrayFalse interface{} = [2]interface{}{1, map[int]int{}}
+	var iArrayTrue interface{} = [2]interface{}{1, struct{ I interface{} }{1}}
+	var testcases = []struct {
+		value      Value
+		comparable bool
+		deref      bool
+	}{
+		{
+			ValueOf(32),
+			true,
+			false,
+		},
+		{
+			ValueOf(int8(1)),
+			true,
+			false,
+		},
+		{
+			ValueOf(int16(1)),
+			true,
+			false,
+		},
+		{
+			ValueOf(int32(1)),
+			true,
+			false,
+		},
+		{
+			ValueOf(int64(1)),
+			true,
+			false,
+		},
+		{
+			ValueOf(uint8(1)),
+			true,
+			false,
+		},
+		{
+			ValueOf(uint16(1)),
+			true,
+			false,
+		},
+		{
+			ValueOf(uint32(1)),
+			true,
+			false,
+		},
+		{
+			ValueOf(uint64(1)),
+			true,
+			false,
+		},
+		{
+			ValueOf(float32(1)),
+			true,
+			false,
+		},
+		{
+			ValueOf(float64(1)),
+			true,
+			false,
+		},
+		{
+			ValueOf(complex(float32(1), float32(1))),
+			true,
+			false,
+		},
+		{
+			ValueOf(complex(float64(1), float64(1))),
+			true,
+			false,
+		},
+		{
+			ValueOf("abc"),
+			true,
+			false,
+		},
+		{
+			ValueOf(true),
+			true,
+			false,
+		},
+		{
+			ValueOf(map[int]int{}),
+			false,
+			false,
+		},
+		{
+			ValueOf([]int{}),
+			false,
+			false,
+		},
+		{
+			Value{},
+			false,
+			false,
+		},
+		{
+			ValueOf(&a),
+			true,
+			false,
+		},
+		{
+			ValueOf(&s),
+			true,
+			false,
+		},
+		{
+			ValueOf(&i),
+			true,
+			true,
+		},
+		{
+			ValueOf(&iSlice),
+			false,
+			true,
+		},
+		{
+			ValueOf([2]int{}),
+			true,
+			false,
+		},
+		{
+			ValueOf([2]map[int]int{}),
+			false,
+			false,
+		},
+		{
+			ValueOf([0]func(){}),
+			false,
+			false,
+		},
+		{
+			ValueOf([2]struct{ I interface{} }{{1}, {1}}),
+			true,
+			false,
+		},
+		{
+			ValueOf([2]struct{ I interface{} }{{[]int{}}, {1}}),
+			false,
+			false,
+		},
+		{
+			ValueOf([2]interface{}{1, struct{ I int }{1}}),
+			true,
+			false,
+		},
+		{
+			ValueOf([2]interface{}{[1]interface{}{map[int]int{}}, struct{ I int }{1}}),
+			false,
+			false,
+		},
+		{
+			ValueOf(&iArrayFalse),
+			false,
+			true,
+		},
+		{
+			ValueOf(&iArrayTrue),
+			true,
+			true,
+		},
+	}
+
+	for _, cas := range testcases {
+		v := cas.value
+		if cas.deref {
+			v = v.Elem()
+		}
+		got := v.Comparable()
+		if got != cas.comparable {
+			t.Errorf("%T.Comparable = %t, want %t", v, got, cas.comparable)
+		}
+	}
+}
+
+type ValueEqualTest struct {
+	v, u           any
+	eq             bool
+	vDeref, uDeref bool
+}
+
+var equalI interface{} = 1
+var equalSlice interface{} = []int{1}
+var nilInterface interface{}
+var mapInterface interface{} = map[int]int{}
+
+var valueEqualTests = []ValueEqualTest{
+	{
+		Value{}, Value{},
+		true,
+		false, false,
+	},
+	{
+		true, true,
+		true,
+		false, false,
+	},
+	{
+		1, 1,
+		true,
+		false, false,
+	},
+	{
+		int8(1), int8(1),
+		true,
+		false, false,
+	},
+	{
+		int16(1), int16(1),
+		true,
+		false, false,
+	},
+	{
+		int32(1), int32(1),
+		true,
+		false, false,
+	},
+	{
+		int64(1), int64(1),
+		true,
+		false, false,
+	},
+	{
+		uint(1), uint(1),
+		true,
+		false, false,
+	},
+	{
+		uint8(1), uint8(1),
+		true,
+		false, false,
+	},
+	{
+		uint16(1), uint16(1),
+		true,
+		false, false,
+	},
+	{
+		uint32(1), uint32(1),
+		true,
+		false, false,
+	},
+	{
+		uint64(1), uint64(1),
+		true,
+		false, false,
+	},
+	{
+		float32(1), float32(1),
+		true,
+		false, false,
+	},
+	{
+		float64(1), float64(1),
+		true,
+		false, false,
+	},
+	{
+		complex(1, 1), complex(1, 1),
+		true,
+		false, false,
+	},
+	{
+		complex128(1 + 1i), complex128(1 + 1i),
+		true,
+		false, false,
+	},
+	{
+		func() {}, nil,
+		false,
+		false, false,
+	},
+	{
+		&equalI, 1,
+		true,
+		true, false,
+	},
+	{
+		&equalSlice, []int{1},
+		false,
+		true, false,
+	},
+	{
+		map[int]int{}, map[int]int{},
+		false,
+		false, false,
+	},
+	{
+		(chan int)(nil), nil,
+		false,
+		false, false,
+	},
+	{
+		(chan int)(nil), (chan int)(nil),
+		true,
+		false, false,
+	},
+	{
+		&equalI, &equalI,
+		true,
+		false, false,
+	},
+	{
+		struct{ i int }{1}, struct{ i int }{1},
+		true,
+		false, false,
+	},
+	{
+		struct{ i int }{1}, struct{ i int }{2},
+		false,
+		false, false,
+	},
+	{
+		&nilInterface, &nilInterface,
+		true,
+		true, true,
+	},
+	{
+		1, ValueOf(struct{ i int }{1}).Field(0),
+		true,
+		false, false,
+	},
+	{
+		&mapInterface, &mapInterface,
+		false,
+		true, true,
+	},
+}
+
+func TestValue_Equal(t *testing.T) {
+	for _, test := range valueEqualTests {
+		var v, u Value
+		if vv, ok := test.v.(Value); ok {
+			v = vv
+		} else {
+			v = ValueOf(test.v)
+		}
+
+		if uu, ok := test.u.(Value); ok {
+			u = uu
+		} else {
+			u = ValueOf(test.u)
+		}
+		if test.vDeref {
+			v = v.Elem()
+		}
+
+		if test.uDeref {
+			u = u.Elem()
+		}
+
+		if r := v.Equal(u); r != test.eq {
+			t.Errorf("%s == %s got %t, want %t", v.Type(), u.Type(), r, test.eq)
+		}
 	}
 }

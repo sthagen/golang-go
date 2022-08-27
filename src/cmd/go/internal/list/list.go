@@ -689,8 +689,13 @@ func runList(ctx context.Context, cmd *base.Command, args []string) {
 	// Do we need to run a build to gather information?
 	needStale := (listJson && listJsonFields.needAny("Stale", "StaleReason")) || strings.Contains(*listFmt, ".Stale")
 	if needStale || *listExport || *listCompiled {
-		var b work.Builder
-		b.Init()
+		b := work.NewBuilder("")
+		defer func() {
+			if err := b.Close(); err != nil {
+				base.Fatalf("go: %v", err)
+			}
+		}()
+
 		b.IsCmdList = true
 		b.NeedExport = *listExport
 		b.NeedCompiledGoFiles = *listCompiled
