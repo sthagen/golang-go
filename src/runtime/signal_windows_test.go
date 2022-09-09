@@ -1,4 +1,6 @@
-//go:build windows
+// Copyright 2019 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
 package runtime_test
 
@@ -91,8 +93,8 @@ func TestCtrlHandler(t *testing.T) {
 
 	// run test program
 	cmd = exec.Command(exe)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
+	var stdout strings.Builder
+	var stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	inPipe, err := cmd.StdinPipe()

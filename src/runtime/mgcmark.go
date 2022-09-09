@@ -945,10 +945,10 @@ func scanframeworker(frame *stkframe, state *stackScanState, gcw *gcWork) {
 		}
 
 		// Scan arguments to this frame.
-		if frame.arglen != 0 {
+		if n := frame.argBytes(); n != 0 {
 			// TODO: We could pass the entry argument map
 			// to narrow this down further.
-			scanConservative(frame.argp, frame.arglen, nil, gcw, state)
+			scanConservative(frame.argp, n, nil, gcw, state)
 		}
 
 		if isAsyncPreempt || isDebugCall {
@@ -966,7 +966,7 @@ func scanframeworker(frame *stkframe, state *stackScanState, gcw *gcWork) {
 		return
 	}
 
-	locals, args, objs := getStackMap(frame, &state.cache, false)
+	locals, args, objs := frame.getStackMap(&state.cache, false)
 
 	// Scan local variables if stack frame has been allocated.
 	if locals.n > 0 {
@@ -1563,7 +1563,7 @@ func gcDumpObject(label string, obj, off uintptr) {
 //
 //go:nowritebarrier
 //go:nosplit
-func gcmarknewobject(span *mspan, obj, size, scanSize uintptr) {
+func gcmarknewobject(span *mspan, obj, size uintptr) {
 	if useCheckmark { // The world should be stopped so this should not happen.
 		throw("gcmarknewobject called while doing checkmark")
 	}

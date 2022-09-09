@@ -162,26 +162,22 @@ func genInlTreeSym(ctxt *Link, cu *sym.CompilationUnit, fi loader.FuncInfo, arch
 	ninl := fi.NumInlTree()
 	for i := 0; i < int(ninl); i++ {
 		call := fi.InlTree(i)
-		val := call.File
-		nameoff, ok := nameOffsets[call.Func]
+		nameOff, ok := nameOffsets[call.Func]
 		if !ok {
 			panic("couldn't find function name offset")
 		}
 
-		inlTreeSym.SetUint16(arch, int64(i*20+0), uint16(call.Parent))
 		inlFunc := ldr.FuncInfo(call.Func)
-
 		var funcID objabi.FuncID
 		if inlFunc.Valid() {
 			funcID = inlFunc.FuncID()
 		}
-		inlTreeSym.SetUint8(arch, int64(i*20+2), uint8(funcID))
-
-		// byte 3 is unused
-		inlTreeSym.SetUint32(arch, int64(i*20+4), uint32(val))
-		inlTreeSym.SetUint32(arch, int64(i*20+8), uint32(call.Line))
-		inlTreeSym.SetUint32(arch, int64(i*20+12), uint32(nameoff))
-		inlTreeSym.SetUint32(arch, int64(i*20+16), uint32(call.ParentPC))
+		// Construct runtime.inlinedCall value.
+		const size = 12
+		inlTreeSym.SetUint8(arch, int64(i*size+0), uint8(funcID))
+		// Bytes 1-3 are unused.
+		inlTreeSym.SetUint32(arch, int64(i*size+4), uint32(nameOff))
+		inlTreeSym.SetUint32(arch, int64(i*size+8), uint32(call.ParentPC))
 	}
 	return its
 }
@@ -643,19 +639,19 @@ func writeFuncs(ctxt *Link, sb *loader.SymbolBuilder, funcs []loader.Sym, inlSym
 		}
 
 		off := int64(startLocations[i])
-		// entry uintptr (offset of func entry PC from textStart)
+		// entryOff uint32 (offset of func entry PC from textStart)
 		entryOff := ldr.SymValue(s) - textStart
 		if entryOff < 0 {
 			panic(fmt.Sprintf("expected func %s(%x) to be placed before or at textStart (%x)", ldr.SymName(s), ldr.SymValue(s), textStart))
 		}
 		off = sb.SetUint32(ctxt.Arch, off, uint32(entryOff))
 
-		// name int32
-		nameoff, ok := nameOffsets[s]
+		// nameOff int32
+		nameOff, ok := nameOffsets[s]
 		if !ok {
 			panic("couldn't find function name offset")
 		}
-		off = sb.SetUint32(ctxt.Arch, off, uint32(nameoff))
+		off = sb.SetUint32(ctxt.Arch, off, uint32(nameOff))
 
 		// args int32
 		// TODO: Move into funcinfo.

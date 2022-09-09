@@ -45,17 +45,19 @@ type Value struct {
 	ptr unsafe.Pointer
 
 	// flag holds metadata about the value.
-	// The lowest bits are flag bits:
+	//
+	// The lowest five bits give the Kind of the value, mirroring typ.Kind().
+	//
+	// The next set of bits are flag bits:
 	//	- flagStickyRO: obtained via unexported not embedded field, so read-only
 	//	- flagEmbedRO: obtained via unexported embedded field, so read-only
 	//	- flagIndir: val holds a pointer to the data
-	//	- flagAddr: v.CanAddr is true (implies flagIndir)
+	//	- flagAddr: v.CanAddr is true (implies flagIndir and ptr is non-nil)
 	//	- flagMethod: v is a method value.
-	// The next five bits give the Kind of the value.
-	// This repeats typ.Kind() except for method values.
-	// The remaining 23+ bits give a method number for method values.
-	// If flag.kind() != Func, code can assume that flagMethod is unset.
 	// If ifaceIndir(typ), code can assume that flagIndir is set.
+	//
+	// The remaining 22+ bits give a method number for method values.
+	// If flag.kind() != Func, code can assume that flagMethod is unset.
 	flag
 
 	// A method value represents a curried method invocation
@@ -92,7 +94,7 @@ func (f flag) ro() flag {
 
 // pointer returns the underlying pointer represented by v.
 // v.Kind() must be Pointer, Map, Chan, Func, or UnsafePointer
-// if v.Kind() == Pointer, the base type must not be go:notinheap.
+// if v.Kind() == Pointer, the base type must not be not-in-heap.
 func (v Value) pointer() unsafe.Pointer {
 	if v.typ.size != goarch.PtrSize || !v.typ.pointers() {
 		panic("can't call pointer on a non-pointer Value")
@@ -1837,7 +1839,8 @@ func (iter *MapIter) Key() Value {
 
 // SetIterKey assigns to v the key of iter's current map entry.
 // It is equivalent to v.Set(iter.Key()), but it avoids allocating a new Value.
-// As in Go, the key must be assignable to v's type.
+// As in Go, the key must be assignable to v's type and
+// must not be derived from an unexported field.
 func (v Value) SetIterKey(iter *MapIter) {
 	if !iter.hiter.initialized() {
 		panic("reflect: Value.SetIterKey called before Next")
@@ -1856,6 +1859,7 @@ func (v Value) SetIterKey(iter *MapIter) {
 	t := (*mapType)(unsafe.Pointer(iter.m.typ))
 	ktype := t.key
 
+	iter.m.mustBeExported() // do not let unexported m leak
 	key := Value{ktype, iterkey, iter.m.flag | flag(ktype.Kind()) | flagIndir}
 	key = key.assignTo("reflect.MapIter.SetKey", v.typ, target)
 	typedmemmove(v.typ, v.ptr, key.ptr)
@@ -1878,7 +1882,8 @@ func (iter *MapIter) Value() Value {
 
 // SetIterValue assigns to v the value of iter's current map entry.
 // It is equivalent to v.Set(iter.Value()), but it avoids allocating a new Value.
-// As in Go, the value must be assignable to v's type.
+// As in Go, the value must be assignable to v's type and
+// must not be derived from an unexported field.
 func (v Value) SetIterValue(iter *MapIter) {
 	if !iter.hiter.initialized() {
 		panic("reflect: Value.SetIterValue called before Next")
@@ -1897,6 +1902,7 @@ func (v Value) SetIterValue(iter *MapIter) {
 	t := (*mapType)(unsafe.Pointer(iter.m.typ))
 	vtype := t.elem
 
+	iter.m.mustBeExported() // do not let unexported m leak
 	elem := Value{vtype, iterelem, iter.m.flag | flag(vtype.Kind()) | flagIndir}
 	elem = elem.assignTo("reflect.MapIter.SetValue", v.typ, target)
 	typedmemmove(v.typ, v.ptr, elem.ptr)
@@ -2149,7 +2155,7 @@ func (v Value) Pointer() uintptr {
 		return uintptr(p)
 
 	case Slice:
-		return (*SliceHeader)(v.ptr).Data
+		return uintptr((*unsafeheader.Slice)(v.ptr).Data)
 	}
 	panic(&ValueError{"reflect.Value.Pointer", v.kind()})
 }
@@ -2218,7 +2224,8 @@ func (v Value) send(x Value, nb bool) (selected bool) {
 
 // Set assigns x to the value v.
 // It panics if CanSet returns false.
-// As in Go, x's value must be assignable to v's type.
+// As in Go, x's value must be assignable to v's type and
+// must not be derived from an unexported field.
 func (v Value) Set(x Value) {
 	v.mustBeAssignable()
 	x.mustBeExported() // do not let unexported x leak
@@ -2735,6 +2742,8 @@ func (v Value) UnsafePointer() unsafe.Pointer {
 // Moreover, the Data field is not sufficient to guarantee the data
 // it references will not be garbage collected, so programs must keep
 // a separate, correctly typed pointer to the underlying data.
+//
+// Deprecated: Use unsafe.String or unsafe.StringData instead.
 type StringHeader struct {
 	Data uintptr
 	Len  int
@@ -2746,6 +2755,8 @@ type StringHeader struct {
 // Moreover, the Data field is not sufficient to guarantee the data
 // it references will not be garbage collected, so programs must keep
 // a separate, correctly typed pointer to the underlying data.
+//
+// Deprecated: Use unsafe.Slice or unsafe.SliceData instead.
 type SliceHeader struct {
 	Data uintptr
 	Len  int
@@ -3156,7 +3167,7 @@ func New(typ Type) Value {
 	t := typ.(*rtype)
 	pt := t.ptrTo()
 	if ifaceIndir(pt) {
-		// This is a pointer to a go:notinheap type.
+		// This is a pointer to a not-in-heap type.
 		panic("reflect: New of type that may not be allocated in heap (possibly undefined cgo C type)")
 	}
 	ptr := unsafe_New(t)
@@ -3264,10 +3275,6 @@ func (v Value) Comparable() bool {
 		return true
 
 	case Array:
-		if v.Type().Len() == 0 {
-			return v.Type().Comparable()
-		}
-
 		switch v.Type().Elem().Kind() {
 		case Interface, Array, Struct:
 			for i := 0; i < v.Type().Len(); i++ {
@@ -3275,11 +3282,8 @@ func (v Value) Comparable() bool {
 					return false
 				}
 			}
-		default:
-			return v.Index(0).Comparable()
 		}
-
-		return true
+		return v.Type().Comparable()
 
 	case Func:
 		return false
@@ -3316,6 +3320,7 @@ func (v Value) Comparable() bool {
 }
 
 // Equal reports true if v is equal to u.
+// For valid values, if either v or u is non-comparable, Equal returns false.
 func (v Value) Equal(u Value) bool {
 	if !v.IsValid() || !u.IsValid() {
 		return v.IsValid() == u.IsValid()

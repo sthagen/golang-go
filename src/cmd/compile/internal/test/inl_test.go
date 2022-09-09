@@ -6,6 +6,7 @@ package test
 
 import (
 	"bufio"
+	"internal/buildcfg"
 	"internal/testenv"
 	"io"
 	"math/bits"
@@ -47,7 +48,6 @@ func TestIntendedInlining(t *testing.T) {
 			"fastrand",
 			"float64bits",
 			"funcspdelta",
-			"getArgInfoFast",
 			"getm",
 			"getMCache",
 			"isDirectIface",
@@ -206,11 +206,7 @@ func TestIntendedInlining(t *testing.T) {
 			"(*Uintptr).Load",
 			"(*Uintptr).Store",
 			"(*Uintptr).Swap",
-			// TODO(rsc): Why are these not reported as inlined?
-			// "(*Pointer[T]).CompareAndSwap",
-			// "(*Pointer[T]).Load",
-			// "(*Pointer[T]).Store",
-			// "(*Pointer[T]).Swap",
+			// (*Pointer[T])'s methods' handled below.
 		},
 	}
 
@@ -235,6 +231,14 @@ func TestIntendedInlining(t *testing.T) {
 		want["runtime"] = append(want["runtime"], "mix")
 		// (*Bool).CompareAndSwap is just over budget on 32-bit systems (386, arm).
 		want["sync/atomic"] = append(want["sync/atomic"], "(*Bool).CompareAndSwap")
+	}
+	if buildcfg.Experiment.Unified {
+		// Non-unified IR does not report "inlining call ..." for atomic.Pointer[T]'s methods.
+		// TODO(cuonglm): remove once non-unified IR frontend gone.
+		want["sync/atomic"] = append(want["sync/atomic"], "(*Pointer[go.shape.int]).CompareAndSwap")
+		want["sync/atomic"] = append(want["sync/atomic"], "(*Pointer[go.shape.int]).Load")
+		want["sync/atomic"] = append(want["sync/atomic"], "(*Pointer[go.shape.int]).Store")
+		want["sync/atomic"] = append(want["sync/atomic"], "(*Pointer[go.shape.int]).Swap")
 	}
 
 	switch runtime.GOARCH {

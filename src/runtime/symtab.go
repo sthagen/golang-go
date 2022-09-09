@@ -116,9 +116,8 @@ func (ci *Frames) Next() (frame Frame, more bool) {
 			if ix >= 0 {
 				// Note: entry is not modified. It always refers to a real frame, not an inlined one.
 				f = nil
-				name = funcnameFromNameoff(funcInfo, inltree[ix].func_)
-				// File/line is already correct.
-				// TODO: remove file/line from InlinedCall?
+				name = funcnameFromNameOff(funcInfo, inltree[ix].nameOff)
+				// File/line from funcline1 below are already correct.
 			}
 		}
 		ci.frames = append(ci.frames, Frame{
@@ -727,7 +726,7 @@ func FuncForPC(pc uintptr) *Func {
 		// The runtime currently doesn't have function end info, alas.
 		if ix := pcdatavalue1(f, _PCDATA_InlTreeIndex, pc, nil, false); ix >= 0 {
 			inltree := (*[1 << 20]inlinedCall)(inldata)
-			name := funcnameFromNameoff(f, inltree[ix].func_)
+			name := funcnameFromNameOff(f, inltree[ix].nameOff)
 			file, line := funcline(f, pc)
 			fi := &funcinl{
 				ones:  ^uint32(0),
@@ -811,12 +810,12 @@ func (f funcInfo) _Func() *Func {
 
 // isInlined reports whether f should be re-interpreted as a *funcinl.
 func (f *_func) isInlined() bool {
-	return f.entryoff == ^uint32(0) // see comment for funcinl.ones
+	return f.entryOff == ^uint32(0) // see comment for funcinl.ones
 }
 
 // entry returns the entry PC for f.
 func (f funcInfo) entry() uintptr {
-	return f.datap.textAddr(f.entryoff)
+	return f.datap.textAddr(f.entryOff)
 }
 
 // findfunc looks up function metadata for a PC.
@@ -968,10 +967,10 @@ func pcvalue(f funcInfo, off uint32, targetpc uintptr, cache *pcvalueCache, stri
 }
 
 func cfuncname(f funcInfo) *byte {
-	if !f.valid() || f.nameoff == 0 {
+	if !f.valid() || f.nameOff == 0 {
 		return nil
 	}
-	return &f.datap.funcnametab[f.nameoff]
+	return &f.datap.funcnametab[f.nameOff]
 }
 
 func funcname(f funcInfo) string {
@@ -994,15 +993,15 @@ func funcpkgpath(f funcInfo) string {
 	return name[:i]
 }
 
-func cfuncnameFromNameoff(f funcInfo, nameoff int32) *byte {
+func cfuncnameFromNameOff(f funcInfo, nameOff int32) *byte {
 	if !f.valid() {
 		return nil
 	}
-	return &f.datap.funcnametab[nameoff]
+	return &f.datap.funcnametab[nameOff]
 }
 
-func funcnameFromNameoff(f funcInfo, nameoff int32) string {
-	return gostringnocopy(cfuncnameFromNameoff(f, nameoff))
+func funcnameFromNameOff(f funcInfo, nameOff int32) string {
+	return gostringnocopy(cfuncnameFromNameOff(f, nameOff))
 }
 
 func funcfile(f funcInfo, fileno int32) string {
@@ -1173,11 +1172,8 @@ func stackmapdata(stkmap *stackmap, n int32) bitvector {
 
 // inlinedCall is the encoding of entries in the FUNCDATA_InlTree table.
 type inlinedCall struct {
-	parent   int16  // index of parent in the inltree, or < 0
 	funcID   funcID // type of the called function
-	_        byte
-	file     int32 // perCU file index for inlined call. See cmd/link:pcln.go
-	line     int32 // line number of the call site
-	func_    int32 // offset into pclntab for name of called function
+	_        [3]byte
+	nameOff  int32 // offset into pclntab for name of called function
 	parentPc int32 // position of an instruction whose source position is the call site (offset from entry)
 }

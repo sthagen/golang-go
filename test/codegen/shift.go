@@ -80,24 +80,27 @@ func rshConst64x32(v int64) int64 {
 func lshMask64x64(v int64, s uint64) int64 {
 	// ppc64:"ANDCC",-"ORN",-"ISEL"
 	// ppc64le:"ANDCC",-"ORN",-"ISEL"
-	// riscv64:"SLL","AND","SLTIU"
+	// riscv64:"SLL",-"AND\t",-"SLTIU"
 	// s390x:-"RISBGZ",-"AND",-"LOCGR"
+	// arm64:"LSL",-"AND"
 	return v << (s & 63)
 }
 
 func rshMask64Ux64(v uint64, s uint64) uint64 {
 	// ppc64:"ANDCC",-"ORN",-"ISEL"
 	// ppc64le:"ANDCC",-"ORN",-"ISEL"
-	// riscv64:"SRL","AND","SLTIU"
+	// riscv64:"SRL",-"AND\t",-"SLTIU"
 	// s390x:-"RISBGZ",-"AND",-"LOCGR"
+	// arm64:"LSR",-"AND",-"CSEL"
 	return v >> (s & 63)
 }
 
 func rshMask64x64(v int64, s uint64) int64 {
 	// ppc64:"ANDCC",-"ORN",-"ISEL"
 	// ppc64le:"ANDCC",-ORN",-"ISEL"
-	// riscv64:"SRA","OR","SLTIU"
+	// riscv64:"SRA",-"OR",-"SLTIU"
 	// s390x:-"RISBGZ",-"AND",-"LOCGR"
+	// arm64:"ASR",-"AND",-"CSEL"
 	return v >> (s & 63)
 }
 
@@ -106,6 +109,7 @@ func lshMask32x64(v int32, s uint64) int32 {
 	// ppc64le:"ISEL",-"ORN"
 	// riscv64:"SLL","AND","SLTIU"
 	// s390x:-"RISBGZ",-"AND",-"LOCGR"
+	// arm64:"LSL",-"AND"
 	return v << (s & 63)
 }
 
@@ -114,6 +118,7 @@ func rshMask32Ux64(v uint32, s uint64) uint32 {
 	// ppc64le:"ISEL",-"ORN"
 	// riscv64:"SRL","AND","SLTIU"
 	// s390x:-"RISBGZ",-"AND",-"LOCGR"
+	// arm64:"LSR",-"AND"
 	return v >> (s & 63)
 }
 
@@ -122,30 +127,34 @@ func rshMask32x64(v int32, s uint64) int32 {
 	// ppc64le:"ISEL",-"ORN"
 	// riscv64:"SRA","OR","SLTIU"
 	// s390x:-"RISBGZ",-"AND",-"LOCGR"
+	// arm64:"ASR",-"AND"
 	return v >> (s & 63)
 }
 
 func lshMask64x32(v int64, s uint32) int64 {
 	// ppc64:"ANDCC",-"ORN"
 	// ppc64le:"ANDCC",-"ORN"
-	// riscv64:"SLL","AND","SLTIU"
+	// riscv64:"SLL",-"AND\t",-"SLTIU"
 	// s390x:-"RISBGZ",-"AND",-"LOCGR"
+	// arm64:"LSL",-"AND"
 	return v << (s & 63)
 }
 
 func rshMask64Ux32(v uint64, s uint32) uint64 {
 	// ppc64:"ANDCC",-"ORN"
 	// ppc64le:"ANDCC",-"ORN"
-	// riscv64:"SRL","AND","SLTIU"
+	// riscv64:"SRL",-"AND\t",-"SLTIU"
 	// s390x:-"RISBGZ",-"AND",-"LOCGR"
+	// arm64:"LSR",-"AND",-"CSEL"
 	return v >> (s & 63)
 }
 
 func rshMask64x32(v int64, s uint32) int64 {
 	// ppc64:"ANDCC",-"ORN",-"ISEL"
 	// ppc64le:"ANDCC",-"ORN",-"ISEL"
-	// riscv64:"SRA","OR","SLTIU"
+	// riscv64:"SRA",-"OR",-"SLTIU"
 	// s390x:-"RISBGZ",-"AND",-"LOCGR"
+	// arm64:"ASR",-"AND",-"CSEL"
 	return v >> (s & 63)
 }
 
@@ -207,9 +216,10 @@ func lshSignedMasked(v8 int8, v16 int16, v32 int32, v64 int64, x int) {
 
 func lshGuarded64(v int64, s uint) int64 {
 	if s < 64 {
-		// riscv64:"SLL","AND","SLTIU"
+		// riscv64:"SLL",-"AND",-"SLTIU"
 		// s390x:-"RISBGZ",-"AND",-"LOCGR"
 		// wasm:-"Select",-".*LtU"
+		// arm64:"LSL",-"CSEL"
 		return v << s
 	}
 	panic("shift too large")
@@ -217,9 +227,10 @@ func lshGuarded64(v int64, s uint) int64 {
 
 func rshGuarded64U(v uint64, s uint) uint64 {
 	if s < 64 {
-		// riscv64:"SRL","AND","SLTIU"
+		// riscv64:"SRL",-"AND",-"SLTIU"
 		// s390x:-"RISBGZ",-"AND",-"LOCGR"
 		// wasm:-"Select",-".*LtU"
+		// arm64:"LSR",-"CSEL"
 		return v >> s
 	}
 	panic("shift too large")
@@ -227,12 +238,93 @@ func rshGuarded64U(v uint64, s uint) uint64 {
 
 func rshGuarded64(v int64, s uint) int64 {
 	if s < 64 {
-		// riscv64:"SRA","OR","SLTIU"
+		// riscv64:"SRA",-"OR",-"SLTIU"
 		// s390x:-"RISBGZ",-"AND",-"LOCGR"
 		// wasm:-"Select",-".*LtU"
+		// arm64:"ASR",-"CSEL"
 		return v >> s
 	}
 	panic("shift too large")
+}
+
+func provedUnsignedShiftLeft(val64 uint64, val32 uint32, val16 uint16, val8 uint8, shift int) (r1 uint64, r2 uint32, r3 uint16, r4 uint8) {
+	if shift >= 0 && shift < 64 {
+		// arm64:"LSL",-"CSEL"
+		r1 = val64 << shift
+	}
+	if shift >= 0 && shift < 32 {
+		// arm64:"LSL",-"CSEL"
+		r2 = val32 << shift
+	}
+	if shift >= 0 && shift < 16 {
+		// arm64:"LSL",-"CSEL"
+		r3 = val16 << shift
+	}
+	if shift >= 0 && shift < 8 {
+		// arm64:"LSL",-"CSEL"
+		r4 = val8 << shift
+	}
+	return r1, r2, r3, r4
+}
+
+func provedSignedShiftLeft(val64 int64, val32 int32, val16 int16, val8 int8, shift int) (r1 int64, r2 int32, r3 int16, r4 int8) {
+	if shift >= 0 && shift < 64 {
+		// arm64:"LSL",-"CSEL"
+		r1 = val64 << shift
+	}
+	if shift >= 0 && shift < 32 {
+		// arm64:"LSL",-"CSEL"
+		r2 = val32 << shift
+	}
+	if shift >= 0 && shift < 16 {
+		// arm64:"LSL",-"CSEL"
+		r3 = val16 << shift
+	}
+	if shift >= 0 && shift < 8 {
+		// arm64:"LSL",-"CSEL"
+		r4 = val8 << shift
+	}
+	return r1, r2, r3, r4
+}
+
+func provedUnsignedShiftRight(val64 uint64, val32 uint32, val16 uint16, val8 uint8, shift int) (r1 uint64, r2 uint32, r3 uint16, r4 uint8) {
+	if shift >= 0 && shift < 64 {
+		// arm64:"LSR",-"CSEL"
+		r1 = val64 >> shift
+	}
+	if shift >= 0 && shift < 32 {
+		// arm64:"LSR",-"CSEL"
+		r2 = val32 >> shift
+	}
+	if shift >= 0 && shift < 16 {
+		// arm64:"LSR",-"CSEL"
+		r3 = val16 >> shift
+	}
+	if shift >= 0 && shift < 8 {
+		// arm64:"LSR",-"CSEL"
+		r4 = val8 >> shift
+	}
+	return r1, r2, r3, r4
+}
+
+func provedSignedShiftRight(val64 int64, val32 int32, val16 int16, val8 int8, shift int) (r1 int64, r2 int32, r3 int16, r4 int8) {
+	if shift >= 0 && shift < 64 {
+		// arm64:"ASR",-"CSEL"
+		r1 = val64 >> shift
+	}
+	if shift >= 0 && shift < 32 {
+		// arm64:"ASR",-"CSEL"
+		r2 = val32 >> shift
+	}
+	if shift >= 0 && shift < 16 {
+		// arm64:"ASR",-"CSEL"
+		r3 = val16 >> shift
+	}
+	if shift >= 0 && shift < 8 {
+		// arm64:"ASR",-"CSEL"
+		r4 = val8 >> shift
+	}
+	return r1, r2, r3, r4
 }
 
 func checkUnneededTrunc(tab *[100000]uint32, d uint64, v uint32, h uint16, b byte) (uint32, uint64) {
@@ -357,17 +449,17 @@ func checkShiftAndMask32(v []uint32) {
 }
 
 func checkMergedShifts32(a [256]uint32, b [256]uint64, u uint32, v uint32) {
-	//ppc64le: -"CLRLSLDI", "RLWNM\t[$]10, R[0-9]+, [$]22, [$]29, R[0-9]+"
-	//ppc64: -"CLRLSLDI", "RLWNM\t[$]10, R[0-9]+, [$]22, [$]29, R[0-9]+"
+	// ppc64le: -"CLRLSLDI", "RLWNM\t[$]10, R[0-9]+, [$]22, [$]29, R[0-9]+"
+	// ppc64: -"CLRLSLDI", "RLWNM\t[$]10, R[0-9]+, [$]22, [$]29, R[0-9]+"
 	a[0] = a[uint8(v>>24)]
-	//ppc64le: -"CLRLSLDI", "RLWNM\t[$]11, R[0-9]+, [$]21, [$]28, R[0-9]+"
-	//ppc64: -"CLRLSLDI", "RLWNM\t[$]11, R[0-9]+, [$]21, [$]28, R[0-9]+"
+	// ppc64le: -"CLRLSLDI", "RLWNM\t[$]11, R[0-9]+, [$]21, [$]28, R[0-9]+"
+	// ppc64: -"CLRLSLDI", "RLWNM\t[$]11, R[0-9]+, [$]21, [$]28, R[0-9]+"
 	b[0] = b[uint8(v>>24)]
-	//ppc64le: -"CLRLSLDI", "RLWNM\t[$]15, R[0-9]+, [$]21, [$]28, R[0-9]+"
-	//ppc64: -"CLRLSLDI", "RLWNM\t[$]15, R[0-9]+, [$]21, [$]28, R[0-9]+"
+	// ppc64le: -"CLRLSLDI", "RLWNM\t[$]15, R[0-9]+, [$]21, [$]28, R[0-9]+"
+	// ppc64: -"CLRLSLDI", "RLWNM\t[$]15, R[0-9]+, [$]21, [$]28, R[0-9]+"
 	b[1] = b[(v>>20)&0xFF]
-	//ppc64le: -"SLD", "RLWNM\t[$]10, R[0-9]+, [$]22, [$]28, R[0-9]+"
-	//ppc64: -"SLD", "RLWNM\t[$]10, R[0-9]+, [$]22, [$]28, R[0-9]+"
+	// ppc64le: -"SLD", "RLWNM\t[$]10, R[0-9]+, [$]22, [$]28, R[0-9]+"
+	// ppc64: -"SLD", "RLWNM\t[$]10, R[0-9]+, [$]22, [$]28, R[0-9]+"
 	b[2] = b[v>>25]
 }
 
@@ -382,4 +474,13 @@ func check128bitShifts(x, y uint64, bits uint) (uint64, uint64) {
 	// amd64:"SHLQ.*,.*,"
 	shl := x<<s | y>>ŝ
 	return shr, shl
+}
+
+func checkShiftToMask(u []uint64, s []int64) {
+	// amd64:-"SHR",-"SHL","ANDQ"
+	u[0] = u[0] >> 5 << 5
+	// amd64:-"SAR",-"SHL","ANDQ"
+	s[0] = s[0] >> 5 << 5
+	// amd64:-"SHR",-"SHL","ANDQ"
+	u[1] = u[1] << 5 >> 5
 }

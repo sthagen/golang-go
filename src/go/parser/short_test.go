@@ -141,21 +141,8 @@ var invalids = []string{
 	`package p; func f() { switch t = /* ERROR "expected ':=', found '='" */ t.(type) {} };`,
 	`package p; func f() { switch t /* ERROR "expected switch expression" */ , t = t.(type) {} };`,
 	`package p; func f() { switch t /* ERROR "expected switch expression" */ = t.(type), t {} };`,
-	`package p; var a = [ /* ERROR "expected expression" */ 1]int;`,
-	`package p; var a = [ /* ERROR "expected expression" */ ...]int;`,
-	`package p; var a = struct /* ERROR "expected expression" */ {}`,
-	`package p; var a = func /* ERROR "expected expression" */ ();`,
-	`package p; var a = interface /* ERROR "expected expression" */ {}`,
-	`package p; var a = [ /* ERROR "expected expression" */ ]int`,
-	`package p; var a = map /* ERROR "expected expression" */ [int]int`,
-	`package p; var a = chan /* ERROR "expected expression" */ int;`,
-	`package p; var a = []int{[ /* ERROR "expected expression" */ ]int};`,
-	`package p; var a = ( /* ERROR "expected expression" */ []int);`,
-	`package p; var a = <- /* ERROR "expected expression" */ chan int;`,
-	`package p; func f() { select { case _ <- chan /* ERROR "expected expression" */ int: } };`,
 	`package p; func f() { _ = (<-<- /* ERROR "expected 'chan'" */ chan int)(nil) };`,
 	`package p; func f() { _ = (<-chan<-chan<-chan<-chan<-chan<- /* ERROR "expected channel type" */ int)(nil) };`,
-	`package p; func f() { var t []int; t /* ERROR "expected identifier on left side of :=" */ [0] := 0 };`,
 	`package p; func f() { if x := g(); x /* ERROR "expected boolean expression" */ = 0 {}};`,
 	`package p; func f() { _ = x = /* ERROR "expected '=='" */ 0 {}};`,
 	`package p; func f() { _ = 1 == func()int { var x bool; x = x = /* ERROR "expected '=='" */ true; return x }() };`,
@@ -171,7 +158,9 @@ var invalids = []string{
 	`package p; func f() { for i /* ERROR "boolean or range expression" */ , x = []string {} }`,
 	`package p; func f() { for i /* ERROR "boolean or range expression" */ , x := []string {} }`,
 	`package p; func f() { go f /* ERROR HERE "must be function call" */ }`,
+	`package p; func f() { go ( /* ERROR "must not be parenthesized" */ f()) }`,
 	`package p; func f() { defer func() {} /* ERROR HERE "must be function call" */ }`,
+	`package p; func f() { defer ( /* ERROR "must not be parenthesized" */ f()) }`,
 	`package p; func f() { go func() { func() { f(x func /* ERROR "missing ','" */ (){}) } } }`,
 	`package p; func _() (type /* ERROR "found 'type'" */ T)(T)`,
 	`package p; func (type /* ERROR "found 'type'" */ T)(T) _()`,
@@ -182,13 +171,6 @@ var invalids = []string{
 	`package p; type _ struct{ ( /* ERROR "cannot parenthesize embedded type" */ []byte) }`,
 	`package p; type _ struct{ *( /* ERROR "cannot parenthesize embedded type" */ int) }`,
 	`package p; type _ struct{ *( /* ERROR "cannot parenthesize embedded type" */ []byte) }`,
-
-	// TODO(rfindley): this error should be positioned on the ':'
-	`package p; var a = a[[]int:[ /* ERROR "expected expression" */ ]int];`,
-
-	// TODO(rfindley): the compiler error is better here: "cannot parenthesize embedded type"
-	// TODO(rfindley): confirm that parenthesized types should now be accepted.
-	// `package p; type I1 interface{}; type I2 interface{ (/* ERROR "expected '}', found '\('" */ I1) }`,
 
 	// issue 8656
 	`package p; func f() (a b string /* ERROR "missing ','" */ , ok bool)`,
@@ -214,10 +196,9 @@ var invalids = []string{
 	`package p; func _[]/* ERROR "empty type parameter list" */()`,
 
 	// TODO(rfindley) a better location would be after the ']'
-	`package p; type _[A /* ERROR "all type parameters must be named" */ ,] struct{ A }`,
+	`package p; type _[A /* ERROR "type parameters must be named" */ ,] struct{ A }`,
 
-	// TODO(rfindley) this error is confusing.
-	`package p; func _[type /* ERROR "all type parameters must be named" */ P, *Q interface{}]()`,
+	`package p; func _[type /* ERROR "found 'type'" */ P, *Q interface{}]()`,
 
 	`package p; func (T) _[ /* ERROR "must have no type parameters" */ A, B any](a A) B`,
 	`package p; func (T) _[ /* ERROR "must have no type parameters" */ A, B C](a A) B`,

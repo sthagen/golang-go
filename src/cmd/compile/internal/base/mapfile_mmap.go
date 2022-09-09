@@ -8,8 +8,9 @@
 package base
 
 import (
+	"internal/unsafeheader"
 	"os"
-	"reflect"
+	"runtime"
 	"syscall"
 	"unsafe"
 )
@@ -27,23 +28,19 @@ func MapFile(f *os.File, offset, length int64) (string, error) {
 	length += x
 
 	buf, err := syscall.Mmap(int(f.Fd()), offset, int(length), syscall.PROT_READ, syscall.MAP_SHARED)
-	keepAlive(f)
+	runtime.KeepAlive(f)
 	if err != nil {
 		return "", err
 	}
 
 	buf = buf[x:]
-	pSlice := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+	pSlice := (*unsafeheader.Slice)(unsafe.Pointer(&buf))
 
 	var res string
-	pString := (*reflect.StringHeader)(unsafe.Pointer(&res))
+	pString := (*unsafeheader.String)(unsafe.Pointer(&res))
 
 	pString.Data = pSlice.Data
 	pString.Len = pSlice.Len
 
 	return res, nil
 }
-
-// keepAlive is a reimplementation of runtime.KeepAlive, which wasn't
-// added until Go 1.7, whereas we need to compile with Go 1.4.
-var keepAlive = func(interface{}) {}

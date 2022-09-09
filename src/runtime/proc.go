@@ -620,7 +620,7 @@ func cpuinit() {
 
 		for i := int32(0); i < n; i++ {
 			p := argv_index(argv, argc+1+i)
-			s := *(*string)(unsafe.Pointer(&stringStruct{unsafe.Pointer(p), findnull(p)}))
+			s := unsafe.String(p, findnull(p))
 
 			if hasPrefix(s, prefix) {
 				env = gostring(p)[len(prefix):]
@@ -899,7 +899,7 @@ func freezetheworld() {
 //
 //go:nosplit
 func readgstatus(gp *g) uint32 {
-	return atomic.Load(&gp.atomicstatus)
+	return gp.atomicstatus.Load()
 }
 
 // The Gscanstatuses are acting like locks and this releases them.
@@ -921,7 +921,7 @@ func casfrom_Gscanstatus(gp *g, oldval, newval uint32) {
 		_Gscansyscall,
 		_Gscanpreempted:
 		if newval == oldval&^_Gscan {
-			success = atomic.Cas(&gp.atomicstatus, oldval, newval)
+			success = gp.atomicstatus.CompareAndSwap(oldval, newval)
 		}
 	}
 	if !success {
@@ -941,7 +941,7 @@ func castogscanstatus(gp *g, oldval, newval uint32) bool {
 		_Gwaiting,
 		_Gsyscall:
 		if newval == oldval|_Gscan {
-			r := atomic.Cas(&gp.atomicstatus, oldval, newval)
+			r := gp.atomicstatus.CompareAndSwap(oldval, newval)
 			if r {
 				acquireLockRank(lockRankGscan)
 			}
@@ -977,15 +977,15 @@ func casgstatus(gp *g, oldval, newval uint32) {
 
 	// loop if gp->atomicstatus is in a scan state giving
 	// GC time to finish and change the state to oldval.
-	for i := 0; !atomic.Cas(&gp.atomicstatus, oldval, newval); i++ {
-		if oldval == _Gwaiting && gp.atomicstatus == _Grunnable {
+	for i := 0; !gp.atomicstatus.CompareAndSwap(oldval, newval); i++ {
+		if oldval == _Gwaiting && gp.atomicstatus.Load() == _Grunnable {
 			throw("casgstatus: waiting for Gwaiting but is Grunnable")
 		}
 		if i == 0 {
 			nextYield = nanotime() + yieldDelay
 		}
 		if nanotime() < nextYield {
-			for x := 0; x < 10 && gp.atomicstatus != oldval; x++ {
+			for x := 0; x < 10 && gp.atomicstatus.Load() != oldval; x++ {
 				procyield(1)
 			}
 		} else {
@@ -1040,7 +1040,7 @@ func casgcopystack(gp *g) uint32 {
 		if oldstatus != _Gwaiting && oldstatus != _Grunnable {
 			throw("copystack: bad status, not Gwaiting or Grunnable")
 		}
-		if atomic.Cas(&gp.atomicstatus, oldstatus, _Gcopystack) {
+		if gp.atomicstatus.CompareAndSwap(oldstatus, _Gcopystack) {
 			return oldstatus
 		}
 	}
@@ -1055,7 +1055,7 @@ func casGToPreemptScan(gp *g, old, new uint32) {
 		throw("bad g transition")
 	}
 	acquireLockRank(lockRankGscan)
-	for !atomic.Cas(&gp.atomicstatus, _Grunning, _Gscan|_Gpreempted) {
+	for !gp.atomicstatus.CompareAndSwap(_Grunning, _Gscan|_Gpreempted) {
 	}
 }
 
@@ -1066,7 +1066,7 @@ func casGFromPreempted(gp *g, old, new uint32) bool {
 	if old != _Gpreempted || new != _Gwaiting {
 		throw("bad g transition")
 	}
-	return atomic.Cas(&gp.atomicstatus, _Gpreempted, _Gwaiting)
+	return gp.atomicstatus.CompareAndSwap(_Gpreempted, _Gwaiting)
 }
 
 // stopTheWorld stops all P's from executing goroutines, interrupting
@@ -1878,7 +1878,7 @@ var earlycgocallback = []byte("fatal error: cgo callback before cgo call\n")
 // It is called with a working local m, so that it can do things
 // like call schedlock and allocate.
 func newextram() {
-	c := atomic.Xchg(&extraMWaiters, 0)
+	c := extraMWaiters.Swap(0)
 	if c > 0 {
 		for i := uint32(0); i < c; i++ {
 			oneNewExtraM()
@@ -1999,9 +1999,9 @@ func getm() uintptr {
 	return uintptr(unsafe.Pointer(getg().m))
 }
 
-var extram uintptr
+var extram atomic.Uintptr
 var extraMCount uint32 // Protected by lockextra
-var extraMWaiters uint32
+var extraMWaiters atomic.Uint32
 
 // lockextra locks the extra list and returns the list head.
 // The caller must unlock the list by storing a new list head
@@ -2015,7 +2015,7 @@ func lockextra(nilokay bool) *m {
 
 	incr := false
 	for {
-		old := atomic.Loaduintptr(&extram)
+		old := extram.Load()
 		if old == locked {
 			osyield_no_g()
 			continue
@@ -2025,13 +2025,13 @@ func lockextra(nilokay bool) *m {
 				// Add 1 to the number of threads
 				// waiting for an M.
 				// This is cleared by newextram.
-				atomic.Xadd(&extraMWaiters, 1)
+				extraMWaiters.Add(1)
 				incr = true
 			}
 			usleep_no_g(1)
 			continue
 		}
-		if atomic.Casuintptr(&extram, old, locked) {
+		if extram.CompareAndSwap(old, locked) {
 			return (*m)(unsafe.Pointer(old))
 		}
 		osyield_no_g()
@@ -2041,7 +2041,7 @@ func lockextra(nilokay bool) *m {
 
 //go:nosplit
 func unlockextra(mp *m) {
-	atomic.Storeuintptr(&extram, uintptr(unsafe.Pointer(mp)))
+	extram.Store(uintptr(unsafe.Pointer(mp)))
 }
 
 var (
@@ -2628,7 +2628,7 @@ top:
 	}
 
 	// Wake up the finalizer G.
-	if fingwait && fingwake {
+	if fingStatus.Load()&(fingWait|fingWake) == fingWait|fingWake {
 		if gp := wakefing(); gp != nil {
 			ready(gp, 0, true)
 		}
@@ -3348,7 +3348,7 @@ func checkTimers(pp *p, now int64) (rnow, pollUntil int64, ran bool) {
 		// if we would clear deleted timers.
 		// This corresponds to the condition below where
 		// we decide whether to call clearDeletedTimers.
-		if pp != getg().m.p.ptr() || int(atomic.Load(&pp.deletedTimers)) <= int(atomic.Load(&pp.numTimers)/4) {
+		if pp != getg().m.p.ptr() || int(pp.deletedTimers.Load()) <= int(pp.numTimers.Load()/4) {
 			return now, next, false
 		}
 	}
@@ -3373,7 +3373,7 @@ func checkTimers(pp *p, now int64) (rnow, pollUntil int64, ran bool) {
 	// If this is the local P, and there are a lot of deleted timers,
 	// clear them out. We only do this for the local P to reduce
 	// lock contention on timersLock.
-	if pp == getg().m.p.ptr() && int(atomic.Load(&pp.deletedTimers)) > len(pp.timers)/4 {
+	if pp == getg().m.p.ptr() && int(pp.deletedTimers.Load()) > len(pp.timers)/4 {
 		clearDeletedTimers(pp)
 	}
 
@@ -4785,8 +4785,8 @@ func (pp *p) destroy() {
 		lock(&pp.timersLock)
 		moveTimers(plocal, pp.timers)
 		pp.timers = nil
-		pp.numTimers = 0
-		pp.deletedTimers = 0
+		pp.numTimers.Store(0)
+		pp.deletedTimers.Store(0)
 		pp.timer0When.Store(0)
 		unlock(&pp.timersLock)
 		unlock(&plocal.timersLock)
@@ -5738,7 +5738,7 @@ func (p pMask) clear(id int32) {
 // TODO(prattmic): Additional targeted updates may improve the above cases.
 // e.g., updating the mask when stealing a timer.
 func updateTimerPMask(pp *p) {
-	if atomic.Load(&pp.numTimers) > 0 {
+	if pp.numTimers.Load() > 0 {
 		return
 	}
 
@@ -5746,7 +5746,7 @@ func updateTimerPMask(pp *p) {
 	// decrement numTimers when handling a timerModified timer in
 	// checkTimers. We must take timersLock to serialize with these changes.
 	lock(&pp.timersLock)
-	if atomic.Load(&pp.numTimers) == 0 {
+	if pp.numTimers.Load() == 0 {
 		timerpMask.clear(pp.id)
 	}
 	unlock(&pp.timersLock)

@@ -2085,7 +2085,7 @@ func runSelect(cases []SelectCase, info []caseInfo) (chosen int, recv Value, rec
 
 // fmtSelect formats the information about a single select test.
 func fmtSelect(info []caseInfo) string {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	fmt.Fprintf(&buf, "\nselect {\n")
 	for i, cas := range info {
 		fmt.Fprintf(&buf, "%d: %s", i, cas.desc)
@@ -3705,7 +3705,7 @@ func TestSetLenCap(t *testing.T) {
 }
 
 func TestVariadic(t *testing.T) {
-	var b bytes.Buffer
+	var b strings.Builder
 	V := ValueOf
 
 	b.Reset()
@@ -8001,28 +8001,17 @@ func TestSetIter(t *testing.T) {
 	if got := *y.Interface().(*int); got != b {
 		t.Errorf("pointer incorrect: got %d want %d", got, b)
 	}
-}
 
-//go:notinheap
-type nih struct{ x int }
-
-var global_nih = nih{x: 7}
-
-func TestNotInHeapDeref(t *testing.T) {
-	// See issue 48399.
-	v := ValueOf((*nih)(nil))
-	v.Elem()
-	shouldPanic("reflect: call of reflect.Value.Field on zero Value", func() { v.Elem().Field(0) })
-
-	v = ValueOf(&global_nih)
-	if got := v.Elem().Field(0).Int(); got != 7 {
-		t.Fatalf("got %d, want 7", got)
+	// Make sure we panic assigning from an unexported field.
+	m = ValueOf(struct{ m map[string]int }{data}).Field(0)
+	for iter := m.MapRange(); iter.Next(); {
+		shouldPanic("using value obtained using unexported field", func() {
+			k.SetIterKey(iter)
+		})
+		shouldPanic("using value obtained using unexported field", func() {
+			v.SetIterValue(iter)
+		})
 	}
-
-	v = ValueOf((*nih)(unsafe.Pointer(new(int))))
-	shouldPanic("reflect: reflect.Value.Elem on an invalid notinheap pointer", func() { v.Elem() })
-	shouldPanic("reflect: reflect.Value.Pointer on an invalid notinheap pointer", func() { v.Pointer() })
-	shouldPanic("reflect: reflect.Value.UnsafePointer on an invalid notinheap pointer", func() { v.UnsafePointer() })
 }
 
 func TestMethodCallValueCodePtr(t *testing.T) {

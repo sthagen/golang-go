@@ -5,7 +5,6 @@
 package testing
 
 import (
-	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -14,7 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
-	"sync/atomic"
+	"strings"
 	"time"
 )
 
@@ -380,7 +379,7 @@ func (f *F) Fuzz(ff any) {
 			// fuzz worker. This would become very verbose, particularly during
 			// minimization. Return the error instead, and let the caller deal
 			// with the output.
-			var buf bytes.Buffer
+			var buf strings.Builder
 			if ok := run(&buf, e); !ok {
 				return errors.New(buf.String())
 			}
@@ -615,7 +614,7 @@ func fRunner(f *F, fn func(*F)) {
 		// the original panic should still be
 		// clear.
 		if f.Failed() {
-			atomic.AddUint32(&numFailed, 1)
+			numFailed.Add(1)
 		}
 		err := recover()
 		if err == nil {

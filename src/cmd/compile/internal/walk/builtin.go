@@ -22,23 +22,24 @@ import (
 // x, y, z (including runtime panics) are evaluated in
 // initialization statements before the append.
 // For normal code generation, stop there and leave the
-// rest to cgen_append.
+// rest to ssagen.
 //
 // For race detector, expand append(src, a [, b]* ) to
 //
-//	  init {
-//	    s := src
-//	    const argc = len(args) - 1
-//	    if cap(s) - len(s) < argc {
-//		    s = growslice(s, len(s)+argc)
-//	    }
-//	    n := len(s)
-//	    s = s[:n+argc]
-//	    s[n] = a
-//	    s[n+1] = b
-//	    ...
+//	init {
+//	  s := src
+//	  const argc = len(args) - 1
+//	  newLen := s.len + argc
+//	  if uint(newLen) <= uint(s.cap) {
+//	    s = s[:newLen]
+//	  } else {
+//	    s = growslice(s.ptr, newLen, s.cap, argc, elemType)
 //	  }
-//	  s
+//	  s[s.len - argc] = a
+//	  s[s.len - argc + 1] = b
+//	  ...
+//	}
+//	s
 func walkAppend(n *ir.CallExpr, init *ir.Nodes, dst ir.Node) ir.Node {
 	if !ir.SameSafeExpr(dst, n.Args[0]) {
 		n.Args[0] = safeExpr(n.Args[0], init)
@@ -70,49 +71,63 @@ func walkAppend(n *ir.CallExpr, init *ir.Nodes, dst ir.Node) ir.Node {
 	}
 
 	// General case, with no function calls left as arguments.
-	// Leave for gen, except that instrumentation requires old form.
+	// Leave for ssagen, except that instrumentation requires the old form.
 	if !base.Flag.Cfg.Instrumenting || base.Flag.CompilingRuntime {
 		return n
 	}
 
 	var l []ir.Node
 
-	ns := typecheck.Temp(nsrc.Type())
-	l = append(l, ir.NewAssignStmt(base.Pos, ns, nsrc)) // s = src
+	// s = slice to append to
+	s := typecheck.Temp(nsrc.Type())
+	l = append(l, ir.NewAssignStmt(base.Pos, s, nsrc))
 
-	na := ir.NewInt(int64(argc))                 // const argc
-	nif := ir.NewIfStmt(base.Pos, nil, nil, nil) // if cap(s) - len(s) < argc
-	nif.Cond = ir.NewBinaryExpr(base.Pos, ir.OLT, ir.NewBinaryExpr(base.Pos, ir.OSUB, ir.NewUnaryExpr(base.Pos, ir.OCAP, ns), ir.NewUnaryExpr(base.Pos, ir.OLEN, ns)), na)
+	// num = number of things to append
+	num := ir.NewInt(int64(argc))
 
-	fn := typecheck.LookupRuntime("growslice") //   growslice(<type>, old []T, mincap int) (ret []T)
-	fn = typecheck.SubstArgTypes(fn, ns.Type().Elem(), ns.Type().Elem())
+	// newLen := s.len + num
+	newLen := typecheck.Temp(types.Types[types.TINT])
+	l = append(l, ir.NewAssignStmt(base.Pos, newLen, ir.NewBinaryExpr(base.Pos, ir.OADD, ir.NewUnaryExpr(base.Pos, ir.OLEN, s), num)))
 
-	nif.Body = []ir.Node{ir.NewAssignStmt(base.Pos, ns, mkcall1(fn, ns.Type(), nif.PtrInit(), reflectdata.AppendElemRType(base.Pos, n), ns,
-		ir.NewBinaryExpr(base.Pos, ir.OADD, ir.NewUnaryExpr(base.Pos, ir.OLEN, ns), na)))}
+	// if uint(newLen) <= uint(s.cap)
+	nif := ir.NewIfStmt(base.Pos, nil, nil, nil)
+	nif.Cond = ir.NewBinaryExpr(base.Pos, ir.OLE, typecheck.Conv(newLen, types.Types[types.TUINT]), typecheck.Conv(ir.NewUnaryExpr(base.Pos, ir.OCAP, s), types.Types[types.TUINT]))
+	nif.Likely = true
+
+	// then { s = s[:n] }
+	slice := ir.NewSliceExpr(base.Pos, ir.OSLICE, s, nil, newLen, nil)
+	slice.SetBounded(true)
+	nif.Body = []ir.Node{
+		ir.NewAssignStmt(base.Pos, s, slice),
+	}
+
+	fn := typecheck.LookupRuntime("growslice") //   growslice(ptr *T, newLen, oldCap, num int, <type>) (ret []T)
+	fn = typecheck.SubstArgTypes(fn, s.Type().Elem(), s.Type().Elem())
+
+	// else { s = growslice(s.ptr, n, s.cap, a, T) }
+	nif.Else = []ir.Node{
+		ir.NewAssignStmt(base.Pos, s, mkcall1(fn, s.Type(), nif.PtrInit(),
+			ir.NewUnaryExpr(base.Pos, ir.OSPTR, s),
+			newLen,
+			ir.NewUnaryExpr(base.Pos, ir.OCAP, s),
+			num,
+			reflectdata.TypePtr(s.Type().Elem()))),
+	}
 
 	l = append(l, nif)
 
-	nn := typecheck.Temp(types.Types[types.TINT])
-	l = append(l, ir.NewAssignStmt(base.Pos, nn, ir.NewUnaryExpr(base.Pos, ir.OLEN, ns))) // n = len(s)
-
-	slice := ir.NewSliceExpr(base.Pos, ir.OSLICE, ns, nil, ir.NewBinaryExpr(base.Pos, ir.OADD, nn, na), nil) // ...s[:n+argc]
-	slice.SetBounded(true)
-	l = append(l, ir.NewAssignStmt(base.Pos, ns, slice)) // s = s[:n+argc]
-
 	ls = n.Args[1:]
 	for i, n := range ls {
-		ix := ir.NewIndexExpr(base.Pos, ns, nn) // s[n] ...
+		// s[s.len-argc+i] = arg
+		ix := ir.NewIndexExpr(base.Pos, s, ir.NewBinaryExpr(base.Pos, ir.OSUB, newLen, ir.NewInt(int64(argc-i))))
 		ix.SetBounded(true)
-		l = append(l, ir.NewAssignStmt(base.Pos, ix, n)) // s[n] = arg
-		if i+1 < len(ls) {
-			l = append(l, ir.NewAssignStmt(base.Pos, nn, ir.NewBinaryExpr(base.Pos, ir.OADD, nn, ir.NewInt(1)))) // n = n + 1
-		}
+		l = append(l, ir.NewAssignStmt(base.Pos, ix, n))
 	}
 
 	typecheck.Stmts(l)
 	walkStmtList(l)
 	init.Append(l...)
-	return ns
+	return s
 }
 
 // walkClose walks an OCLOSE node.
@@ -642,6 +657,14 @@ func walkRecoverFP(nn *ir.CallExpr, init *ir.Nodes) ir.Node {
 	return mkcall("gorecover", nn.Type(), init, walkExpr(nn.Args[0], init))
 }
 
+// walkUnsafeData walks an OUNSAFESLICEDATA or OUNSAFESTRINGDATA expression.
+func walkUnsafeData(n *ir.UnaryExpr, init *ir.Nodes) ir.Node {
+	slice := walkExpr(n.X, init)
+	res := typecheck.Expr(ir.NewUnaryExpr(n.Pos(), ir.OSPTR, slice))
+	res.SetType(n.Type())
+	return walkExpr(res, init)
+}
+
 func walkUnsafeSlice(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
 	ptr := safeExpr(n.X, init)
 	len := safeExpr(n.Y, init)
@@ -728,6 +751,64 @@ func walkUnsafeSlice(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
 		typecheck.Conv(ptr, types.Types[types.TUNSAFEPTR]),
 		typecheck.Conv(len, types.Types[types.TINT]),
 		typecheck.Conv(len, types.Types[types.TINT]))
+	return walkExpr(typecheck.Expr(h), init)
+}
+
+func walkUnsafeString(n *ir.BinaryExpr, init *ir.Nodes) ir.Node {
+	ptr := safeExpr(n.X, init)
+	len := safeExpr(n.Y, init)
+
+	lenType := types.Types[types.TINT64]
+	unsafePtr := typecheck.Conv(ptr, types.Types[types.TUNSAFEPTR])
+
+	// If checkptr enabled, call runtime.unsafestringcheckptr to check ptr and len.
+	// for simplicity, unsafestringcheckptr always uses int64.
+	// Type checking guarantees that TIDEAL len are positive and fit in an int.
+	if ir.ShouldCheckPtr(ir.CurFunc, 1) {
+		fnname := "unsafestringcheckptr"
+		fn := typecheck.LookupRuntime(fnname)
+		init.Append(mkcall1(fn, nil, init, unsafePtr, typecheck.Conv(len, lenType)))
+	} else {
+		// Otherwise, open code unsafe.String to prevent runtime call overhead.
+		// Keep this code in sync with runtime.unsafestring{,64}
+		if len.Type().IsKind(types.TIDEAL) || len.Type().Size() <= types.Types[types.TUINT].Size() {
+			lenType = types.Types[types.TINT]
+		} else {
+			// len64 := int64(len)
+			// if int64(int(len64)) != len64 {
+			//     panicunsafestringlen()
+			// }
+			len64 := typecheck.Conv(len, lenType)
+			nif := ir.NewIfStmt(base.Pos, nil, nil, nil)
+			nif.Cond = ir.NewBinaryExpr(base.Pos, ir.ONE, typecheck.Conv(typecheck.Conv(len64, types.Types[types.TINT]), lenType), len64)
+			nif.Body.Append(mkcall("panicunsafestringlen", nil, &nif.Body))
+			appendWalkStmt(init, nif)
+		}
+
+		// if len < 0 { panicunsafestringlen() }
+		nif := ir.NewIfStmt(base.Pos, nil, nil, nil)
+		nif.Cond = ir.NewBinaryExpr(base.Pos, ir.OLT, typecheck.Conv(len, lenType), ir.NewInt(0))
+		nif.Body.Append(mkcall("panicunsafestringlen", nil, &nif.Body))
+		appendWalkStmt(init, nif)
+
+		// if uintpr(len) > -uintptr(ptr) {
+		//    if ptr == nil {
+		//       panicunsafestringnilptr()
+		//    }
+		//    panicunsafeslicelen()
+		// }
+		nifLen := ir.NewIfStmt(base.Pos, nil, nil, nil)
+		nifLen.Cond = ir.NewBinaryExpr(base.Pos, ir.OGT, typecheck.Conv(len, types.Types[types.TUINTPTR]), ir.NewUnaryExpr(base.Pos, ir.ONEG, typecheck.Conv(unsafePtr, types.Types[types.TUINTPTR])))
+		nifPtr := ir.NewIfStmt(base.Pos, nil, nil, nil)
+		nifPtr.Cond = ir.NewBinaryExpr(base.Pos, ir.OEQ, unsafePtr, typecheck.NodNil())
+		nifPtr.Body.Append(mkcall("panicunsafestringnilptr", nil, &nifPtr.Body))
+		nifLen.Body.Append(nifPtr, mkcall("panicunsafestringlen", nil, &nifLen.Body))
+		appendWalkStmt(init, nifLen)
+	}
+	h := ir.NewStringHeaderExpr(n.Pos(),
+		typecheck.Conv(ptr, types.Types[types.TUNSAFEPTR]),
+		typecheck.Conv(len, types.Types[types.TINT]),
+	)
 	return walkExpr(typecheck.Expr(h), init)
 }
 

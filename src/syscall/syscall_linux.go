@@ -94,6 +94,7 @@ func Syscall6(trap, a1, a2, a3, a4, a5, a6 uintptr) (r1, r2 uintptr, err Errno) 
 }
 
 func rawSyscallNoError(trap, a1, a2, a3 uintptr) (r1, r2 uintptr)
+func rawVforkSyscall(trap, a1, a2 uintptr) (r1 uintptr, err Errno)
 
 /*
  * Wrapped
@@ -137,10 +138,15 @@ func isGroupMember(gid int) bool {
 }
 
 //sys	faccessat(dirfd int, path string, mode uint32) (err error)
+//sys	faccessat2(dirfd int, path string, mode uint32, flags int) (err error) = _SYS_faccessat2
 
 func Faccessat(dirfd int, path string, mode uint32, flags int) (err error) {
-	if flags & ^(_AT_SYMLINK_NOFOLLOW|_AT_EACCESS) != 0 {
-		return EINVAL
+	if flags == 0 {
+		return faccessat(dirfd, path, mode)
+	}
+
+	if err := faccessat2(dirfd, path, mode, flags); err != ENOSYS && err != EPERM {
+		return err
 	}
 
 	// The Linux kernel faccessat system call does not take any flags.
@@ -149,8 +155,8 @@ func Faccessat(dirfd int, path string, mode uint32, flags int) (err error) {
 	// Because people naturally expect syscall.Faccessat to act
 	// like C faccessat, we do the same.
 
-	if flags == 0 {
-		return faccessat(dirfd, path, mode)
+	if flags & ^(_AT_SYMLINK_NOFOLLOW|_AT_EACCESS) != 0 {
+		return EINVAL
 	}
 
 	var st Stat_t

@@ -5,7 +5,6 @@
 package os_test
 
 import (
-	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -315,12 +314,8 @@ func TestReadClosed(t *testing.T) {
 	_, err = file.Read(b)
 
 	e, ok := err.(*PathError)
-	if !ok {
-		t.Fatalf("Read: %T(%v), want PathError", e, e)
-	}
-
-	if e.Err != ErrClosed {
-		t.Errorf("Read: %v, want PathError(ErrClosed)", e)
+	if !ok || e.Err != ErrClosed {
+		t.Fatalf("Read: got %T(%v), want %T(%v)", err, err, e, ErrClosed)
 	}
 }
 
@@ -1167,7 +1162,7 @@ func exec(t *testing.T, dir, cmd string, args []string, expect string) {
 	}
 	w.Close()
 
-	var b bytes.Buffer
+	var b strings.Builder
 	io.Copy(&b, r)
 	output := b.String()
 
@@ -1718,7 +1713,7 @@ func runBinHostname(t *testing.T) string {
 	}
 	w.Close()
 
-	var b bytes.Buffer
+	var b strings.Builder
 	io.Copy(&b, r)
 	_, err = p.Wait()
 	if err != nil {
@@ -2544,9 +2539,9 @@ func testDoubleCloseError(t *testing.T, path string) {
 	if err := file.Close(); err == nil {
 		t.Error("second Close did not fail")
 	} else if pe, ok := err.(*PathError); !ok {
-		t.Errorf("second Close returned unexpected error type %T; expected fs.PathError", pe)
+		t.Errorf("second Close: got %T, want %T", err, pe)
 	} else if pe.Err != ErrClosed {
-		t.Errorf("second Close returned %q, wanted %q", err, ErrClosed)
+		t.Errorf("second Close: got %q, want %q", pe.Err, ErrClosed)
 	} else {
 		t.Logf("second close returned expected error %q", err)
 	}

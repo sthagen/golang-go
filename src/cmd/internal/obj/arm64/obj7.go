@@ -69,6 +69,9 @@ var zrReplace = map[obj.As]bool{
 	AADCW:  true,
 	AADCS:  true,
 	AADCSW: true,
+	AFMOVD: true,
+	AFMOVS: true,
+	AMSR:   true,
 }
 
 func (c *ctxt7) stacksplit(p *obj.Prog, framesize int32) *obj.Prog {

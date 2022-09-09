@@ -1484,6 +1484,10 @@ func (w *writer) switchStmt(stmt *syntax.SwitchStmt) {
 		w.pos(guard)
 		if tag := guard.Lhs; w.Bool(tag != nil) {
 			w.pos(tag)
+
+			// Like w.localIdent, but we don't have a types2.Object.
+			w.Sync(pkgbits.SyncLocalIdent)
+			w.pkg(w.p.curpkg)
 			w.String(tag.Value)
 		}
 		w.expr(guard.X)
@@ -1794,14 +1798,7 @@ func (w *writer) expr(expr syntax.Expr) {
 		if tv.IsType() {
 			assert(len(expr.ArgList) == 1)
 			assert(!expr.HasDots)
-
-			w.Code(exprConvert)
-			w.Bool(false) // explicit
-			w.typ(tv.Type)
-			w.pos(expr)
-			w.convRTTI(w.p.typeOf(expr.ArgList[0]), tv.Type)
-			w.Bool(isTypeParam(tv.Type))
-			w.expr(expr.ArgList[0])
+			w.convertExpr(tv.Type, expr.ArgList[0], false)
 			break
 		}
 
@@ -2069,19 +2066,30 @@ func (w *writer) multiExpr(pos poser, dstType func(int) types2.Type, exprs []syn
 // from expr's type, then an implicit conversion operation is inserted
 // at expr's position.
 func (w *writer) implicitConvExpr(dst types2.Type, expr syntax.Expr) {
+	w.convertExpr(dst, expr, true)
+}
+
+func (w *writer) convertExpr(dst types2.Type, expr syntax.Expr, implicit bool) {
 	src := w.p.typeOf(expr)
-	if dst != nil && !types2.Identical(src, dst) {
-		if !types2.AssignableTo(src, dst) {
-			w.p.fatalf(expr.Pos(), "%v is not assignable to %v", src, dst)
-		}
-		w.Code(exprConvert)
-		w.Bool(true) // implicit
-		w.typ(dst)
-		w.pos(expr)
-		w.convRTTI(src, dst)
-		w.Bool(isTypeParam(dst))
-		// fallthrough
+
+	// Omit implicit no-op conversions.
+	identical := dst == nil || types2.Identical(src, dst)
+	if implicit && identical {
+		w.expr(expr)
+		return
 	}
+
+	if implicit && !types2.AssignableTo(src, dst) {
+		w.p.fatalf(expr, "%v is not assignable to %v", src, dst)
+	}
+
+	w.Code(exprConvert)
+	w.Bool(implicit)
+	w.typ(dst)
+	w.pos(expr)
+	w.convRTTI(src, dst)
+	w.Bool(isTypeParam(dst))
+	w.Bool(identical)
 	w.expr(expr)
 }
 
@@ -2179,9 +2187,13 @@ func (w *writer) exprs(exprs []syntax.Expr) {
 func (w *writer) rtype(typ types2.Type) {
 	typ = types2.Default(typ)
 
+	info := w.p.typIdx(typ, w.dict)
+	w.rtypeInfo(info)
+}
+
+func (w *writer) rtypeInfo(info typeInfo) {
 	w.Sync(pkgbits.SyncRType)
 
-	info := w.p.typIdx(typ, w.dict)
 	if w.Bool(info.derived) {
 		w.Len(w.dict.rtypeIdx(info))
 	} else {
@@ -2214,11 +2226,11 @@ func (w *writer) itab(typ, iface types2.Type) {
 
 	typInfo := w.p.typIdx(typ, w.dict)
 	ifaceInfo := w.p.typIdx(iface, w.dict)
+
+	w.rtypeInfo(typInfo)
+	w.rtypeInfo(ifaceInfo)
 	if w.Bool(typInfo.derived || ifaceInfo.derived) {
 		w.Len(w.dict.itabIdx(typInfo, ifaceInfo))
-	} else {
-		w.typInfo(typInfo)
-		w.typInfo(ifaceInfo)
 	}
 }
 
@@ -2355,7 +2367,7 @@ func (c *declCollector) Visit(n syntax.Node) syntax.Visitor {
 		if n.Alias {
 			pw.checkPragmas(n.Pragma, 0, false)
 		} else {
-			pw.checkPragmas(n.Pragma, typePragmas, false)
+			pw.checkPragmas(n.Pragma, 0, false)
 
 			// Assign a unique ID to function-scoped defined types.
 			if c.withinFunc {

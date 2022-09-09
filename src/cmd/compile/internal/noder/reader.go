@@ -817,7 +817,22 @@ func (dict *readerDict) mangle(sym *types.Sym) *types.Sym {
 // If basic is true, then the type argument is used to instantiate a
 // type parameter whose constraint is a basic interface.
 func shapify(targ *types.Type, basic bool) *types.Type {
-	base.Assertf(targ.Kind() != types.TFORW, "%v is missing its underlying type", targ)
+	if targ.Kind() == types.TFORW {
+		if targ.IsFullyInstantiated() {
+			// For recursive instantiated type argument, it may  still be a TFORW
+			// when shapifying happens. If we don't have targ's underlying type,
+			// shapify won't work. The worst case is we end up not reusing code
+			// optimally in some tricky cases.
+			if base.Debug.Shapify != 0 {
+				base.Warn("skipping shaping of recursive type %v", targ)
+			}
+			if targ.HasShape() {
+				return targ
+			}
+		} else {
+			base.Fatalf("%v is missing its underlying type", targ)
+		}
+	}
 
 	// When a pointer type is used to instantiate a type parameter
 	// constrained by a basic interface, we know the pointer's element
@@ -1081,9 +1096,6 @@ func (r *reader) typeExt(name *ir.Name) {
 	}
 
 	name.SetPragma(r.pragmaFlag())
-	if name.Pragma()&ir.NotInHeap != 0 {
-		typ.SetNotInHeap(true)
-	}
 
 	typecheck.SetBaseTypeIndex(typ, r.Int64(), r.Int64())
 }
@@ -1374,27 +1386,18 @@ func (pr *pkgReader) dictNameOf(dict *readerDict) *ir.Name {
 		reflectdata.MarkTypeUsedInInterface(typ, lsym)
 	}
 
-	// For each (typ, iface) pair, we write *runtime._type pointers
-	// for typ and iface, as well as the *runtime.itab pointer for the
-	// pair. This is wasteful, but it simplifies worrying about tricky
-	// cases like instantiating type parameters with interface types.
-	//
-	// TODO(mdempsky): Add the needed *runtime._type pointers into the
-	// rtypes section above instead, and omit itabs entries when we
-	// statically know it won't be needed.
+	// For each (typ, iface) pair, we write the *runtime.itab pointer
+	// for the pair. For pairs that don't actually require an itab
+	// (i.e., typ is an interface, or iface is an empty interface), we
+	// write a nil pointer instead. This is wasteful, but rare in
+	// practice (e.g., instantiating a type parameter with an interface
+	// type).
 	assertOffset("itabs", dict.itabsOffset())
 	for _, info := range dict.itabs {
 		typ := pr.typIdx(info.typ, dict, true)
 		iface := pr.typIdx(info.iface, dict, true)
 
-		if !iface.IsInterface() {
-			ot += 3 * types.PtrSize
-			continue
-		}
-
-		ot = objw.SymPtr(lsym, ot, reflectdata.TypeLinksym(typ), 0)
-		ot = objw.SymPtr(lsym, ot, reflectdata.TypeLinksym(iface), 0)
-		if !typ.IsInterface() && !iface.IsEmptyInterface() {
+		if !typ.IsInterface() && iface.IsInterface() && !iface.IsEmptyInterface() {
 			ot = objw.SymPtr(lsym, ot, reflectdata.ITabLsym(typ, iface), 0)
 		} else {
 			ot += types.PtrSize
@@ -1440,7 +1443,7 @@ func (dict *readerDict) itabsOffset() int {
 // numWords returns the total number of words that comprise dict's
 // runtime dictionary variable.
 func (dict *readerDict) numWords() int64 {
-	return int64(dict.itabsOffset() + 3*len(dict.itabs))
+	return int64(dict.itabsOffset() + len(dict.itabs))
 }
 
 // varType returns the type of dict's runtime dictionary variable.
@@ -1954,7 +1957,7 @@ func (r *reader) switchStmt(label *types.Sym) ir.Node {
 		pos := r.pos()
 		if r.Bool() {
 			pos := r.pos()
-			sym := typecheck.Lookup(r.String())
+			_, sym := r.localIdent()
 			ident = ir.NewIdent(pos, sym)
 		}
 		x := r.expr()
@@ -2420,20 +2423,11 @@ func (r *reader) expr() (res ir.Node) {
 		pos := r.pos()
 		typeWord, srcRType := r.convRTTI(pos)
 		dstTypeParam := r.Bool()
+		identical := r.Bool()
 		x := r.expr()
 
 		// TODO(mdempsky): Stop constructing expressions of untyped type.
 		x = typecheck.DefaultLit(x, typ)
-
-		if op, why := typecheck.Convertop(x.Op() == ir.OLITERAL, x.Type(), typ); op == ir.OXXX {
-			// types2 ensured that x is convertable to typ under standard Go
-			// semantics, but cmd/compile also disallows some conversions
-			// involving //go:notinheap.
-			//
-			// TODO(mdempsky): This can be removed after #46731 is implemented.
-			base.ErrorfAt(pos, "cannot convert %L to type %v%v", x, typ, why)
-			base.ErrorExit() // harsh, but prevents constructing invalid IR
-		}
 
 		ce := ir.NewConvExpr(pos, ir.OCONV, typ, x)
 		ce.TypeWord, ce.SrcRType = typeWord, srcRType
@@ -2458,8 +2452,10 @@ func (r *reader) expr() (res ir.Node) {
 		// Should this be moved down into typecheck.{Assign,Convert}op?
 		// This would be a non-issue if itabs were unique for each
 		// *underlying* interface type instead.
-		if n, ok := n.(*ir.ConvExpr); ok && n.Op() == ir.OCONVNOP && n.Type().IsInterface() && !n.Type().IsEmptyInterface() && (n.Type().HasShape() || n.X.Type().HasShape()) {
-			n.SetOp(ir.OCONVIFACE)
+		if !identical {
+			if n, ok := n.(*ir.ConvExpr); ok && n.Op() == ir.OCONVNOP && n.Type().IsInterface() && !n.Type().IsEmptyInterface() && (n.Type().HasShape() || n.X.Type().HasShape()) {
+				n.SetOp(ir.OCONVIFACE)
+			}
 		}
 
 		// spec: "If the type is a type parameter, the constant is converted
@@ -3147,28 +3143,35 @@ func (r *reader) varDictIndex(name *ir.Name) {
 	}
 }
 
+// itab returns a (typ, iface) pair of types.
+//
+// typRType and ifaceRType are expressions that evaluate to the
+// *runtime._type for typ and iface, respectively.
+//
+// If typ is a concrete type and iface is a non-empty interface type,
+// then itab is an expression that evaluates to the *runtime.itab for
+// the pair. Otherwise, itab is nil.
 func (r *reader) itab(pos src.XPos) (typ *types.Type, typRType ir.Node, iface *types.Type, ifaceRType ir.Node, itab ir.Node) {
-	if r.Bool() { // derived types
-		idx := r.Len()
-		info := r.dict.itabs[idx]
-		typ = r.p.typIdx(info.typ, r.dict, true)
-		typRType = r.rttiWord(pos, r.dict.itabsOffset()+3*idx)
-		iface = r.p.typIdx(info.iface, r.dict, true)
-		ifaceRType = r.rttiWord(pos, r.dict.itabsOffset()+3*idx+1)
-		itab = r.rttiWord(pos, r.dict.itabsOffset()+3*idx+2)
-		return
+	typ, typRType = r.rtype0(pos)
+	iface, ifaceRType = r.rtype0(pos)
+
+	idx := -1
+	if r.Bool() {
+		idx = r.Len()
 	}
 
-	typ = r.typ()
-	iface = r.typ()
-	if iface.IsInterface() {
-		typRType = reflectdata.TypePtrAt(pos, typ)
-		ifaceRType = reflectdata.TypePtrAt(pos, iface)
-		if !typ.IsInterface() && !iface.IsEmptyInterface() {
+	if !typ.IsInterface() && iface.IsInterface() && !iface.IsEmptyInterface() {
+		if idx >= 0 {
+			itab = r.rttiWord(pos, r.dict.itabsOffset()+idx)
+		} else {
+			base.AssertfAt(!typ.HasShape(), pos, "%v is a shape type", typ)
+			base.AssertfAt(!iface.HasShape(), pos, "%v is a shape type", iface)
+
 			lsym := reflectdata.ITabLsym(typ, iface)
 			itab = typecheck.LinksymAddr(pos, lsym, types.Types[types.TUINT8])
 		}
 	}
+
 	return
 }
 
@@ -3210,9 +3213,7 @@ func (r *reader) exprType() ir.Node {
 
 	if r.Bool() {
 		typ, rtype, _, _, itab = r.itab(pos)
-		if typ.IsInterface() {
-			itab = nil
-		} else {
+		if !typ.IsInterface() {
 			rtype = nil // TODO(mdempsky): Leave set?
 		}
 	} else {
@@ -3359,22 +3360,28 @@ func (r *reader) pkgObjs(target *ir.Package) []*ir.Name {
 
 // @@@ Inlining
 
+// unifiedHaveInlineBody reports whether we have the function body for
+// fn, so we can inline it.
+func unifiedHaveInlineBody(fn *ir.Func) bool {
+	if fn.Inl == nil {
+		return false
+	}
+
+	_, ok := bodyReaderFor(fn)
+	return ok
+}
+
 var inlgen = 0
 
-// InlineCall implements inline.NewInline by re-reading the function
+// unifiedInlineCall implements inline.NewInline by re-reading the function
 // body from its Unified IR export data.
-func InlineCall(call *ir.CallExpr, fn *ir.Func, inlIndex int) *ir.InlinedCallExpr {
+func unifiedInlineCall(call *ir.CallExpr, fn *ir.Func, inlIndex int) *ir.InlinedCallExpr {
 	// TODO(mdempsky): Turn callerfn into an explicit parameter.
 	callerfn := ir.CurFunc
 
 	pri, ok := bodyReaderFor(fn)
 	if !ok {
-		// TODO(mdempsky): Reconsider this diagnostic's wording, if it's
-		// to be included in Go 1.20.
-		if base.Flag.LowerM != 0 {
-			base.WarnfAt(call.Pos(), "cannot inline call to %v: missing inline body", fn)
-		}
-		return nil
+		base.FatalfAt(call.Pos(), "cannot inline call to %v: missing inline body", fn)
 	}
 
 	if fn.Inl.Body == nil {

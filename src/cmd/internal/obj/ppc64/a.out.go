@@ -258,6 +258,18 @@ const (
 	REG_CR6
 	REG_CR7
 
+	// MMA accumulator registers, these shadow VSR 0-31
+	// e.g MMAx shadows VSRx*4-VSRx*4+3 or
+	//     MMA0 shadows VSR0-VSR3
+	REG_A0
+	REG_A1
+	REG_A2
+	REG_A3
+	REG_A4
+	REG_A5
+	REG_A6
+	REG_A7
+
 	REG_MSR
 	REG_FPSCR
 	REG_CR
@@ -399,6 +411,7 @@ const (
 	C_CREG     /* The condition registor (CR) */
 	C_CRBIT    /* A single bit of the CR register (0-31) */
 	C_SPR      /* special processor register */
+	C_AREG     /* MMA accumulator register */
 	C_ZCON     /* The constant zero */
 	C_U1CON    /* 1 bit unsigned constant */
 	C_U2CON    /* 2 bit unsigned constant */
@@ -419,9 +432,10 @@ const (
 	C_SBRA     /* A short offset argument to a branching instruction */
 	C_LBRA     /* A long offset argument to a branching instruction */
 	C_LBRAPIC  /* Like C_LBRA, but requires an extra NOP for potential TOC restore by the linker. */
-	C_ZOREG    /* An reg+reg memory arg, or a $0+reg memory op */
+	C_ZOREG    /* An $0+reg memory op */
 	C_SOREG    /* An $n+reg memory arg where n is a 16 bit signed offset */
 	C_LOREG    /* An $n+reg memory arg where n is a 32 bit signed offset */
+	C_XOREG    /* An reg+reg memory arg */
 	C_FPSCR    /* The fpscr register */
 	C_XER      /* The xer, holds the carry bit */
 	C_LR       /* The link register */
