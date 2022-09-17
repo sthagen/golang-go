@@ -1424,7 +1424,6 @@ func (ctxt *Link) hostlink() {
 		if ctxt.HeadType == objabi.Hdarwin {
 			if machoPlatform == PLATFORM_MACOS && ctxt.IsAMD64() {
 				argv = append(argv, "-Wl,-no_pie")
-				argv = append(argv, "-Wl,-pagezero_size,4000000")
 			}
 		}
 		if *flagRace && ctxt.HeadType == objabi.Hwindows {
@@ -1776,6 +1775,13 @@ func (ctxt *Link) hostlink() {
 	if len(out) > 0 {
 		// always print external output even if the command is successful, so that we don't
 		// swallow linker warnings (see https://golang.org/issue/17935).
+		if ctxt.IsDarwin() && ctxt.IsAMD64() {
+			const noPieWarning = "ld: warning: -no_pie is deprecated when targeting new OS versions\n"
+			if i := bytes.Index(out, []byte(noPieWarning)); i >= 0 {
+				// swallow -no_pie deprecation warning, issue 54482
+				out = append(out[:i], out[i+len(noPieWarning):]...)
+			}
+		}
 		ctxt.Logf("%s", out)
 	}
 
@@ -2435,6 +2441,10 @@ func Entryvalue(ctxt *Link) int64 {
 	}
 	ldr := ctxt.loader
 	s := ldr.Lookup(a, 0)
+	if s == 0 {
+		Errorf(nil, "missing entry symbol %q", a)
+		return 0
+	}
 	st := ldr.SymType(s)
 	if st == 0 {
 		return *FlagTextAddr

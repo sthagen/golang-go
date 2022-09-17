@@ -618,6 +618,7 @@ func (t Time) Format(layout string) string {
 // AppendFormat is like Format but appends the textual
 // representation to b and returns the extended buffer.
 func (t Time) AppendFormat(b []byte, layout string) []byte {
+	// Optimize for RFC3339 as it accounts for over half of all representations.
 	switch layout {
 	case RFC3339:
 		return t.appendFormatRFC3339(b, false)
@@ -793,50 +794,6 @@ func (t Time) appendFormat(b []byte, layout string) []byte {
 			b = formatNano(b, uint(t.Nanosecond()), std)
 		}
 	}
-	return b
-}
-
-func (t Time) appendFormatRFC3339(b []byte, nanos bool) []byte {
-	_, offset, abs := t.locabs()
-
-	// Format date.
-	year, month, day, _ := absDate(abs, true)
-	b = appendInt(b, year, 4)
-	b = append(b, '-')
-	b = appendInt(b, int(month), 2)
-	b = append(b, '-')
-	b = appendInt(b, day, 2)
-
-	b = append(b, 'T')
-
-	// Format time.
-	hour, min, sec := absClock(abs)
-	b = appendInt(b, hour, 2)
-	b = append(b, ':')
-	b = appendInt(b, min, 2)
-	b = append(b, ':')
-	b = appendInt(b, sec, 2)
-
-	if nanos {
-		std := stdFracSecond(stdFracSecond9, 9, '.')
-		b = formatNano(b, uint(t.Nanosecond()), std)
-	}
-
-	if offset == 0 {
-		return append(b, 'Z')
-	}
-
-	// Format zone.
-	zone := offset / 60 // convert to minutes
-	if zone < 0 {
-		b = append(b, '-')
-		zone = -zone
-	} else {
-		b = append(b, '+')
-	}
-	b = appendInt(b, zone/60, 2)
-	b = append(b, ':')
-	b = appendInt(b, zone%60, 2)
 	return b
 }
 
@@ -1018,6 +975,12 @@ func skip(value, prefix string) (string, error) {
 // differ by the actual zone offset. To avoid such problems, prefer time layouts
 // that use a numeric zone offset, or use ParseInLocation.
 func Parse(layout, value string) (Time, error) {
+	// Optimize for RFC3339 as it accounts for over half of all representations.
+	if layout == RFC3339 || layout == RFC3339Nano {
+		if t, ok := parseRFC3339(value, Local); ok {
+			return t, nil
+		}
+	}
 	return parse(layout, value, UTC, Local)
 }
 
@@ -1027,6 +990,12 @@ func Parse(layout, value string) (Time, error) {
 // Second, when given a zone offset or abbreviation, Parse tries to match it
 // against the Local location; ParseInLocation uses the given location.
 func ParseInLocation(layout, value string, loc *Location) (Time, error) {
+	// Optimize for RFC3339 as it accounts for over half of all representations.
+	if layout == RFC3339 || layout == RFC3339Nano {
+		if t, ok := parseRFC3339(value, loc); ok {
+			return t, nil
+		}
+	}
 	return parse(layout, value, loc, loc)
 }
 

@@ -366,10 +366,6 @@ type workType struct {
 	// explicit user call.
 	userForced bool
 
-	// totaltime is the CPU nanoseconds spent in GC since the
-	// program started if debug.gctrace > 0.
-	totaltime int64
-
 	// initialHeapLive is the value of gcController.heapLive at the
 	// beginning of this GC cycle.
 	initialHeapLive uint64
@@ -404,6 +400,9 @@ type workType struct {
 
 	// debug.gctrace heap sizes for this cycle.
 	heap0, heap1, heap2 uint64
+
+	// Cumulative estimated CPU usage.
+	cpuStats
 }
 
 // GC runs a garbage collection and blocks the caller until the
@@ -612,9 +611,6 @@ func gcStart(trigger gcTrigger) {
 		return
 	}
 
-	// For stats, check if this GC was forced by the user.
-	work.userForced = trigger.kind == gcTriggerCycle
-
 	// In gcstoptheworld debug mode, upgrade the mode accordingly.
 	// We do this after re-checking the transition condition so
 	// that multiple goroutines that detect the heap trigger don't
@@ -629,6 +625,10 @@ func gcStart(trigger gcTrigger) {
 	// Ok, we're doing it! Stop everybody else
 	semacquire(&gcsema)
 	semacquire(&worldsema)
+
+	// For stats, check if this GC was forced by the user.
+	// Update it under gcsema to avoid gctrace getting wrong values.
+	work.userForced = trigger.kind == gcTriggerCycle
 
 	if trace.enabled {
 		traceGCStart()
@@ -810,7 +810,7 @@ top:
 		// Otherwise, our attempt to force all P's to a safepoint could
 		// result in a deadlock as we attempt to preempt a worker that's
 		// trying to preempt us (e.g. for a stack scan).
-		casgstatus(gp, _Grunning, _Gwaiting)
+		casGToWaiting(gp, _Grunning, waitReasonGCMarkTermination)
 		forEachP(func(pp *p) {
 			// Flush the write barrier buffer, since this may add
 			// work to the gcWork.
@@ -931,8 +931,7 @@ func gcMarkTermination() {
 	mp.preemptoff = "gcing"
 	mp.traceback = 2
 	curgp := mp.curg
-	casgstatus(curgp, _Grunning, _Gwaiting)
-	curgp.waitreason = waitReasonGarbageCollection
+	casGToWaiting(curgp, _Grunning, waitReasonGarbageCollection)
 
 	// Run gc on the g0 stack. We do this so that the g stack
 	// we're currently running on will no longer change. Cuts
@@ -1005,24 +1004,57 @@ func gcMarkTermination() {
 	memstats.pause_end[memstats.numgc%uint32(len(memstats.pause_end))] = uint64(unixNow)
 	memstats.pause_total_ns += uint64(work.pauseNS)
 
-	// Update work.totaltime.
 	sweepTermCpu := int64(work.stwprocs) * (work.tMark - work.tSweepTerm)
 	// We report idle marking time below, but omit it from the
 	// overall utilization here since it's "free".
-	markCpu := gcController.assistTime.Load() + gcController.dedicatedMarkTime.Load() + gcController.fractionalMarkTime.Load()
+	markAssistCpu := gcController.assistTime.Load()
+	markDedicatedCpu := gcController.dedicatedMarkTime.Load()
+	markFractionalCpu := gcController.fractionalMarkTime.Load()
+	markIdleCpu := gcController.idleMarkTime.Load()
 	markTermCpu := int64(work.stwprocs) * (work.tEnd - work.tMarkTerm)
-	cycleCpu := sweepTermCpu + markCpu + markTermCpu
-	work.totaltime += cycleCpu
+	scavAssistCpu := scavenge.assistTime.Load()
+	scavBgCpu := scavenge.backgroundTime.Load()
+
+	// Update cumulative GC CPU stats.
+	work.cpuStats.gcAssistTime += markAssistCpu
+	work.cpuStats.gcDedicatedTime += markDedicatedCpu + markFractionalCpu
+	work.cpuStats.gcIdleTime += markIdleCpu
+	work.cpuStats.gcPauseTime += sweepTermCpu + markTermCpu
+	work.cpuStats.gcTotalTime += sweepTermCpu + markAssistCpu + markDedicatedCpu + markFractionalCpu + markIdleCpu + markTermCpu
+
+	// Update cumulative scavenge CPU stats.
+	work.cpuStats.scavengeAssistTime += scavAssistCpu
+	work.cpuStats.scavengeBgTime += scavBgCpu
+	work.cpuStats.scavengeTotalTime += scavAssistCpu + scavBgCpu
+
+	// Update total CPU.
+	work.cpuStats.totalTime = sched.totaltime + (now-sched.procresizetime)*int64(gomaxprocs)
+	work.cpuStats.idleTime += sched.idleTime.Load()
+
+	// Compute userTime. We compute this indirectly as everything that's not the above.
+	//
+	// Since time spent in _Pgcstop is covered by gcPauseTime, and time spent in _Pidle
+	// is covered by idleTime, what we're left with is time spent in _Prunning and _Psyscall,
+	// the latter of which is fine because the P will either go idle or get used for something
+	// else via sysmon. Meanwhile if we subtract GC time from whatever's left, we get non-GC
+	// _Prunning time. Note that this still leaves time spent in sweeping and in the scheduler,
+	// but that's fine. The overwhelming majority of this time will be actual user time.
+	work.cpuStats.userTime = work.cpuStats.totalTime - (work.cpuStats.gcTotalTime +
+		work.cpuStats.scavengeTotalTime + work.cpuStats.idleTime)
 
 	// Compute overall GC CPU utilization.
-	totalCpu := sched.totaltime + (now-sched.procresizetime)*int64(gomaxprocs)
-	memstats.gc_cpu_fraction = float64(work.totaltime) / float64(totalCpu)
+	// Omit idle marking time from the overall utilization here since it's "free".
+	memstats.gc_cpu_fraction = float64(work.cpuStats.gcTotalTime-work.cpuStats.gcIdleTime) / float64(work.cpuStats.totalTime)
 
-	// Reset assist time stat.
+	// Reset assist time and background time stats.
 	//
 	// Do this now, instead of at the start of the next GC cycle, because
 	// these two may keep accumulating even if the GC is not active.
-	mheap_.pages.scav.assistTime.Store(0)
+	scavenge.assistTime.Store(0)
+	scavenge.backgroundTime.Store(0)
+
+	// Reset idle time stat.
+	sched.idleTime.Store(0)
 
 	// Reset sweep state.
 	sweep.nbgsweep = 0
@@ -1299,7 +1331,7 @@ func gcBgMarkWorker() {
 			// the G stack. However, stack shrinking is
 			// disabled for mark workers, so it is safe to
 			// read from the G stack.
-			casgstatus(gp, _Grunning, _Gwaiting)
+			casGToWaiting(gp, _Grunning, waitReasonGCWorkerActive)
 			switch pp.gcMarkWorkerMode {
 			default:
 				throw("gcBgMarkWorker: unexpected gcMarkWorkerMode")

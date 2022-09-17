@@ -7,6 +7,7 @@
 package types2
 
 import (
+	"bytes"
 	"cmd/compile/internal/syntax"
 	"fmt"
 	"runtime"
@@ -38,6 +39,7 @@ func unreachable() {
 // To report an error_, call Checker.report.
 type error_ struct {
 	desc []errorDesc
+	code errorCode
 	soft bool // TODO(gri) eventually determine this from an error code
 }
 
@@ -91,7 +93,7 @@ func (err *error_) errorf(at poser, format string, args ...interface{}) {
 	err.desc = append(err.desc, errorDesc{posFor(at), format, args})
 }
 
-func sprintf(qf Qualifier, debug bool, format string, args ...interface{}) string {
+func sprintf(qf Qualifier, tpSubscripts bool, format string, args ...interface{}) string {
 	for i, arg := range args {
 		switch a := arg.(type) {
 		case nil:
@@ -118,26 +120,34 @@ func sprintf(qf Qualifier, debug bool, format string, args ...interface{}) strin
 		case Object:
 			arg = ObjectString(a, qf)
 		case Type:
-			arg = typeString(a, qf, debug)
+			var buf bytes.Buffer
+			w := newTypeWriter(&buf, qf)
+			w.tpSubscripts = tpSubscripts
+			w.typ(a)
+			arg = buf.String()
 		case []Type:
-			var buf strings.Builder
+			var buf bytes.Buffer
+			w := newTypeWriter(&buf, qf)
+			w.tpSubscripts = tpSubscripts
 			buf.WriteByte('[')
 			for i, x := range a {
 				if i > 0 {
 					buf.WriteString(", ")
 				}
-				buf.WriteString(typeString(x, qf, debug))
+				w.typ(x)
 			}
 			buf.WriteByte(']')
 			arg = buf.String()
 		case []*TypeParam:
-			var buf strings.Builder
+			var buf bytes.Buffer
+			w := newTypeWriter(&buf, qf)
+			w.tpSubscripts = tpSubscripts
 			buf.WriteByte('[')
 			for i, x := range a {
 				if i > 0 {
 					buf.WriteString(", ")
 				}
-				buf.WriteString(typeString(x, qf, debug)) // use typeString so we get subscripts when debugging
+				w.typ(x)
 			}
 			buf.WriteByte(']')
 			arg = buf.String()
@@ -197,7 +207,7 @@ func (check *Checker) report(err *error_) {
 	if err.empty() {
 		panic("no error to report")
 	}
-	check.err(err.pos(), err.msg(check.qualifier), err.soft)
+	check.err(err.pos(), err.code, err.msg(check.qualifier), err.soft)
 }
 
 func (check *Checker) trace(pos syntax.Pos, format string, args ...interface{}) {
@@ -213,7 +223,7 @@ func (check *Checker) dump(format string, args ...interface{}) {
 	fmt.Println(sprintf(check.qualifier, true, format, args...))
 }
 
-func (check *Checker) err(at poser, msg string, soft bool) {
+func (check *Checker) err(at poser, code errorCode, msg string, soft bool) {
 	// Cheap trick: Don't report errors with messages containing
 	// "invalid operand" or "invalid type" as those tend to be
 	// follow-on errors which don't add useful information. Only
@@ -262,16 +272,16 @@ type poser interface {
 	Pos() syntax.Pos
 }
 
-func (check *Checker) error(at poser, msg string) {
-	check.err(at, msg, false)
+func (check *Checker) error(at poser, code errorCode, msg string) {
+	check.err(at, code, msg, false)
 }
 
-func (check *Checker) errorf(at poser, format string, args ...interface{}) {
-	check.err(at, check.sprintf(format, args...), false)
+func (check *Checker) errorf(at poser, code errorCode, format string, args ...interface{}) {
+	check.err(at, code, check.sprintf(format, args...), false)
 }
 
-func (check *Checker) softErrorf(at poser, format string, args ...interface{}) {
-	check.err(at, check.sprintf(format, args...), true)
+func (check *Checker) softErrorf(at poser, code errorCode, format string, args ...interface{}) {
+	check.err(at, code, check.sprintf(format, args...), true)
 }
 
 func (check *Checker) versionErrorf(at poser, goVersion string, format string, args ...interface{}) {
@@ -281,7 +291,7 @@ func (check *Checker) versionErrorf(at poser, goVersion string, format string, a
 	} else {
 		msg = fmt.Sprintf("%s requires %s or later", msg, goVersion)
 	}
-	check.err(at, msg, true)
+	check.err(at, _UnsupportedFeature, msg, true)
 }
 
 // posFor reports the left (= start) position of at.

@@ -525,6 +525,12 @@ func Getg() *G {
 	return getg()
 }
 
+func GIsWaitingOnMutex(gp *G) bool {
+	return readgstatus(gp) == _Gwaiting && gp.waitreason.isMutexWait()
+}
+
+var CasGStatusAlwaysTrack = &casgstatusAlwaysTrack
+
 //go:noinline
 func PanicForTesting(b []byte, i int) byte {
 	return unexportedPanicForTesting(b, i)
@@ -1228,21 +1234,27 @@ func MSpanCountAlloc(ms *MSpan, bits []byte) int {
 }
 
 const (
-	TimeHistSubBucketBits   = timeHistSubBucketBits
-	TimeHistNumSubBuckets   = timeHistNumSubBuckets
-	TimeHistNumSuperBuckets = timeHistNumSuperBuckets
+	TimeHistSubBucketBits = timeHistSubBucketBits
+	TimeHistNumSubBuckets = timeHistNumSubBuckets
+	TimeHistNumBuckets    = timeHistNumBuckets
+	TimeHistMinBucketBits = timeHistMinBucketBits
+	TimeHistMaxBucketBits = timeHistMaxBucketBits
 )
 
 type TimeHistogram timeHistogram
 
 // Counts returns the counts for the given bucket, subBucket indices.
 // Returns true if the bucket was valid, otherwise returns the counts
-// for the underflow bucket and false.
-func (th *TimeHistogram) Count(bucket, subBucket uint) (uint64, bool) {
+// for the overflow bucket if bucket > 0 or the underflow bucket if
+// bucket < 0, and false.
+func (th *TimeHistogram) Count(bucket, subBucket int) (uint64, bool) {
 	t := (*timeHistogram)(th)
-	i := bucket*TimeHistNumSubBuckets + subBucket
-	if i >= uint(len(t.counts)) {
+	if bucket < 0 {
 		return t.underflow.Load(), false
+	}
+	i := bucket*TimeHistNumSubBuckets + subBucket
+	if i >= len(t.counts) {
+		return t.overflow.Load(), false
 	}
 	return t.counts[i].Load(), true
 }
@@ -1611,3 +1623,5 @@ func (s *ScavengeIndex) Mark(base, limit uintptr) {
 func (s *ScavengeIndex) Clear(ci ChunkIdx) {
 	s.i.clear(chunkIdx(ci))
 }
+
+const GTrackingPeriod = gTrackingPeriod

@@ -279,7 +279,7 @@ const (
 
 	// _InvalidIfaceEmbed occurs when a non-interface type is embedded in an
 	// interface (for go 1.17 or earlier).
-	_InvalidIfaceEmbed
+	_ // not used anymore
 
 	// _InvalidPtrEmbed occurs when an embedded field is of the pointer form *T,
 	// and T itself is itself a pointer, an unsafe.Pointer, or an interface.
@@ -867,7 +867,7 @@ const (
 	//  var _ = string(x)
 	_InvalidConversion
 
-	// _InvalidUntypedConversion occurs when an there is no valid implicit
+	// _InvalidUntypedConversion occurs when there is no valid implicit
 	// conversion from an untyped value satisfying the type constraints of the
 	// context in which it is used.
 	//
@@ -1419,5 +1419,5 @@ const (
 
 	// _InvalidUnsafeStringData occurs if it is used in a package
 	// compiled for a language version before go1.20.
-	_InvalidUnsafeStringData
+	_ // not used anymore
 )
