@@ -634,10 +634,16 @@ func Load(l *loader.Loader, arch *sys.Arch, localSymVersion int, f *bio.Reader, 
 
 		if elf.Machine(elfobj.machine) == elf.EM_PPC64 {
 			flag := int(elfsym.other) >> 5
-			if 2 <= flag && flag <= 6 {
-				l.SetSymLocalentry(s, 1<<uint(flag-2))
-			} else if flag == 7 {
+			switch flag {
+			case 0:
+				// No local entry. R2 is preserved.
+			case 1:
+				// These require R2 be saved and restored by the caller. This isn't supported today.
+				return errorf("%s: unable to handle local entry type 1", sb.Name())
+			case 7:
 				return errorf("%s: invalid sym.other 0x%x", sb.Name(), elfsym.other)
+			default:
+				l.SetSymLocalentry(s, 4<<uint(flag-2))
 			}
 		}
 	}
@@ -1080,8 +1086,16 @@ func relSize(arch *sys.Arch, pn string, elftype uint32) (uint8, uint8, error) {
 		S390X | uint32(elf.R_390_PLT64)<<16:
 		return 8, 8, nil
 
+	case RISCV64 | uint32(elf.R_RISCV_SET6)<<16,
+		RISCV64 | uint32(elf.R_RISCV_SUB6)<<16,
+		RISCV64 | uint32(elf.R_RISCV_SET8)<<16,
+		RISCV64 | uint32(elf.R_RISCV_SUB8)<<16:
+		return 1, 1, nil
+
 	case RISCV64 | uint32(elf.R_RISCV_RVC_BRANCH)<<16,
-		RISCV64 | uint32(elf.R_RISCV_RVC_JUMP)<<16:
+		RISCV64 | uint32(elf.R_RISCV_RVC_JUMP)<<16,
+		RISCV64 | uint32(elf.R_RISCV_SET16)<<16,
+		RISCV64 | uint32(elf.R_RISCV_SUB16)<<16:
 		return 2, 2, nil
 
 	case RISCV64 | uint32(elf.R_RISCV_32)<<16,
@@ -1093,6 +1107,10 @@ func relSize(arch *sys.Arch, pn string, elftype uint32) (uint8, uint8, error) {
 		RISCV64 | uint32(elf.R_RISCV_PCREL_HI20)<<16,
 		RISCV64 | uint32(elf.R_RISCV_PCREL_LO12_I)<<16,
 		RISCV64 | uint32(elf.R_RISCV_PCREL_LO12_S)<<16,
+		RISCV64 | uint32(elf.R_RISCV_ADD32)<<16,
+		RISCV64 | uint32(elf.R_RISCV_SET32)<<16,
+		RISCV64 | uint32(elf.R_RISCV_SUB32)<<16,
+		RISCV64 | uint32(elf.R_RISCV_32_PCREL)<<16,
 		RISCV64 | uint32(elf.R_RISCV_RELAX)<<16:
 		return 4, 4, nil
 

@@ -325,10 +325,10 @@ func (check *Checker) cycleError(cycle []Object) {
 	if tname != nil && tname.IsAlias() {
 		check.validAlias(tname, Typ[Invalid])
 	}
-	if tname != nil && compilerErrorMessages {
+	if tname != nil {
 		check.errorf(obj, _InvalidDeclCycle, "invalid recursive type %s", objName)
 	} else {
-		check.errorf(obj, _InvalidDeclCycle, "illegal cycle in declaration of %s", objName)
+		check.errorf(obj, _InvalidDeclCycle, "invalid cycle in declaration of %s", objName)
 	}
 	for range cycle {
 		check.errorf(obj, _InvalidDeclCycle, "\t%s refers to", objName) // secondary error, \t indented
@@ -749,8 +749,11 @@ func (check *Checker) collectMethods(obj *TypeName) {
 		// to it must be unique."
 		assert(m.name != "_")
 		if alt := mset.insert(m); alt != nil {
-			check.errorf(m, _DuplicateMethod, "method %s already declared for %s", m.name, obj)
-			check.reportAltDecl(alt)
+			if alt.Pos().IsValid() {
+				check.errorf(m, _DuplicateMethod, "method %s.%s already declared at %s", obj.Name(), m.name, alt.Pos())
+			} else {
+				check.errorf(m, _DuplicateMethod, "method %s.%s already declared", obj.Name(), m.name)
+			}
 			continue
 		}
 

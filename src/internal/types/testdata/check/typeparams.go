@@ -39,7 +39,7 @@ var _ = f(0 /* ERROR cannot use 0 .* as \[\]chan int */ )
 
 func swap[A, B any](a A, b B) (B, A) { return b, a }
 
-var _ = swap /* ERROR single value is expected */ [int, float32](1, 2)
+var _ = swap /* ERROR multiple-value */ [int, float32](1, 2)
 var f32, i = swap[int, float32](swap[float32, int](1, 2))
 var _ float32 = f32
 var _ int = i
@@ -58,10 +58,10 @@ func min[T interface{ ~int }](x, y T) T {
 }
 
 func _[T interface{~int | ~float32}](x, y T) bool { return x < y }
-func _[T any](x, y T) bool { return x /* ERROR cannot compare */ < y }
-func _[T interface{~int | ~float32 | ~bool}](x, y T) bool { return x /* ERROR cannot compare */ < y }
+func _[T any](x, y T) bool { return x /* ERROR type parameter T is not comparable */ < y }
+func _[T interface{~int | ~float32 | ~bool}](x, y T) bool { return x /* ERROR type parameter T is not comparable */ < y }
 
-func _[T C1[T]](x, y T) bool { return x /* ERROR cannot compare */ < y }
+func _[T C1[T]](x, y T) bool { return x /* ERROR type parameter T is not comparable */ < y }
 func _[T C2[T]](x, y T) bool { return x < y }
 
 type C1[T any] interface{}

@@ -143,7 +143,7 @@ func genstubs(ctxt *ld.Link, ldr *loader.Loader) {
 			if r := relocs.At(i); r.Type() == objabi.ElfRelocOffset+objabi.RelocType(elf.R_PPC64_REL24) {
 				switch ldr.SymType(r.Sym()) {
 				case sym.SDYNIMPORT:
-					// This call goes throught the PLT, generate and call through a PLT stub.
+					// This call goes through the PLT, generate and call through a PLT stub.
 					if sym, firstUse := genpltstub(ctxt, ldr, r, s); firstUse {
 						stubs = append(stubs, sym)
 					}
@@ -380,7 +380,7 @@ func addelfdynrel(target *ld.Target, ldr *loader.Loader, syms *ld.ArchSyms, s lo
 		// callee. Hence, we need to go to the local entry
 		// point.  (If we don't do this, the callee will try
 		// to use r12 to compute r2.)
-		su.SetRelocAdd(rIdx, r.Add()+int64(ldr.SymLocalentry(targ))*4)
+		su.SetRelocAdd(rIdx, r.Add()+int64(ldr.SymLocalentry(targ)))
 
 		if targType == sym.SDYNIMPORT {
 			// Should have been handled in elfsetupplt

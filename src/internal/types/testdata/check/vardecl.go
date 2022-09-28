@@ -28,7 +28,7 @@ var _ = 1, 2 /* ERROR "extra init expr 2" */
 var _, _ = 1 /* ERROR "cannot initialize [0-9]+ variables with [0-9]+ values" */
 var _, _, _ /* ERROR "missing init expr for _" */ = 1, 2
 
-var _ = g /* ERROR "2-valued g" */ ()
+var _ = g /* ERROR "multiple-value g" */ ()
 var _, _ = g()
 var _, _, _ = g /* ERROR "cannot initialize [0-9]+ variables with [0-9]+ values" */ ()
 
@@ -47,7 +47,7 @@ var (
 	_, _ = 1 /* ERROR "cannot initialize [0-9]+ variables with [0-9]+ values" */
 	_, _, _ /* ERROR "missing init expr for _" */ = 1, 2
 
-	_ = g /* ERROR "2-valued g" */ ()
+	_ = g /* ERROR "multiple-value g" */ ()
 	_, _ = g()
 	_, _, _ = g /* ERROR "cannot initialize [0-9]+ variables with [0-9]+ values" */ ()
 
@@ -64,45 +64,45 @@ var (
 // Variables declared in function bodies must be 'used'.
 type T struct{}
 func (r T) _(a, b, c int) (u, v, w int) {
-	var x1 /* ERROR "declared but not used" */ int
-	var x2 /* ERROR "declared but not used" */ int
+	var x1 /* ERROR "declared and not used" */ int
+	var x2 /* ERROR "declared and not used" */ int
 	x1 = 1
 	(x2) = 2
 
-	y1 /* ERROR "declared but not used" */ := 1
-	y2 /* ERROR "declared but not used" */ := 2
+	y1 /* ERROR "declared and not used" */ := 1
+	y2 /* ERROR "declared and not used" */ := 2
 	y1 = 1
 	(y1) = 2
 
 	{
-		var x1 /* ERROR "declared but not used" */ int
-		var x2 /* ERROR "declared but not used" */ int
+		var x1 /* ERROR "declared and not used" */ int
+		var x2 /* ERROR "declared and not used" */ int
 		x1 = 1
 		(x2) = 2
 
-		y1 /* ERROR "declared but not used" */ := 1
-		y2 /* ERROR "declared but not used" */ := 2
+		y1 /* ERROR "declared and not used" */ := 1
+		y2 /* ERROR "declared and not used" */ := 2
 		y1 = 1
 		(y1) = 2
 	}
 
-	if x /* ERROR "declared but not used" */ := 0; a < b {}
+	if x /* ERROR "declared and not used" */ := 0; a < b {}
 
-	switch x /* ERROR "declared but not used" */, y := 0, 1; a {
+	switch x /* ERROR "declared and not used" */, y := 0, 1; a {
 	case 0:
 		_ = y
 	case 1:
-		x /* ERROR "declared but not used" */ := 0
+		x /* ERROR "declared and not used" */ := 0
 	}
 
 	var t interface{}
-	switch t /* ERROR "declared but not used" */ := t.(type) {}
+	switch t /* ERROR "declared and not used" */ := t.(type) {}
 
-	switch t /* ERROR "declared but not used" */ := t.(type) {
+	switch t /* ERROR "declared and not used" */ := t.(type) {
 	case int:
 	}
 
-	switch t /* ERROR "declared but not used" */ := t.(type) {
+	switch t /* ERROR "declared and not used" */ := t.(type) {
 	case int:
 	case float32, complex64:
 		t = nil
@@ -123,9 +123,9 @@ func (r T) _(a, b, c int) (u, v, w int) {
 		}
 	}
 
-	switch t := t; t /* ERROR "declared but not used" */ := t.(type) {}
+	switch t := t; t /* ERROR "declared and not used" */ := t.(type) {}
 
-	var z1 /* ERROR "declared but not used" */ int
+	var z1 /* ERROR "declared and not used" */ int
 	var z2 int
 	_ = func(a, b, c int) (u, v, w int) {
 		z1 = a
@@ -135,12 +135,12 @@ func (r T) _(a, b, c int) (u, v, w int) {
 	}
 
 	var s []int
-	var i /* ERROR "declared but not used" */ , j int
+	var i /* ERROR "declared and not used" */ , j int
 	for i, j = range s {
 		_ = j
 	}
 
-	for i, j /* ERROR "declared but not used" */ := range s {
+	for i, j /* ERROR "declared and not used" */ := range s {
 		_ = func() int {
 			return i
 		}
@@ -151,23 +151,23 @@ func (r T) _(a, b, c int) (u, v, w int) {
 // Unused variables in function literals must lead to only one error (issue #22524).
 func _() {
 	_ = func() {
-		var x /* ERROR declared but not used */ int
+		var x /* ERROR declared and not used */ int
 	}
 }
 
-// Invalid variable declarations must not lead to "declared but not used errors".
-// TODO(gri) enable these tests once go/types follows types2 logic for declared but not used variables
+// Invalid variable declarations must not lead to "declared and not used errors".
+// TODO(gri) enable these tests once go/types follows types2 logic for declared and not used variables
 // func _() {
-//	var a x                        // DISABLED_ERROR undeclared name: x
-//	var b = x                      // DISABLED_ERROR undeclared name: x
-//	var c int = x                  // DISABLED_ERROR undeclared name: x
+//	var a x                        // DISABLED_ERROR undefined: x
+//	var b = x                      // DISABLED_ERROR undefined: x
+//	var c int = x                  // DISABLED_ERROR undefined: x
 //	var d, e, f x                  /* DISABLED_ERROR x */ /* DISABLED_ERROR x */ /* DISABLED_ERROR x */
 //	var g, h, i = x, x, x          /* DISABLED_ERROR x */ /* DISABLED_ERROR x */ /* DISABLED_ERROR x */
 //	var j, k, l float32 = x, x, x  /* DISABLED_ERROR x */ /* DISABLED_ERROR x */ /* DISABLED_ERROR x */
-//	// but no "declared but not used" errors
+//	// but no "declared and not used" errors
 // }
 
-// Invalid (unused) expressions must not lead to spurious "declared but not used errors".
+// Invalid (unused) expressions must not lead to spurious "declared and not used errors".
 func _() {
 	var a, b, c int
 	var x, y int
@@ -204,11 +204,11 @@ var A /* ERROR initialization cycle */ = func() int { return A }()
 
 func _() {
 	// The function literal below must not see a.
-	var a = func() int { return a /* ERROR "undeclared name" */ }()
+	var a = func() int { return a /* ERROR "undefined" */ }()
 	var _ = func() int { return a }()
 
 	// The function literal below must not see x, y, or z.
-	var x, y, z = 0, 1, func() int { return x /* ERROR "undeclared name" */ + y /* ERROR "undeclared name" */ + z /* ERROR "undeclared name" */ }()
+	var x, y, z = 0, 1, func() int { return x /* ERROR "undefined" */ + y /* ERROR "undefined" */ + z /* ERROR "undefined" */ }()
 	_, _, _ = x, y, z
 }
 

@@ -179,10 +179,11 @@ func hasSubdir(root, dir string) (rel string, ok bool) {
 		root += sep
 	}
 	dir = filepath.Clean(dir)
-	if !strings.HasPrefix(dir, root) {
+	after, found := strings.CutPrefix(dir, root)
+	if !found {
 		return "", false
 	}
-	return filepath.ToSlash(dir[len(root):]), true
+	return filepath.ToSlash(after), true
 }
 
 // readDir calls ctxt.ReadDir (if not nil) or else os.ReadDir.
@@ -1487,8 +1488,7 @@ var (
 
 	goBuildComment = []byte("//go:build")
 
-	errGoBuildWithoutBuild = errors.New("//go:build comment without // +build comment")
-	errMultipleGoBuild     = errors.New("multiple //go:build comments")
+	errMultipleGoBuild = errors.New("multiple //go:build comments")
 )
 
 func isGoBuildComment(line []byte) bool {

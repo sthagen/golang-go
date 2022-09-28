@@ -1,4 +1,4 @@
-// Copyright 2012 The Go Authors. All rights reserved.
+// Copyright 2022 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -40,7 +40,9 @@ var depsRules = `
 	# No dependencies allowed for any of these packages.
 	NONE
 	< constraints, container/list, container/ring,
-	  internal/cfg, internal/cpu, internal/goarch,
+	  internal/cfg, internal/coverage, internal/coverage/rtcov,
+	  internal/coverage/uleb128, internal/coverage/calloc,
+      internal/cpu, internal/goarch,
 	  internal/goexperiment, internal/goos,
 	  internal/goversion, internal/nettrace,
 	  unicode/utf8, unicode/utf16, unicode,
@@ -52,7 +54,7 @@ var depsRules = `
 
 	# RUNTIME is the core runtime group of packages, all of them very light-weight.
 	internal/abi, internal/cpu, internal/goarch,
-	internal/goexperiment, internal/goos, unsafe
+    internal/coverage/rtcov, internal/goexperiment, internal/goos, unsafe
 	< internal/bytealg
 	< internal/itoa
 	< internal/unsafeheader
@@ -547,6 +549,49 @@ var depsRules = `
 
 	FMT
 	< internal/diff, internal/txtar;
+
+    FMT, os
+    < internal/coverage/slicewriter;
+
+    encoding/binary, internal/unsafeheader, unsafe
+    < internal/coverage/slicereader;
+
+    FMT, math, internal/coverage
+    < internal/coverage/cmerge;
+
+    FMT, math, internal/coverage, internal/coverage/cmerge, text/tabwriter
+    < internal/coverage/cformat;
+
+    FMT, io, internal/coverage/slicereader, internal/coverage/uleb128
+    < internal/coverage/stringtab;
+
+    FMT, encoding/binary, internal/coverage, internal/coverage/stringtab,
+    io, os, bufio, crypto/md5
+    < internal/coverage/encodemeta;
+
+    FMT, bufio, encoding/binary, internal/coverage,
+    internal/coverage/stringtab, internal/coverage/slicewriter, os, unsafe
+    < internal/coverage/encodecounter;
+
+    FMT, encoding/binary, internal/coverage, io, os,
+    internal/coverage/slicereader, internal/coverage/stringtab
+    < internal/coverage/decodecounter;
+
+    FMT, encoding/binary, internal/coverage, io, os,
+    crypto/md5, internal/coverage/stringtab
+    < internal/coverage/decodemeta;
+
+    FMT, internal/coverage, os,
+    path/filepath, regexp, sort, strconv
+    < internal/coverage/pods;
+
+    FMT, bufio, crypto/md5, encoding/binary, runtime/debug,
+    internal/coverage, internal/coverage/cmerge,
+    internal/coverage/cformat, internal/coverage/calloc,
+    internal/coverage/decodecounter, internal/coverage/decodemeta,
+    internal/coverage/encodecounter, internal/coverage/encodemeta,
+    internal/coverage/pods, os, path/filepath, reflect, time, unsafe
+    < runtime/coverage;
 `
 
 // listStdPkgs returns the same list of packages as "go list std".

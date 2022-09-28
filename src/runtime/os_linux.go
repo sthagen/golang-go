@@ -894,6 +894,8 @@ const (
 
 // sigFromUser reports whether the signal was sent because of a call
 // to kill or tgkill.
+//
+//go:nosplit
 func (c *sigctxt) sigFromUser() bool {
 	code := int32(c.sigcode())
 	return code == _SI_USER || code == _SI_TKILL

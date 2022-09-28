@@ -249,6 +249,7 @@ func main() {
 	fn := main_main // make an indirect call, as the linker doesn't know the address of the main package when laying down the runtime
 	fn()
 	if raceenabled {
+		runExitHooks(0) // run hooks now, since racefini does not return
 		racefini()
 	}
 
@@ -268,6 +269,7 @@ func main() {
 	if panicking.Load() != 0 {
 		gopark(nil, nil, waitReasonPanicWait, traceEvGoStop, 1)
 	}
+	runExitHooks(0)
 
 	exit(0)
 	for {
@@ -279,8 +281,9 @@ func main() {
 // os_beforeExit is called from os.Exit(0).
 //
 //go:linkname os_beforeExit os.runtime_beforeExit
-func os_beforeExit() {
-	if raceenabled {
+func os_beforeExit(exitCode int) {
+	runExitHooks(exitCode)
+	if exitCode == 0 && raceenabled {
 		racefini()
 	}
 }
@@ -1973,12 +1976,22 @@ func oneNewExtraM() {
 	casgstatus(gp, _Gidle, _Gdead)
 	gp.m = mp
 	mp.curg = gp
+	mp.isextra = true
 	mp.lockedInt++
 	mp.lockedg.set(gp)
 	gp.lockedm.set(mp)
 	gp.goid = sched.goidgen.Add(1)
+	gp.sysblocktraced = true
 	if raceenabled {
 		gp.racectx = racegostart(abi.FuncPCABIInternal(newextram) + sys.PCQuantum)
+	}
+	if trace.enabled {
+		// Trigger two trace events for the locked g in the extra m,
+		// since the next event of the g will be traceEvGoSysExit in exitsyscall,
+		// while calling from C thread to Go.
+		traceGoCreate(gp, 0) // no start pc
+		gp.traceseq++
+		traceEvent(traceEvGoInSyscall, -1, gp.goid)
 	}
 	// put on allg for garbage collector
 	allgadd(gp)

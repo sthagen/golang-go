@@ -372,6 +372,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"internal/goexperiment"
 	"internal/race"
 	"io"
 	"math/rand"
@@ -420,6 +421,7 @@ func Init() {
 	chatty = flag.Bool("test.v", false, "verbose: print additional output")
 	count = flag.Uint("test.count", 1, "run tests and benchmarks `n` times")
 	coverProfile = flag.String("test.coverprofile", "", "write a coverage profile to `file`")
+	gocoverdir = flag.String("test.gocoverdir", "", "write coverage intermediate files to this directory")
 	matchList = flag.String("test.list", "", "list tests, examples, and benchmarks matching `regexp` then exit")
 	match = flag.String("test.run", "", "run only tests and examples matching `regexp`")
 	skip = flag.String("test.skip", "", "do not list or run tests matching `regexp`")
@@ -450,6 +452,7 @@ var (
 	chatty               *bool
 	count                *uint
 	coverProfile         *string
+	gocoverdir           *string
 	matchList            *string
 	match                *string
 	skip                 *string
@@ -544,6 +547,7 @@ type common struct {
 	hasSub     atomic.Bool    // whether there are sub-benchmarks.
 	raceErrors int            // Number of races detected during test.
 	runner     string         // Function name of tRunner running the test.
+	isParallel bool           // Whether the test is parallel.
 
 	parent   *common
 	level    int       // Nesting depth of test or benchmark.
@@ -578,6 +582,9 @@ func Short() bool {
 // values are "set", "count", or "atomic". The return value will be
 // empty if test coverage is not enabled.
 func CoverMode() string {
+	if goexperiment.CoverageRedesign {
+		return cover2.mode
+	}
 	return cover.Mode
 }
 
@@ -817,9 +824,8 @@ var _ TB = (*B)(nil)
 // may be called simultaneously from multiple goroutines.
 type T struct {
 	common
-	isParallel bool
-	isEnvSet   bool
-	context    *testContext // For running tests and subtests.
+	isEnvSet bool
+	context  *testContext // For running tests and subtests.
 }
 
 func (c *common) private() {}
@@ -1320,7 +1326,19 @@ func (t *T) Parallel() {
 //
 // This cannot be used in parallel tests.
 func (t *T) Setenv(key, value string) {
-	if t.isParallel {
+	// Non-parallel subtests that have parallel ancestors may still
+	// run in parallel with other tests: they are only non-parallel
+	// with respect to the other subtests of the same parent.
+	// Since SetEnv affects the whole process, we need to disallow it
+	// if the current test or any parent is parallel.
+	isParallel := false
+	for c := &t.common; c != nil; c = c.parent {
+		if c.isParallel {
+			isParallel = true
+			break
+		}
+	}
+	if isParallel {
 		panic("testing: t.Setenv called after t.Parallel; cannot set environment variables in parallel tests")
 	}
 
@@ -1942,8 +1960,12 @@ func (m *M) before() {
 	if *mutexProfile != "" && *mutexProfileFraction >= 0 {
 		runtime.SetMutexProfileFraction(*mutexProfileFraction)
 	}
-	if *coverProfile != "" && cover.Mode == "" {
+	if *coverProfile != "" && CoverMode() == "" {
 		fmt.Fprintf(os.Stderr, "testing: cannot use -test.coverprofile because test binary was not built with coverage enabled\n")
+		os.Exit(2)
+	}
+	if *gocoverdir != "" && CoverMode() == "" {
+		fmt.Fprintf(os.Stderr, "testing: cannot use -test.gocoverdir because test binary was not built with coverage enabled\n")
 		os.Exit(2)
 	}
 	if *testlog != "" {
@@ -2039,7 +2061,7 @@ func (m *M) writeProfiles() {
 		}
 		f.Close()
 	}
-	if cover.Mode != "" {
+	if CoverMode() != "" {
 		coverReport()
 	}
 }

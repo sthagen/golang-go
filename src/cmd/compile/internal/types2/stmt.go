@@ -66,7 +66,7 @@ func (check *Checker) usage(scope *Scope) {
 		return unused[i].pos.Cmp(unused[j].pos) < 0
 	})
 	for _, v := range unused {
-		check.softErrorf(v.pos, _UnusedVar, "%s declared but not used", v.name)
+		check.softErrorf(v.pos, _UnusedVar, "%s declared and not used", v.name)
 	}
 
 	for _, scope := range scope.children {
@@ -263,6 +263,7 @@ L:
 			for _, vt := range seen[val] {
 				if Identical(v.typ, vt.typ) {
 					var err error_
+					err.code = _DuplicateCase
 					err.errorf(&v, "duplicate case %s in expression switch", &v)
 					err.errorf(vt.pos, "previous case")
 					check.report(&err)
@@ -309,6 +310,7 @@ L:
 					Ts = TypeString(T, check.qualifier)
 				}
 				var err error_
+				err.code = _DuplicateCase
 				err.errorf(e, "duplicate case %s in type switch", Ts)
 				err.errorf(other, "previous case")
 				check.report(&err)
@@ -351,6 +353,7 @@ L:
 // 				Ts = TypeString(T, check.qualifier)
 // 			}
 // 			var err error_
+//			err.code = _DuplicateCase
 // 			err.errorf(e, "duplicate case %s in type switch", Ts)
 // 			err.errorf(other, "previous case")
 // 			check.report(&err)
@@ -501,6 +504,7 @@ func (check *Checker) stmt(ctxt stmtContext, s syntax.Stmt) {
 			for _, obj := range res.vars {
 				if alt := check.lookup(obj.name); alt != nil && alt != obj {
 					var err error_
+					err.code = _OutOfScopeResult
 					err.errorf(s, "result parameter %s not in scope at return", obj.name)
 					err.errorf(alt, "inner declaration of %s", obj)
 					check.report(&err)
@@ -737,7 +741,7 @@ func (check *Checker) typeSwitchStmt(inner stmtContext, s *syntax.SwitchStmt, gu
 		if lhs.Value == "_" {
 			// _ := x.(type) is an invalid short variable declaration
 			check.softErrorf(lhs, _NoNewVar, "no new variable on left side of :=")
-			lhs = nil // avoid declared but not used error below
+			lhs = nil // avoid declared and not used error below
 		} else {
 			check.recordDef(lhs, nil) // lhs variable is implicitly declared in each cause clause
 		}
@@ -798,7 +802,7 @@ func (check *Checker) typeSwitchStmt(inner stmtContext, s *syntax.SwitchStmt, gu
 			}
 			check.declare(check.scope, nil, obj, scopePos)
 			check.recordImplicit(clause, obj)
-			// For the "declared but not used" error, all lhs variables act as
+			// For the "declared and not used" error, all lhs variables act as
 			// one; i.e., if any one of them is 'used', all of them are 'used'.
 			// Collect them for later analysis.
 			lhsVars = append(lhsVars, obj)
@@ -820,7 +824,7 @@ func (check *Checker) typeSwitchStmt(inner stmtContext, s *syntax.SwitchStmt, gu
 			v.used = true // avoid usage error when checking entire function
 		}
 		if !used {
-			check.softErrorf(lhs, _UnusedVar, "%s declared but not used", lhs.Value)
+			check.softErrorf(lhs, _UnusedVar, "%s declared and not used", lhs.Value)
 		}
 	}
 }

@@ -8,6 +8,8 @@ package runtime
 
 // sigFromUser reports whether the signal was sent because of a call
 // to kill.
+//
+//go:nosplit
 func (c *sigctxt) sigFromUser() bool {
 	return c.sigcode() == _SI_USER
 }

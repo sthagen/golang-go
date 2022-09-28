@@ -1,6 +1,6 @@
 <!--{
 	"Title": "The Go Programming Language Specification",
-	"Subtitle": "Version of September 8, 2022",
+	"Subtitle": "Version of September 21, 2022",
 	"Path": "/ref/spec"
 }-->
 
@@ -3934,6 +3934,9 @@ var a [10]int
 s1 := a[3:7]   // underlying array of s1 is array a; &amp;s1[2] == &amp;a[5]
 s2 := s1[1:4]  // underlying array of s2 is underlying array of s1 which is array a; &amp;s2[1] == &amp;a[5]
 s2[1] = 42     // s2[1] == s1[2] == a[5] == 42; they all refer to the same underlying array element
+
+var s []int
+s3 := s[:0]    // s3 == nil
 </pre>
 
 
@@ -4265,7 +4268,7 @@ to be inferred. Loosely speaking, type arguments may be omitted from "right to l
 </p>
 
 <pre>
-func apply[S ~[]E, E any](s S, f(E) E) S { … }
+func apply[S ~[]E, E any](s S, f func(E) E) S { … }
 
 f0 := apply[]                  // illegal: type argument list cannot be empty
 f1 := apply[[]int]             // type argument for S explicitly provided, type argument for E inferred
@@ -5542,10 +5545,10 @@ a <a href="#Run_time_panics">run-time panic</a> occurs.
 <pre>
 s := make([]byte, 2, 4)
 
-a0 := ([0]byte)(s)
-a1 := ([1]byte)(s[1:])   // a1[0] == s[1]
-a2 := ([2]byte)(s)       // a2[0] == s[0]
-a4 := ([4]byte)(s)       // panics: len([4]byte) > len(s)
+a0 := [0]byte(s)
+a1 := [1]byte(s[1:])     // a1[0] == s[1]
+a2 := [2]byte(s)         // a2[0] == s[0]
+a4 := [4]byte(s)         // panics: len([4]byte) > len(s)
 
 s0 := (*[0]byte)(s)      // s0 != nil
 s1 := (*[1]byte)(s[1:])  // &amp;s1[0] == &amp;s[1]
@@ -5553,8 +5556,9 @@ s2 := (*[2]byte)(s)      // &amp;s2[0] == &amp;s[0]
 s4 := (*[4]byte)(s)      // panics: len([4]byte) > len(s)
 
 var t []string
-t0 := (*[0]string)(t)    // t0 == nil
-t1 := (*[1]string)(t)    // panics: len([1]string) > len(t)
+t0 := [0]string(t)       // ok for nil slice t
+t1 := (*[0]string)(t)    // t1 == nil
+t2 := (*[1]string)(t)    // panics: len([1]string) > len(t)
 
 u := make([]byte, 0)
 u0 := (*[0]byte)(u)      // u0 != nil

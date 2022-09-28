@@ -623,15 +623,6 @@ func TestSegv(t *testing.T) {
 				t.Errorf("did not see %q in output", want)
 			}
 
-			doNotWant := "fatal error:"
-			if strings.Contains(got, doNotWant) {
-				if runtime.GOOS == "darwin" && strings.Contains(got, "0xb01dfacedebac1e") {
-					// See the comment in signal_darwin_amd64.go.
-					t.Skip("skipping due to Darwin handling of malformed addresses")
-				}
-				t.Errorf("saw %q in output", doNotWant)
-			}
-
 			// No runtime errors like "runtime: unknown pc".
 			switch runtime.GOOS {
 			case "darwin", "illumos", "solaris":
@@ -648,9 +639,14 @@ func TestSegv(t *testing.T) {
 				testenv.SkipFlaky(t, 50979)
 			}
 
-			nowant := "runtime: "
-			if strings.Contains(got, nowant) {
-				t.Errorf("unexpectedly saw %q in output", nowant)
+			for _, nowant := range []string{"fatal error: ", "runtime: "} {
+				if strings.Contains(got, nowant) {
+					if runtime.GOOS == "darwin" && strings.Contains(got, "0xb01dfacedebac1e") {
+						// See the comment in signal_darwin_amd64.go.
+						t.Skip("skipping due to Darwin handling of malformed addresses")
+					}
+					t.Errorf("unexpectedly saw %q in output", nowant)
+				}
 			}
 		})
 	}
@@ -723,5 +719,31 @@ func TestCgoTracebackGoroutineProfile(t *testing.T) {
 	want := "OK\n"
 	if output != want {
 		t.Fatalf("want %s, got %s\n", want, output)
+	}
+}
+
+func TestCgoTraceParser(t *testing.T) {
+	// Test issue 29707.
+	switch runtime.GOOS {
+	case "plan9", "windows":
+		t.Skipf("no pthreads on %s", runtime.GOOS)
+	}
+	output := runTestProg(t, "testprogcgo", "CgoTraceParser")
+	want := "OK\n"
+	if output != want {
+		t.Fatalf("want %s, got %s\n", want, output)
+	}
+}
+
+func TestCgoTraceParserWithOneProc(t *testing.T) {
+	// Test issue 29707.
+	switch runtime.GOOS {
+	case "plan9", "windows":
+		t.Skipf("no pthreads on %s", runtime.GOOS)
+	}
+	output := runTestProg(t, "testprogcgo", "CgoTraceParser", "GOMAXPROCS=1")
+	want := "OK\n"
+	if output != want {
+		t.Fatalf("GOMAXPROCS=1, want %s, got %s\n", want, output)
 	}
 }

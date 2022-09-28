@@ -102,6 +102,8 @@ type Section struct {
 // Data reads and returns the contents of the ELF section.
 // Even if the section is stored compressed in the ELF file,
 // Data returns uncompressed data.
+//
+// For an SHT_NOBITS section, Data always returns a non-nil error.
 func (s *Section) Data() ([]byte, error) {
 	return saferio.ReadData(s.Open(), s.Size)
 }
@@ -118,9 +120,12 @@ func (f *File) stringTable(link uint32) ([]byte, error) {
 // Open returns a new ReadSeeker reading the ELF section.
 // Even if the section is stored compressed in the ELF file,
 // the ReadSeeker reads uncompressed data.
+//
+// For an SHT_NOBITS section, all calls to the opened reader
+// will return a non-nil error.
 func (s *Section) Open() io.ReadSeeker {
 	if s.Type == SHT_NOBITS {
-		return io.NewSectionReader(&zeroReader{}, 0, int64(s.Size))
+		return io.NewSectionReader(&nobitsSectionReader{}, 0, int64(s.Size))
 	}
 	if s.Flags&SHF_COMPRESSED == 0 {
 		return io.NewSectionReader(s.sr, 0, 1<<63-1)
@@ -388,6 +393,52 @@ func NewFile(r io.ReaderAt) (*File, error) {
 		f.Progs[i] = p
 	}
 
+	// If the number of sections is greater than or equal to SHN_LORESERVE
+	// (0xff00), shnum has the value zero and the actual number of section
+	// header table entries is contained in the sh_size field of the section
+	// header at index 0.
+	if shoff > 0 && shnum == 0 {
+		var typ, link uint32
+		sr.Seek(shoff, seekStart)
+		switch f.Class {
+		case ELFCLASS32:
+			sh := new(Section32)
+			if err := binary.Read(sr, f.ByteOrder, sh); err != nil {
+				return nil, err
+			}
+			shnum = int(sh.Size)
+			typ = sh.Type
+			link = sh.Link
+		case ELFCLASS64:
+			sh := new(Section64)
+			if err := binary.Read(sr, f.ByteOrder, sh); err != nil {
+				return nil, err
+			}
+			shnum = int(sh.Size)
+			typ = sh.Type
+			link = sh.Link
+		}
+		if SectionType(typ) != SHT_NULL {
+			return nil, &FormatError{shoff, "invalid type of the initial section", SectionType(typ)}
+		}
+
+		if shnum < int(SHN_LORESERVE) {
+			return nil, &FormatError{shoff, "invalid ELF shnum contained in sh_size", shnum}
+		}
+
+		// If the section name string table section index is greater than or
+		// equal to SHN_LORESERVE (0xff00), this member has the value
+		// SHN_XINDEX (0xffff) and the actual index of the section name
+		// string table section is contained in the sh_link field of the
+		// section header at index 0.
+		if shstrndx == int(SHN_XINDEX) {
+			shstrndx = int(link)
+			if shstrndx < int(SHN_LORESERVE) {
+				return nil, &FormatError{shoff, "invalid ELF shstrndx contained in sh_link", shstrndx}
+			}
+		}
+	}
+
 	// Read section headers
 	f.Sections = make([]*Section, shnum)
 	names := make([]uint32, shnum)
@@ -474,7 +525,16 @@ func NewFile(r io.ReaderAt) (*File, error) {
 	}
 
 	// Load section header string table.
-	shstrtab, err := f.Sections[shstrndx].Data()
+	if shstrndx == 0 {
+		// If the file has no section name string table,
+		// shstrndx holds the value SHN_UNDEF (0).
+		return f, nil
+	}
+	shstr := f.Sections[shstrndx]
+	if shstr.Type != SHT_STRTAB {
+		return nil, &FormatError{shoff + int64(shstrndx*shentsize), "invalid ELF section name string table type", shstr.Type}
+	}
+	shstrtab, err := shstr.Data()
 	if err != nil {
 		return nil, err
 	}
@@ -1547,11 +1607,8 @@ func (f *File) DynString(tag DynTag) ([]string, error) {
 	return all, nil
 }
 
-type zeroReader struct{}
+type nobitsSectionReader struct{}
 
-func (*zeroReader) ReadAt(p []byte, off int64) (n int, err error) {
-	for i := range p {
-		p[i] = 0
-	}
-	return len(p), nil
+func (*nobitsSectionReader) ReadAt(p []byte, off int64) (n int, err error) {
+	return 0, errors.New("unexpected read from SHT_NOBITS section")
 }

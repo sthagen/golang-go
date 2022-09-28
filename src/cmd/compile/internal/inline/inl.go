@@ -37,6 +37,7 @@ import (
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
 	"cmd/internal/obj"
+	"cmd/internal/objabi"
 	"cmd/internal/src"
 )
 
@@ -381,6 +382,15 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 	case ir.OAPPEND:
 		v.budget -= inlineExtraAppendCost
 
+	case ir.OADDR:
+		n := n.(*ir.AddrExpr)
+		// Make "&s.f" cost 0 when f's offset is zero.
+		if dot, ok := n.X.(*ir.SelectorExpr); ok && (dot.Op() == ir.ODOT || dot.Op() == ir.ODOTPTR) {
+			if _, ok := dot.X.(*ir.Name); ok && dot.Selection.Offset == 0 {
+				v.budget += 2 // undo ir.OADDR+ir.ODOT/ir.ODOTPTR
+			}
+		}
+
 	case ir.ODEREF:
 		// *(*X)(unsafe.Pointer(&x)) is low-cost
 		n := n.(*ir.StarExpr)
@@ -459,6 +469,28 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 					//
 					// 1 for the extra "tmp1, tmp2 = f()" assignment statement.
 					v.budget += 4*int32(len(n.Lhs)) + 1
+				}
+			}
+		}
+
+	case ir.OAS:
+		// Special case for coverage counter updates and coverage
+		// function registrations. Although these correspond to real
+		// operations, we treat them as zero cost for the moment. This
+		// is primarily due to the existence of tests that are
+		// sensitive to inlining-- if the insertion of coverage
+		// instrumentation happens to tip a given function over the
+		// threshold and move it from "inlinable" to "not-inlinable",
+		// this can cause changes in allocation behavior, which can
+		// then result in test failures (a good example is the
+		// TestAllocations in crypto/ed25519).
+		n := n.(*ir.AssignStmt)
+		if n.X.Op() == ir.OINDEX {
+			n := n.X.(*ir.IndexExpr)
+			if n.X.Op() == ir.ONAME && n.X.Type().IsArray() {
+				n := n.X.(*ir.Name)
+				if n.Linksym().Type == objabi.SCOVERAGE_COUNTER {
+					return false
 				}
 			}
 		}

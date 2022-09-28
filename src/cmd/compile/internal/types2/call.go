@@ -365,6 +365,7 @@ func (check *Checker) arguments(call *syntax.CallExpr, sig *Signature, targs []T
 			params = sig.params.vars
 		}
 		var err error_
+		err.code = _WrongArgCount
 		err.errorf(at, "%s arguments in call to %s", qualifier, call.Fun)
 		err.errorf(nopos, "have %s", check.typesSummary(operandTypes(args), false))
 		err.errorf(nopos, "want %s", check.typesSummary(varTypes(params), sig.variadic))
@@ -464,7 +465,7 @@ func (check *Checker) selector(x *operand, e *syntax.SelectorExpr, def *Named) {
 					}
 				}
 				if exp == nil {
-					check.errorf(e.Sel, _UndeclaredImportedName, "%s not declared by package C", sel)
+					check.errorf(e.Sel, _UndeclaredImportedName, "undefined: %s", syntax.Expr(e)) // cast to syntax.Expr to silence vet
 					goto Error
 				}
 				check.objDecl(exp, nil)
@@ -472,11 +473,7 @@ func (check *Checker) selector(x *operand, e *syntax.SelectorExpr, def *Named) {
 				exp = pkg.scope.Lookup(sel)
 				if exp == nil {
 					if !pkg.fake {
-						if check.conf.CompilerErrorMessages {
-							check.errorf(e.Sel, _UndeclaredImportedName, "undefined: %s.%s", pkg.name, sel)
-						} else {
-							check.errorf(e.Sel, _UndeclaredImportedName, "%s not declared by package %s", sel, pkg.name)
-						}
+						check.errorf(e.Sel, _UndeclaredImportedName, "undefined: %s", syntax.Expr(e))
 					}
 					goto Error
 				}

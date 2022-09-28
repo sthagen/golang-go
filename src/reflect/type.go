@@ -892,12 +892,26 @@ func (t *rtype) MethodByName(name string) (m Method, ok bool) {
 	if ut == nil {
 		return Method{}, false
 	}
-	// TODO(mdempsky): Binary search.
-	for i, p := range ut.exportedMethods() {
-		if t.nameOff(p.name).name() == name {
-			return t.Method(i), true
+
+	methods := ut.exportedMethods()
+
+	// We are looking for the first index i where the string becomes >= s.
+	// This is a copy of sort.Search, with f(h) replaced by (t.nameOff(methods[h].name).name() >= name).
+	i, j := 0, len(methods)
+	for i < j {
+		h := int(uint(i+j) >> 1) // avoid overflow when computing h
+		// i ≤ h < j
+		if !(t.nameOff(methods[h].name).name() >= name) {
+			i = h + 1 // preserves f(i-1) == false
+		} else {
+			j = h // preserves f(j) == true
 		}
 	}
+	// i == j, f(i-1) == false, and f(j) (= f(i)) == true  =>  answer is i.
+	if i < len(methods) && name == t.nameOff(methods[i].name).name() {
+		return t.Method(i), true
+	}
+
 	return Method{}, false
 }
 
@@ -1985,31 +1999,32 @@ func MapOf(key, elem Type) Type {
 	return ti.(Type)
 }
 
-// TODO(crawshaw): as these funcTypeFixedN structs have no methods,
-// they could be defined at runtime using the StructOf function.
-type funcTypeFixed4 struct {
-	funcType
-	args [4]*rtype
-}
-type funcTypeFixed8 struct {
-	funcType
-	args [8]*rtype
-}
-type funcTypeFixed16 struct {
-	funcType
-	args [16]*rtype
-}
-type funcTypeFixed32 struct {
-	funcType
-	args [32]*rtype
-}
-type funcTypeFixed64 struct {
-	funcType
-	args [64]*rtype
-}
-type funcTypeFixed128 struct {
-	funcType
-	args [128]*rtype
+var funcTypes []Type
+var funcTypesMutex sync.Mutex
+
+func initFuncTypes(n int) {
+	funcTypesMutex.Lock()
+	defer funcTypesMutex.Unlock()
+	if n < len(funcTypes) {
+		if funcTypes[n] != nil {
+			return
+		}
+	} else {
+		newFuncTypes := make([]Type, n+1)
+		copy(newFuncTypes, funcTypes)
+		funcTypes = newFuncTypes
+	}
+
+	funcTypes[n] = StructOf([]StructField{
+		{
+			Name: "FuncType",
+			Type: TypeOf(funcType{}),
+		},
+		{
+			Name: "Args",
+			Type: ArrayOf(n, TypeOf(&rtype{})),
+		},
+	})
 }
 
 // FuncOf returns the function type with the given argument and result types.
@@ -2031,34 +2046,15 @@ func FuncOf(in, out []Type, variadic bool) Type {
 
 	var ft *funcType
 	var args []*rtype
-	switch {
-	case n <= 4:
-		fixed := new(funcTypeFixed4)
-		args = fixed.args[:0:len(fixed.args)]
-		ft = &fixed.funcType
-	case n <= 8:
-		fixed := new(funcTypeFixed8)
-		args = fixed.args[:0:len(fixed.args)]
-		ft = &fixed.funcType
-	case n <= 16:
-		fixed := new(funcTypeFixed16)
-		args = fixed.args[:0:len(fixed.args)]
-		ft = &fixed.funcType
-	case n <= 32:
-		fixed := new(funcTypeFixed32)
-		args = fixed.args[:0:len(fixed.args)]
-		ft = &fixed.funcType
-	case n <= 64:
-		fixed := new(funcTypeFixed64)
-		args = fixed.args[:0:len(fixed.args)]
-		ft = &fixed.funcType
-	case n <= 128:
-		fixed := new(funcTypeFixed128)
-		args = fixed.args[:0:len(fixed.args)]
-		ft = &fixed.funcType
-	default:
+	if n <= 128 {
+		initFuncTypes(n)
+		o := New(funcTypes[n]).Elem()
+		ft = (*funcType)(unsafe.Pointer(o.Field(0).Addr().Pointer()))
+		args = unsafe.Slice((**rtype)(unsafe.Pointer(o.Field(1).Addr().Pointer())), n)[0:0:n]
+	} else {
 		panic("reflect.FuncOf: too many arguments")
 	}
+
 	*ft = *prototype
 
 	// Build a hash and minimally populate ft.

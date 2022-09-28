@@ -1427,7 +1427,7 @@ func (t *test) updateErrors(out, file string) {
 	}
 	// Parse new errors.
 	errors := make(map[int]map[string]bool)
-	tmpRe := regexp.MustCompile(`autotmp_[0-9]+`)
+	tmpRe := regexp.MustCompile(`autotmp_\d+`)
 	for _, errStr := range splitOutput(out, false) {
 		errFile, rest, ok := strings.Cut(errStr, ":")
 		if !ok || errFile != file {
@@ -1520,7 +1520,7 @@ var (
 	errRx       = regexp.MustCompile(`// (?:GC_)?ERROR (.*)`)
 	errAutoRx   = regexp.MustCompile(`// (?:GC_)?ERRORAUTO (.*)`)
 	errQuotesRx = regexp.MustCompile(`"([^"]*)"`)
-	lineRx      = regexp.MustCompile(`LINE(([+-])([0-9]+))?`)
+	lineRx      = regexp.MustCompile(`LINE(([+-])(\d+))?`)
 )
 
 func (t *test) wantedErrors(file, short string) (errs []wantedError) {
@@ -1987,6 +1987,7 @@ var go118Failures = setOf(
 	"typeparam/issue51521.go",  // 1.18 compiler produces bad panic message and link error
 	"typeparam/issue54456.go",  // 1.18 compiler fails to distinguish local generic types
 	"typeparam/issue54497.go",  // 1.18 compiler is more conservative about inlining due to repeated issues
+	"typeparam/issue55101.go",  // 1.18 compiler ICEs writing export data
 	"typeparam/mdempsky/16.go", // 1.18 compiler uses interface shape type in failed type assertions
 	"typeparam/mdempsky/17.go", // 1.18 compiler mishandles implicit conversions from range loops
 	"typeparam/mdempsky/18.go", // 1.18 compiler mishandles implicit conversions in select statements

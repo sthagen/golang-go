@@ -534,8 +534,8 @@
 // Boolean ops; 0=false, 1=true
 (AndB ...) => (AND ...)
 (OrB  ...) => (OR  ...)
-(EqB  x y) => (SEQZ (XOR <typ.Bool> x y))
-(NeqB ...) => (XOR ...)
+(EqB  x y) => (SEQZ (SUB <typ.Bool> x y))
+(NeqB x y) => (SNEZ (SUB <typ.Bool> x y))
 (Not  ...) => (SEQZ ...)
 
 // Lowering pointer arithmetic
@@ -613,7 +613,7 @@
 (BEQZ (NEG x) yes no) => (BEQZ x yes no)
 (BNEZ (NEG x) yes no) => (BNEZ x yes no)
 
-// Negate comparision with FNES/FNED.
+// Negate comparison with FNES/FNED.
 (BEQZ (FNES <t> x y) yes no) => (BNEZ (FEQS <t> x y) yes no)
 (BNEZ (FNES <t> x y) yes no) => (BEQZ (FEQS <t> x y) yes no)
 (BEQZ (FNED <t> x y) yes no) => (BNEZ (FEQD <t> x y) yes no)
@@ -788,6 +788,11 @@
 (ORI [-1] x) => (MOVDconst [-1])
 (ORI [x] (MOVDconst [y])) => (MOVDconst [x | y])
 
+// Combine operations with immediate.
+(ADDI [x] (ADDI [y] z)) && is32Bit(x + y) => (ADDI [x + y] z)
+(ANDI [x] (ANDI [y] z)) => (ANDI [x & y] z)
+(ORI  [x] (ORI  [y] z)) => (ORI  [x | y] z)
+
 // Negation of a constant.
 (NEG  (MOVDconst [x])) => (MOVDconst [-x])
 (NEGW (MOVDconst [x])) => (MOVDconst [int64(int32(-x))])
@@ -801,10 +806,17 @@
 (SLTI  [x] (MOVDconst [y])) => (MOVDconst [b2i(int64(y) < int64(x))])
 (SLTIU [x] (MOVDconst [y])) => (MOVDconst [b2i(uint64(y) < uint64(x))])
 
-(SLT x x)  => (MOVDconst [0])
+// SLTI/SLTIU with known outcomes.
+(SLTI  [x] (ANDI [y] _)) && y >= 0 && int64(y) < int64(x) => (MOVDconst [1])
+(SLTIU [x] (ANDI [y] _)) && y >= 0 && uint64(y) < uint64(x) => (MOVDconst [1])
+(SLTI  [x] (ORI  [y] _)) && y >= 0 && int64(y) >= int64(x) => (MOVDconst [0])
+(SLTIU [x] (ORI  [y] _)) && y >= 0 && uint64(y) >= uint64(x) => (MOVDconst [0])
+
+// SLT/SLTU with known outcomes.
+(SLT  x x) => (MOVDconst [0])
 (SLTU x x) => (MOVDconst [0])
 
-// deadcode for LoweredMuluhilo
+// Deadcode for LoweredMuluhilo
 (Select0 m:(LoweredMuluhilo x y)) && m.Uses == 1 => (MULHU x y)
 (Select1 m:(LoweredMuluhilo x y)) && m.Uses == 1 => (MUL x y)
 

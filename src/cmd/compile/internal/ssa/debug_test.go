@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"internal/testenv"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,11 +32,11 @@ var (
 
 var (
 	hexRe                 = regexp.MustCompile("0x[a-zA-Z0-9]+")
-	numRe                 = regexp.MustCompile("-?[0-9]+")
+	numRe                 = regexp.MustCompile("-?\\d+")
 	stringRe              = regexp.MustCompile("\"([^\\\"]|(\\.))*\"")
-	leadingDollarNumberRe = regexp.MustCompile("^[$][0-9]+")
+	leadingDollarNumberRe = regexp.MustCompile("^[$]\\d+")
 	optOutGdbRe           = regexp.MustCompile("[<]optimized out[>]")
-	numberColonRe         = regexp.MustCompile("^ *[0-9]+:")
+	numberColonRe         = regexp.MustCompile("^ *\\d+:")
 )
 
 var gdb = "gdb"      // Might be "ggdb" on Darwin, because gdb no longer part of XCode
@@ -223,7 +222,7 @@ func testNexting(t *testing.T, base, tag, gcflags string, count int, moreArgs ..
 
 	// Use a temporary directory unless -f is specified
 	if !*force {
-		tmpdir, err := ioutil.TempDir("", "debug_test")
+		tmpdir, err := os.MkdirTemp("", "debug_test")
 		if err != nil {
 			panic(fmt.Sprintf("Problem creating TempDir, error %v\n", err))
 		}
@@ -366,7 +365,7 @@ func (h *nextHist) write(filename string) {
 
 func (h *nextHist) read(filename string) {
 	h.f2i = make(map[string]uint8)
-	bytes, err := ioutil.ReadFile(filename)
+	bytes, err := os.ReadFile(filename)
 	if err != nil {
 		panic(fmt.Sprintf("Problem reading %s, error %v\n", filename, err))
 	}

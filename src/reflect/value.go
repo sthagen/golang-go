@@ -3261,7 +3261,7 @@ func (v Value) CanConvert(t Type) bool {
 	return true
 }
 
-// Comparable reports whether the type of v is comparable.
+// Comparable reports whether the value v is comparable.
 // If the type of v is an interface, this checks the dynamic type.
 // If this reports true then v.Interface() == x will not panic for any x.
 func (v Value) Comparable() bool {
@@ -3269,14 +3269,6 @@ func (v Value) Comparable() bool {
 	switch k {
 	case Invalid:
 		return false
-
-	case Bool,
-		Int, Int8, Int16, Int32, Int64,
-		Uint, Uint8, Uint16, Uint32, Uint64,
-		Uintptr,
-		Float32, Float64, Complex64, Complex128,
-		Chan:
-		return true
 
 	case Array:
 		switch v.Type().Elem().Kind() {
@@ -3286,26 +3278,12 @@ func (v Value) Comparable() bool {
 					return false
 				}
 			}
+			return true
 		}
 		return v.Type().Comparable()
 
-	case Func:
-		return false
-
 	case Interface:
 		return v.Elem().Comparable()
-
-	case Map:
-		return false
-
-	case Pointer:
-		return true
-
-	case Slice:
-		return false
-
-	case String:
-		return true
 
 	case Struct:
 		for i := 0; i < v.NumField(); i++ {
@@ -3315,11 +3293,8 @@ func (v Value) Comparable() bool {
 		}
 		return true
 
-	case UnsafePointer:
-		return true
-
 	default:
-		return false
+		return v.Type().Comparable()
 	}
 }
 

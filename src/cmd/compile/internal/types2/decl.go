@@ -28,6 +28,7 @@ func (check *Checker) declare(scope *Scope, id *syntax.Name, obj Object, pos syn
 	if obj.Name() != "_" {
 		if alt := scope.Insert(obj); alt != nil {
 			var err error_
+			err.code = _DuplicateDecl
 			err.errorf(obj, "%s redeclared in this block", obj.Name())
 			err.recordAltDecl(alt)
 			check.report(&err)
@@ -327,10 +328,11 @@ func (check *Checker) cycleError(cycle []Object) {
 		check.validAlias(tname, Typ[Invalid])
 	}
 	var err error_
-	if tname != nil && check.conf.CompilerErrorMessages {
+	err.code = _InvalidDeclCycle
+	if tname != nil {
 		err.errorf(obj, "invalid recursive type %s", objName)
 	} else {
-		err.errorf(obj, "illegal cycle in declaration of %s", objName)
+		err.errorf(obj, "invalid cycle in declaration of %s", objName)
 	}
 	for range cycle {
 		err.errorf(obj, "%s refers to", objName)
@@ -673,15 +675,11 @@ func (check *Checker) collectMethods(obj *TypeName) {
 		// to it must be unique."
 		assert(m.name != "_")
 		if alt := mset.insert(m); alt != nil {
-			var err error_
-			err.code = _DuplicateMethod
-			if check.conf.CompilerErrorMessages {
-				err.errorf(m.pos, "%s.%s redeclared in this block", obj.Name(), m.name)
+			if alt.Pos().IsKnown() {
+				check.errorf(m.pos, _DuplicateMethod, "method %s.%s already declared at %s", obj.Name(), m.name, alt.Pos())
 			} else {
-				err.errorf(m.pos, "method %s already declared for %s", m.name, obj)
+				check.errorf(m.pos, _DuplicateMethod, "method %s.%s already declared", obj.Name(), m.name)
 			}
-			err.recordAltDecl(alt)
-			check.report(&err)
 			continue
 		}
 

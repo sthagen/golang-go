@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"fmt"
 	"internal/buildcfg"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -51,7 +50,7 @@ func testEndToEnd(t *testing.T, goarch, file string) {
 	output := strings.Split(testOut.String(), "\n")
 
 	// Reconstruct expected output by independently "parsing" the input.
-	data, err := ioutil.ReadFile(input)
+	data, err := os.ReadFile(input)
 	if err != nil {
 		t.Error(err)
 		return
@@ -262,7 +261,7 @@ func isHexes(s string) bool {
 // the standard file:line: prefix,
 // but that's not where we are today.
 // It might be at the beginning but it might be in the middle of the printed instruction.
-var fileLineRE = regexp.MustCompile(`(?:^|\()(testdata[/\\][0-9a-z]+\.s:[0-9]+)(?:$|\)|:)`)
+var fileLineRE = regexp.MustCompile(`(?:^|\()(testdata[/\\][\da-z]+\.s:\d+)(?:$|\)|:)`)
 
 // Same as in test/run.go
 var (
@@ -324,7 +323,7 @@ func testErrors(t *testing.T, goarch, file string, flags ...string) {
 	}
 
 	// Reconstruct expected errors by independently "parsing" the input.
-	data, err := ioutil.ReadFile(input)
+	data, err := os.ReadFile(input)
 	if err != nil {
 		t.Error(err)
 		return
