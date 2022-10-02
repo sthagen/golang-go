@@ -325,6 +325,17 @@ func (check *Checker) cycleError(cycle []Object) {
 	if tname != nil && tname.IsAlias() {
 		check.validAlias(tname, Typ[Invalid])
 	}
+
+	// report a more concise error for self references
+	if len(cycle) == 1 {
+		if tname != nil {
+			check.errorf(obj, _InvalidDeclCycle, "invalid recursive type: %s refers to itself", objName)
+		} else {
+			check.errorf(obj, _InvalidDeclCycle, "invalid cycle in declaration: %s refers to itself", objName)
+		}
+		return
+	}
+
 	if tname != nil {
 		check.errorf(obj, _InvalidDeclCycle, "invalid recursive type %s", objName)
 	} else {
@@ -813,7 +824,7 @@ func (check *Checker) funcDecl(obj *Func, decl *declInfo) {
 	obj.color_ = saved
 
 	if fdecl.Type.TypeParams.NumFields() > 0 && fdecl.Body == nil {
-		check.softErrorf(fdecl.Name, _BadDecl, "parameterized function is missing function body")
+		check.softErrorf(fdecl.Name, _BadDecl, "generic function is missing function body")
 	}
 
 	// function body must be type-checked after global declarations

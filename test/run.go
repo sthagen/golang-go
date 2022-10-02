@@ -342,9 +342,7 @@ func (t *test) initExpectFail() {
 		failureSets = append(failureSets, types2Failures32Bit)
 	}
 
-	if unifiedEnabled {
-		failureSets = append(failureSets, unifiedFailures)
-	} else {
+	if !unifiedEnabled {
 		failureSets = append(failureSets, go118Failures)
 	}
 
@@ -1984,6 +1982,7 @@ var types2Failures32Bit = setOf(
 var go118Failures = setOf(
 	"fixedbugs/issue54343.go",  // 1.18 compiler assigns receiver parameter to global variable
 	"typeparam/nested.go",      // 1.18 compiler doesn't support function-local types with generics
+	"typeparam/issue47631.go",  // 1.18 can not handle local type declarations
 	"typeparam/issue51521.go",  // 1.18 compiler produces bad panic message and link error
 	"typeparam/issue54456.go",  // 1.18 compiler fails to distinguish local generic types
 	"typeparam/issue54497.go",  // 1.18 compiler is more conservative about inlining due to repeated issues
@@ -2016,13 +2015,6 @@ var _ = setOf(
 	"fixedbugs/issue7525d.go", // types2 reports init cycle error on different line - ok otherwise
 	"fixedbugs/issue7525e.go", // types2 reports init cycle error on different line - ok otherwise
 	"fixedbugs/issue7525.go",  // types2 reports init cycle error on different line - ok otherwise
-)
-
-var unifiedFailures = setOf(
-	"closure3.go", // unified IR numbers closures differently than -d=inlfuncswithclosures
-	"escape4.go",  // unified IR can inline f5 and f6; test doesn't expect this
-
-	"typeparam/issue47631.go", // unified IR can handle local type declarations
 )
 
 func setOf(keys ...string) map[string]bool {

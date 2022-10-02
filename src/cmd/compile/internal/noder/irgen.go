@@ -43,10 +43,9 @@ func checkFiles(noders []*noder) (posMap, *types2.Package, *types2.Info) {
 		packages: make(map[string]*types2.Package),
 	}
 	conf := types2.Config{
-		Context:               ctxt,
-		GoVersion:             base.Flag.Lang,
-		IgnoreBranchErrors:    true, // parser already checked via syntax.CheckBranches mode
-		CompilerErrorMessages: true, // use error strings matching existing compiler errors
+		Context:            ctxt,
+		GoVersion:          base.Flag.Lang,
+		IgnoreBranchErrors: true, // parser already checked via syntax.CheckBranches mode
 		Error: func(err error) {
 			terr := err.(types2.Error)
 			msg := terr.Msg
@@ -60,13 +59,13 @@ func checkFiles(noders []*noder) (posMap, *types2.Package, *types2.Info) {
 		Sizes:    &gcSizes{},
 	}
 	info := &types2.Info{
-		Types:      make(map[syntax.Expr]types2.TypeAndValue),
-		Defs:       make(map[*syntax.Name]types2.Object),
-		Uses:       make(map[*syntax.Name]types2.Object),
-		Selections: make(map[*syntax.SelectorExpr]*types2.Selection),
-		Implicits:  make(map[syntax.Node]types2.Object),
-		Scopes:     make(map[syntax.Node]*types2.Scope),
-		Instances:  make(map[*syntax.Name]types2.Instance),
+		StoreTypesInSyntax: true,
+		Defs:               make(map[*syntax.Name]types2.Object),
+		Uses:               make(map[*syntax.Name]types2.Object),
+		Selections:         make(map[*syntax.SelectorExpr]*types2.Selection),
+		Implicits:          make(map[syntax.Node]types2.Object),
+		Scopes:             make(map[syntax.Node]*types2.Scope),
+		Instances:          make(map[*syntax.Name]types2.Instance),
 		// expand as needed
 	}
 
@@ -391,17 +390,17 @@ func (g *irgen) delayTransform() bool {
 	return g.topFuncIsGeneric
 }
 
-func (g *irgen) typeAndValue(x syntax.Expr) types2.TypeAndValue {
-	tv, ok := g.info.Types[x]
-	if !ok {
+func (g *irgen) typeAndValue(x syntax.Expr) syntax.TypeAndValue {
+	tv := x.GetTypeInfo()
+	if tv.Type == nil {
 		base.FatalfAt(g.pos(x), "missing type for %v (%T)", x, x)
 	}
 	return tv
 }
 
-func (g *irgen) type2(x syntax.Expr) types2.Type {
-	tv, ok := g.info.Types[x]
-	if !ok {
+func (g *irgen) type2(x syntax.Expr) syntax.Type {
+	tv := x.GetTypeInfo()
+	if tv.Type == nil {
 		base.FatalfAt(g.pos(x), "missing type for %v (%T)", x, x)
 	}
 	return tv.Type

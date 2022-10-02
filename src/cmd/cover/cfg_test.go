@@ -39,20 +39,31 @@ func writePkgConfig(t *testing.T, outdir, tag, ppath, pname string, gran string)
 	return incfg
 }
 
+func writeOutFileList(t *testing.T, infiles []string, outdir, tag string) ([]string, string) {
+	outfilelist := filepath.Join(outdir, tag+"outfilelist.txt")
+	var sb strings.Builder
+	outfs := []string{}
+	for _, inf := range infiles {
+		base := filepath.Base(inf)
+		of := filepath.Join(outdir, tag+".cov."+base)
+		outfs = append(outfs, of)
+		fmt.Fprintf(&sb, "%s\n", of)
+	}
+	if err := os.WriteFile(outfilelist, []byte(sb.String()), 0666); err != nil {
+		t.Fatalf("writing %s: %v", outfilelist, err)
+	}
+	return outfs, outfilelist
+}
+
 func runPkgCover(t *testing.T, outdir string, tag string, incfg string, mode string, infiles []string, errExpected bool) ([]string, string, string) {
 	// Write the pkgcfg file.
 	outcfg := filepath.Join(outdir, "outcfg.txt")
 
 	// Form up the arguments and run the tool.
-	outfiles := []string{}
-	for _, inf := range infiles {
-		base := filepath.Base(inf)
-		outfiles = append(outfiles, filepath.Join(outdir, "cov."+base))
-	}
-	ofs := strings.Join(outfiles, string(os.PathListSeparator))
-	args := []string{"-pkgcfg", incfg, "-mode=" + mode, "-var=var" + tag, "-o", ofs}
+	outfiles, outfilelist := writeOutFileList(t, infiles, outdir, tag)
+	args := []string{"-pkgcfg", incfg, "-mode=" + mode, "-var=var" + tag, "-outfilelist", outfilelist}
 	args = append(args, infiles...)
-	cmd := exec.Command(testcover, args...)
+	cmd := exec.Command(testcover(t), args...)
 	if errExpected {
 		errmsg := runExpectingError(cmd, t)
 		return nil, "", errmsg
@@ -67,9 +78,9 @@ func runPkgCover(t *testing.T, outdir string, tag string, incfg string, mode str
 const debugWorkDir = false
 
 func TestCoverWithCfg(t *testing.T) {
-	t.Parallel()
 	testenv.MustHaveGoRun(t)
-	buildCover(t)
+
+	t.Parallel()
 
 	// Subdir in testdata that has our input files of interest.
 	tpath := filepath.Join("testdata", "pkgcfg")
@@ -90,7 +101,7 @@ func TestCoverWithCfg(t *testing.T) {
 		return paths
 	}
 
-	dir := t.TempDir()
+	dir := tempDir(t)
 	if debugWorkDir {
 		dir = "/tmp/qqq"
 		os.RemoveAll(dir)

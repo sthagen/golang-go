@@ -85,20 +85,12 @@ func (check *Checker) assignment(x *operand, T Type, context string) {
 		return
 	}
 
-	reason := ""
-	if ok, code := x.assignableTo(check, T, &reason); !ok {
-		if check.conf.CompilerErrorMessages {
-			if reason != "" {
-				check.errorf(x, code, "cannot use %s as type %s in %s:\n\t%s", x, T, context, reason)
-			} else {
-				check.errorf(x, code, "cannot use %s as type %s in %s", x, T, context)
-			}
+	cause := ""
+	if ok, code := x.assignableTo(check, T, &cause); !ok {
+		if cause != "" {
+			check.errorf(x, code, "cannot use %s as %s value in %s: %s", x, T, context, cause)
 		} else {
-			if reason != "" {
-				check.errorf(x, code, "cannot use %s as %s value in %s: %s", x, T, context, reason)
-			} else {
-				check.errorf(x, code, "cannot use %s as %s value in %s", x, T, context)
-			}
+			check.errorf(x, code, "cannot use %s as %s value in %s", x, T, context)
 		}
 		x.mode = invalid
 	}
@@ -353,11 +345,7 @@ func (check *Checker) initVars(lhs []*Var, orig_rhs []syntax.Expr, returnStmt sy
 			check.report(&err)
 			return
 		}
-		if check.conf.CompilerErrorMessages {
-			check.assignError(orig_rhs, len(lhs), len(rhs))
-		} else {
-			check.errorf(rhs[0], _WrongAssignCount, "cannot initialize %d variables with %d values", len(lhs), len(rhs))
-		}
+		check.assignError(orig_rhs, len(lhs), len(rhs))
 		return
 	}
 
@@ -401,11 +389,7 @@ func (check *Checker) assignVars(lhs, orig_rhs []syntax.Expr) {
 				return
 			}
 		}
-		if check.conf.CompilerErrorMessages {
-			check.assignError(orig_rhs, len(lhs), len(rhs))
-		} else {
-			check.errorf(rhs[0], _WrongAssignCount, "cannot assign %d values to %d variables", len(rhs), len(lhs))
-		}
+		check.assignError(orig_rhs, len(lhs), len(rhs))
 		return
 	}
 
