@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package types_test
+package errors_test
 
 import (
 	"fmt"
@@ -24,7 +24,7 @@ func TestErrorCodeExamples(t *testing.T) {
 			doc := spec.Doc.Text()
 			examples := strings.Split(doc, "Example:")
 			for i := 1; i < len(examples); i++ {
-				example := examples[i]
+				example := strings.TrimSpace(examples[i])
 				err := checkExample(t, example)
 				if err == nil {
 					t.Fatalf("no error in example #%d", i)
@@ -44,7 +44,7 @@ func TestErrorCodeExamples(t *testing.T) {
 func walkCodes(t *testing.T, f func(string, int, *ast.ValueSpec)) {
 	t.Helper()
 	fset := token.NewFileSet()
-	files, err := pkgFiles(fset, ".", parser.ParseComments) // from self_test.go
+	file, err := parser.ParseFile(fset, "codes.go", nil, parser.ParseComments)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,30 +54,28 @@ func walkCodes(t *testing.T, f func(string, int, *ast.ValueSpec)) {
 		Defs:  make(map[*ast.Ident]Object),
 		Uses:  make(map[*ast.Ident]Object),
 	}
-	_, err = conf.Check("types", fset, files, info)
+	_, err = conf.Check("types", fset, []*ast.File{file}, info)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range files {
-		for _, decl := range file.Decls {
-			decl, ok := decl.(*ast.GenDecl)
-			if !ok || decl.Tok != token.CONST {
+	for _, decl := range file.Decls {
+		decl, ok := decl.(*ast.GenDecl)
+		if !ok || decl.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range decl.Specs {
+			spec, ok := spec.(*ast.ValueSpec)
+			if !ok || len(spec.Names) == 0 {
 				continue
 			}
-			for _, spec := range decl.Specs {
-				spec, ok := spec.(*ast.ValueSpec)
-				if !ok || len(spec.Names) == 0 {
-					continue
+			obj := info.ObjectOf(spec.Names[0])
+			if named, ok := obj.Type().(*Named); ok && named.Obj().Name() == "Code" {
+				if len(spec.Names) != 1 {
+					t.Fatalf("bad Code declaration for %q: got %d names, want exactly 1", spec.Names[0].Name, len(spec.Names))
 				}
-				obj := info.ObjectOf(spec.Names[0])
-				if named, ok := obj.Type().(*Named); ok && named.Obj().Name() == "errorCode" {
-					if len(spec.Names) != 1 {
-						t.Fatalf("bad Code declaration for %q: got %d names, want exactly 1", spec.Names[0].Name, len(spec.Names))
-					}
-					codename := spec.Names[0].Name
-					value := int(constant.Val(obj.(*Const).Val()).(int64))
-					f(codename, value, spec)
-				}
+				codename := spec.Names[0].Name
+				value := int(constant.Val(obj.(*Const).Val()).(int64))
+				f(codename, value, spec)
 			}
 		}
 	}
@@ -91,8 +89,10 @@ func readCode(err Error) int {
 func checkExample(t *testing.T, example string) error {
 	t.Helper()
 	fset := token.NewFileSet()
-	src := fmt.Sprintf("package p\n\n%s", example)
-	file, err := parser.ParseFile(fset, "example.go", src, 0)
+	if !strings.HasPrefix(example, "package") {
+		example = "package p\n\n" + example
+	}
+	file, err := parser.ParseFile(fset, "example.go", example, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,13 +156,8 @@ func TestErrorCodeStyle(t *testing.T) {
 		if len(name) > len(longestName) {
 			longestName = name
 		}
-		if token.IsExported(name) {
-			// This is an experimental API, and errorCode values should not be
-			// exported.
-			t.Errorf("%q is exported", name)
-		}
-		if name[0] != '_' || !token.IsExported(name[1:]) {
-			t.Errorf("%q should start with _, followed by an exported identifier", name)
+		if !token.IsExported(name) {
+			t.Errorf("%q is not exported", name)
 		}
 		lower := strings.ToLower(name)
 		for _, bad := range forbiddenInIdent {
