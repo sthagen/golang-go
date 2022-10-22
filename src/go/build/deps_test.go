@@ -52,9 +52,13 @@ var depsRules = `
 	internal/goarch, unsafe
 	< internal/abi;
 
+	unsafe
+	< internal/godebug;
+
 	# RUNTIME is the core runtime group of packages, all of them very light-weight.
 	internal/abi, internal/cpu, internal/goarch,
-	internal/coverage/rtcov, internal/goexperiment, internal/goos, unsafe
+	internal/coverage/rtcov, internal/goexperiment,
+	internal/goos, internal/godebug, unsafe
 	< internal/bytealg
 	< internal/itoa
 	< internal/unsafeheader
@@ -153,8 +157,6 @@ var depsRules = `
 	os/signal, STR
 	< path/filepath
 	< io/ioutil;
-
-	os < internal/godebug;
 
 	path/filepath, internal/godebug < os/exec;
 
@@ -533,7 +535,7 @@ var depsRules = `
 	internal/fuzz, internal/testlog, runtime/pprof, regexp
 	< testing/internal/testdeps;
 
-	OS, flag, testing, internal/cfg, internal/platform
+	OS, flag, testing, internal/cfg, internal/platform, internal/goroot
 	< internal/testenv;
 
 	OS, encoding/base64

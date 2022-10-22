@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"cmd/internal/edit"
@@ -425,7 +426,9 @@ func (f *File) Visit(node ast.Node) ast.Visitor {
 		if *pkgcfg != "" {
 			f.preFunc(n, fname)
 		}
-		ast.Walk(f, n.Body)
+		if pkgconfig.Granularity != "perfunc" {
+			ast.Walk(f, n.Body)
+		}
 		if *pkgcfg != "" {
 			flit := true
 			f.postFunc(n, fname, flit, n.Body)
@@ -464,6 +467,13 @@ func (f *File) preFunc(fn ast.Node, fname string) {
 }
 
 func (f *File) postFunc(fn ast.Node, funcname string, flit bool, body *ast.BlockStmt) {
+
+	// Tack on single counter write if we are in "perfunc" mode.
+	singleCtr := ""
+	if pkgconfig.Granularity == "perfunc" {
+		singleCtr = "; " + f.newCounter(fn.Pos(), fn.Pos(), 1)
+	}
+
 	// record the length of the counter var required.
 	nc := len(f.fn.units) + coverage.FirstCtrOffset
 	f.pkg.counterLengths = append(f.pkg.counterLengths, nc)
@@ -483,16 +493,36 @@ func (f *File) postFunc(fn ast.Node, funcname string, flit bool, body *ast.Block
 	}
 	funcId := f.mdb.AddFunc(fd)
 
-	// Generate the registration hook for the function, and insert it
-	// into the prolog.
-	cv := f.fn.counterVar
-	regHook := fmt.Sprintf("%s[0] = %d ; %s[1] = %s ; %s[2] = %d",
-		cv, len(f.fn.units), cv, mkPackageIdExpression(), cv, funcId)
+	hookWrite := func(cv string, which int, val string) string {
+		return fmt.Sprintf("%s[%d] = %s", cv, which, val)
+	}
+	if *mode == "atomic" {
+		hookWrite = func(cv string, which int, val string) string {
+			return fmt.Sprintf("%s.StoreUint32(&%s[%d], %s)", atomicPackageName,
+				cv, which, val)
+		}
+	}
 
-	// Insert a function registration sequence into the function.
+	// Generate the registration hook sequence for the function. This
+	// sequence looks like
+	//
+	//   counterVar[0] = <num_units>
+	//   counterVar[1] = pkgId
+	//   counterVar[2] = fnId
+	//
+	cv := f.fn.counterVar
+	regHook := hookWrite(cv, 0, strconv.Itoa(len(f.fn.units))) + " ; " +
+		hookWrite(cv, 1, mkPackageIdExpression()) + " ; " +
+		hookWrite(cv, 2, strconv.Itoa(int(funcId))) + singleCtr
+
+	// Insert the registration sequence into the function. We want this sequence to
+	// appear before any counter updates, so use a hack to ensure that this edit
+	// applies before the edit corresponding to the prolog counter update.
+
 	boff := f.offset(body.Pos())
-	ipos := f.fset.File(body.Pos()).Pos(boff + 1)
-	f.edit.Insert(f.offset(ipos), regHook+" ; ")
+	ipos := f.fset.File(body.Pos()).Pos(boff)
+	ip := f.offset(ipos)
+	f.edit.Replace(ip, ip+1, string(f.content[ipos-1])+regHook+" ; ")
 
 	f.fn.counterVar = ""
 }
@@ -644,7 +674,6 @@ func (f *File) newCounter(start, end token.Pos, numStmt int) string {
 			NxStmts: uint32(numStmt),
 		}
 		f.fn.units = append(f.fn.units, unit)
-
 	} else {
 		stmt = counterStmt(f, fmt.Sprintf("%s.Count[%d]", *varVar,
 			len(f.blocks)))

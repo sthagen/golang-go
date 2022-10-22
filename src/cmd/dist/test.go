@@ -746,19 +746,8 @@ func (t *tester) registerTests() {
 		// Disabled on iOS. golang.org/issue/15919
 		t.registerHostTest("cgo_stdio", "../misc/cgo/stdio", "misc/cgo/stdio", ".")
 		t.registerHostTest("cgo_life", "../misc/cgo/life", "misc/cgo/life", ".")
-		fortran := os.Getenv("FC")
-		if fortran == "" {
-			fortran, _ = exec.LookPath("gfortran")
-		}
-		if t.hasBash() && goos != "android" && fortran != "" {
-			t.tests = append(t.tests, distTest{
-				name:    "cgo_fortran",
-				heading: "../misc/cgo/fortran",
-				fn: func(dt *distTest) error {
-					t.addCmd(dt, "misc/cgo/fortran", "./test.bash", fortran)
-					return nil
-				},
-			})
+		if goos != "android" {
+			t.registerHostTest("cgo_fortran", "../misc/cgo/fortran", "misc/cgo/fortran", ".")
 		}
 		if t.hasSwig() && goos != "android" {
 			t.tests = append(t.tests, distTest{
@@ -830,9 +819,6 @@ func (t *tester) registerTests() {
 		}
 		if t.hasBash() && goos != "android" && !t.iOS() && gohostos != "windows" {
 			t.registerHostTest("cgo_errors", "../misc/cgo/errors", "misc/cgo/errors", ".")
-		}
-		if gohostos == "linux" && t.extLink() {
-			t.registerTest("testsigfwd", "../misc/cgo/testsigfwd", "go", "run", ".")
 		}
 	}
 
