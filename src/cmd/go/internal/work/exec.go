@@ -1583,6 +1583,9 @@ func (b *Builder) installShlibname(ctx context.Context, a *Action) error {
 
 	// TODO: BuildN
 	a1 := a.Deps[0]
+	if err := b.Mkdir(filepath.Dir(a.Target)); err != nil {
+		return err
+	}
 	err := os.WriteFile(a.Target, []byte(filepath.Base(a1.Target)+"\n"), 0666)
 	if err != nil {
 		return err
@@ -2061,7 +2064,7 @@ func (b *Builder) fmtcmd(dir string, format string, args ...any) string {
 			cmd = "cd " + dir + "\n" + cmd
 		}
 	}
-	if b.WorkDir != "" {
+	if b.WorkDir != "" && !strings.HasPrefix(cmd, "cat ") {
 		cmd = strings.ReplaceAll(cmd, b.WorkDir, "$WORK")
 		escaped := strconv.Quote(b.WorkDir)
 		escaped = escaped[1 : len(escaped)-1] // strip quote characters
@@ -2822,7 +2825,7 @@ func (b *Builder) gccArchArgs() []string {
 // into fields, using the default value when the variable is empty.
 //
 // The environment variable must be quoted correctly for
-// str.SplitQuotedFields. This should be done before building
+// quoted.Split. This should be done before building
 // anything, for example, in BuildInit.
 func envList(key, def string) []string {
 	v := cfg.Getenv(key)
@@ -2949,6 +2952,9 @@ func (b *Builder) cgo(a *Action, cgoExe, objdir string, pcCFLAGS, pcLDFLAGS, cgo
 		cgoflags = append(cgoflags, "-gccgo")
 		if pkgpath := gccgoPkgpath(p); pkgpath != "" {
 			cgoflags = append(cgoflags, "-gccgopkgpath="+pkgpath)
+		}
+		if !BuildToolchain.(gccgoToolchain).supportsCgoIncomplete(b) {
+			cgoflags = append(cgoflags, "-gccgo_define_cgoincomplete")
 		}
 	}
 
