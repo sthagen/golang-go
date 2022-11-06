@@ -75,6 +75,12 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	base.DebugSSA = ssa.PhaseOption
 	base.ParseFlags()
 
+	if os.Getenv("GOGC") == "" { // GOGC set disables starting heap adjustment
+		// More processors will use more heap, but assume that more memory is available.
+		// So 1 processor -> 40MB, 4 -> 64MB, 12 -> 128MB
+		base.AdjustStartingHeap(uint64(32+8*base.Flag.LowerC) << 20)
+	}
+
 	types.LocalPkg = types.NewPkg(base.Ctxt.Pkgpath, "")
 
 	// pseudo-package, for scoping
@@ -252,24 +258,15 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 
 	// Read profile file and build profile-graph and weighted-call-graph.
 	base.Timer.Start("fe", "pgoprofile")
+	var profile *pgo.Profile
 	if base.Flag.PgoProfile != "" {
-		pgo.BuildProfileGraph(base.Flag.PgoProfile)
-		pgo.BuildWeightedCallGraph()
+		profile = pgo.New(base.Flag.PgoProfile)
 	}
 
 	// Inlining
 	base.Timer.Start("fe", "inlining")
 	if base.Flag.LowerL != 0 {
-		if pgo.WeightedCG != nil {
-			inline.InlinePrologue()
-		}
-		inline.InlinePackage()
-		if pgo.WeightedCG != nil {
-			inline.InlineEpilogue()
-			// Delete the graphs as no other optimization uses this currently.
-			pgo.WeightedCG = nil
-			pgo.ProfileGraph = nil
-		}
+		inline.InlinePackage(profile)
 	}
 	noder.MakeWrappers(typecheck.Target) // must happen after inlining
 

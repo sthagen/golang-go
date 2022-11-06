@@ -828,9 +828,8 @@ func (t *tester) registerTests() {
 
 	if goos != "android" && !t.iOS() {
 		// There are no tests in this directory, only benchmarks.
-		// Check that the test binary builds but don't bother running it.
-		// (It has init-time work to set up for the benchmarks that is not worth doing unnecessarily.)
-		t.registerTest("bench_go1", "../test/bench/go1", t.goTest(), "-c", "-o="+os.DevNull)
+		// Check that the test binary builds.
+		t.registerTest("bench_go1", "../test/bench/go1", t.goTest(), ".")
 	}
 	if goos != "android" && !t.iOS() {
 		// Only start multiple test dir shards on builders,
@@ -1171,16 +1170,14 @@ func (t *tester) runHostTest(dir, pkg string) error {
 }
 
 func (t *tester) cgoTest(dt *distTest) error {
-	cmd := t.addCmd(dt, "misc/cgo/test", t.goTest(), ".")
-	setEnv(cmd, "GOFLAGS", "-ldflags=-linkmode=auto")
+	t.addCmd(dt, "misc/cgo/test", t.goTest(), "-ldflags=-linkmode=auto", ".")
 
 	// Stub out various buildmode=pie tests  on alpine until 54354 resolved.
 	builderName := os.Getenv("GO_BUILDER_NAME")
 	disablePIE := strings.HasSuffix(builderName, "-alpine")
 
 	if t.internalLink() {
-		cmd := t.addCmd(dt, "misc/cgo/test", t.goTest(), "-tags=internal", ".")
-		setEnv(cmd, "GOFLAGS", "-ldflags=-linkmode=internal")
+		t.addCmd(dt, "misc/cgo/test", t.goTest(), "-ldflags=-linkmode=internal", "-tags=internal", ".")
 	}
 
 	pair := gohostos + "-" + goarch
@@ -1191,8 +1188,7 @@ func (t *tester) cgoTest(dt *distTest) error {
 		if !t.extLink() {
 			break
 		}
-		cmd := t.addCmd(dt, "misc/cgo/test", t.goTest(), ".")
-		setEnv(cmd, "GOFLAGS", "-ldflags=-linkmode=external")
+		t.addCmd(dt, "misc/cgo/test", t.goTest(), "-ldflags=-linkmode=external", ".")
 
 		t.addCmd(dt, "misc/cgo/test", t.goTest(), "-ldflags", "-linkmode=external -s", ".")
 
@@ -1212,8 +1208,7 @@ func (t *tester) cgoTest(dt *distTest) error {
 		"netbsd-386", "netbsd-amd64",
 		"openbsd-386", "openbsd-amd64", "openbsd-arm", "openbsd-arm64", "openbsd-mips64":
 
-		cmd := t.addCmd(dt, "misc/cgo/test", t.goTest(), ".")
-		setEnv(cmd, "GOFLAGS", "-ldflags=-linkmode=external")
+		cmd := t.addCmd(dt, "misc/cgo/test", t.goTest(), "-ldflags=-linkmode=external", ".")
 		// cgo should be able to cope with both -g arguments and colored
 		// diagnostics.
 		setEnv(cmd, "CGO_CFLAGS", "-g0 -fdiagnostics-color")

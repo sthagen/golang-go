@@ -341,29 +341,12 @@ func (b *Builder) buildActionID(a *Action) cache.ActionID {
 			"GOCLOBBERDEADHASH",
 			"GOSSAFUNC",
 			"GOSSADIR",
-			"GOSSAHASH",
+			"GOCOMPILEDEBUG",
 		}
 		for _, env := range magic {
 			if x := os.Getenv(env); x != "" {
 				fmt.Fprintf(h, "magic %s=%s\n", env, x)
 			}
-		}
-		if os.Getenv("GOSSAHASH") != "" {
-			for i := 0; ; i++ {
-				env := fmt.Sprintf("GOSSAHASH%d", i)
-				x := os.Getenv(env)
-				if x == "" {
-					break
-				}
-				fmt.Fprintf(h, "magic %s=%s\n", env, x)
-			}
-		}
-		if os.Getenv("GSHS_LOGFILE") != "" {
-			// Clumsy hack. Compiler writes to this log file,
-			// so do not allow use of cache at all.
-			// We will still write to the cache but it will be
-			// essentially unfindable.
-			fmt.Fprintf(h, "nocache %d\n", time.Now().UnixNano())
 		}
 
 	case "gccgo":
@@ -865,7 +848,8 @@ OverlayLoop:
 		}
 
 		if err != nil {
-			return errors.New(fmt.Sprint(formatOutput(b.WorkDir, p.Dir, p.Desc(), output)))
+			prefix, suffix := formatOutput(b.WorkDir, p.Dir, p.Desc(), output)
+			return errors.New(prefix + suffix)
 		} else {
 			b.showOutput(a, p.Dir, p.Desc(), output)
 		}
@@ -1978,6 +1962,7 @@ func (b *Builder) writeCoverPkgInputs(a *Action, pconfigfile string, covoutputsf
 		// depending on user demand.
 		Granularity: "perblock",
 		OutConfig:   p.Internal.CoverageCfg,
+		Local:       p.Internal.Local,
 	}
 	if a.Package.Module != nil {
 		pcfg.ModulePath = a.Package.Module.Path
@@ -2169,7 +2154,8 @@ func (b *Builder) run(a *Action, dir string, desc string, env []string, cmdargs 
 			desc = b.fmtcmd(dir, "%s", strings.Join(str.StringList(cmdargs...), " "))
 		}
 		if err != nil {
-			err = errors.New(fmt.Sprint(formatOutput(b.WorkDir, dir, desc, b.processOutput(out))))
+			prefix, suffix := formatOutput(b.WorkDir, dir, desc, b.processOutput(out))
+			err = errors.New(prefix + suffix)
 		} else {
 			b.showOutput(a, dir, desc, b.processOutput(out))
 		}
@@ -2516,7 +2502,8 @@ func (b *Builder) ccompile(a *Action, p *load.Package, outfile string, flags []s
 		}
 
 		if err != nil || os.Getenv("GO_BUILDER_NAME") != "" {
-			err = errors.New(fmt.Sprintf(formatOutput(b.WorkDir, p.Dir, desc, b.processOutput(output))))
+			prefix, suffix := formatOutput(b.WorkDir, p.Dir, desc, b.processOutput(output))
+			err = errors.New(prefix + suffix)
 		} else {
 			b.showOutput(a, p.Dir, desc, b.processOutput(output))
 		}
@@ -3440,7 +3427,8 @@ func (b *Builder) swigOne(a *Action, p *load.Package, file, objdir string, pcCFL
 				return "", "", errors.New("must have SWIG version >= 3.0.6")
 			}
 			// swig error
-			return "", "", errors.New(fmt.Sprint(formatOutput(b.WorkDir, p.Dir, p.Desc(), b.processOutput(out))))
+			prefix, suffix := formatOutput(b.WorkDir, p.Dir, p.Desc(), b.processOutput(out))
+			return "", "", errors.New(prefix + suffix)
 		}
 		return "", "", err
 	}

@@ -74,7 +74,7 @@ var (
 
 var pkgconfig coverage.CoverPkgConfig
 
-var outputfiles []string // set whe -pkgcfg is in use
+var outputfiles []string // set when -pkgcfg is in use
 
 var profile string // The profile to read; the value of -html or -func
 
@@ -484,6 +484,16 @@ func (f *File) postFunc(fn ast.Node, funcname string, flit bool, body *ast.Block
 	ppath := pkgconfig.PkgPath
 	filename := ppath + "/" + filepath.Base(fnpos.Filename)
 
+	// The convention for cmd/cover is that if the go command that
+	// kicks off coverage specifies a local import path (e.g. "go test
+	// -cover ./thispackage"), the tool will capture full pathnames
+	// for source files instead of relative paths, which tend to work
+	// more smoothly for "go tool cover -html". See also issue #56433
+	// for more details.
+	if pkgconfig.Local {
+		filename = f.name
+	}
+
 	// Hand off function to meta-data builder.
 	fd := coverage.FuncDesc{
 		Funcname: funcname,
@@ -619,7 +629,7 @@ func (p *Package) annotateFile(name string, fd io.Writer, last bool) {
 	}
 	newContent := file.edit.Bytes()
 
-	fmt.Fprintf(fd, "//line %s:1\n", name)
+	fmt.Fprintf(fd, "//line %s:1:1\n", name)
 	fd.Write(newContent)
 
 	// After printing the source tree, add some declarations for the

@@ -29,6 +29,7 @@ package inline
 import (
 	"fmt"
 	"go/constant"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -56,58 +57,62 @@ const (
 )
 
 var (
-	// List of all hot ndes.
-	candHotNodeMap = make(map[*pgo.IRNode]struct{})
+	// List of all hot callee nodes.
+	// TODO(prattmic): Make this non-global.
+	candHotCalleeMap = make(map[*pgo.IRNode]struct{})
 
-	// List of all hot call sites.
+	// List of all hot call sites. CallSiteInfo.Callee is always nil.
+	// TODO(prattmic): Make this non-global.
 	candHotEdgeMap = make(map[pgo.CallSiteInfo]struct{})
 
-	// List of inlined call sites.
+	// List of inlined call sites. CallSiteInfo.Callee is always nil.
+	// TODO(prattmic): Make this non-global.
 	inlinedCallSites = make(map[pgo.CallSiteInfo]struct{})
 
-	// Threshold in percentage for hot function inlining.
-	inlineHotFuncThresholdPercent = float64(2)
-
 	// Threshold in percentage for hot callsite inlining.
-	inlineHotCallSiteThresholdPercent = float64(0.1)
+	inlineHotCallSiteThresholdPercent float64
+
+	// Threshold in CDF percentage for hot callsite inlining,
+	// that is, for a threshold of X the hottest callsites that
+	// make up the top X% of total edge weight will be
+	// considered hot for inlining candidates.
+	inlineCDFHotCallSiteThresholdPercent = float64(95)
 
 	// Budget increased due to hotness.
 	inlineHotMaxBudget int32 = 160
 )
 
-// InlinePrologue records the hot callsites from ir-graph.
-func InlinePrologue() {
-	if s, err := strconv.ParseFloat(base.Debug.InlineHotFuncThreshold, 64); err == nil {
-		inlineHotFuncThresholdPercent = s
-		if base.Debug.PGOInline > 0 {
-			fmt.Printf("hot-node-thres=%v\n", inlineHotFuncThresholdPercent)
-		}
+// pgoInlinePrologue records the hot callsites from ir-graph.
+func pgoInlinePrologue(p *pgo.Profile) {
+	if s, err := strconv.ParseFloat(base.Debug.InlineHotCallSiteCDFThreshold, 64); err == nil {
+		inlineCDFHotCallSiteThresholdPercent = s
 	}
-
-	if s, err := strconv.ParseFloat(base.Debug.InlineHotCallSiteThreshold, 64); err == nil {
-		inlineHotCallSiteThresholdPercent = s
-		if base.Debug.PGOInline > 0 {
-			fmt.Printf("hot-callsite-thres=%v\n", inlineHotCallSiteThresholdPercent)
-		}
+	var hotCallsites []pgo.NodeMapKey
+	inlineHotCallSiteThresholdPercent, hotCallsites = computeThresholdFromCDF(p)
+	if base.Debug.PGOInline > 0 {
+		fmt.Printf("hot-callsite-thres-from-CDF=%v\n", inlineHotCallSiteThresholdPercent)
 	}
 
 	if base.Debug.InlineHotBudget != 0 {
 		inlineHotMaxBudget = int32(base.Debug.InlineHotBudget)
 	}
 
+	// mark inlineable callees from hot edges
+	for _, n := range hotCallsites {
+		if fn := p.WeightedCG.IRNodes[n.CalleeName]; fn != nil {
+			candHotCalleeMap[fn] = struct{}{}
+		}
+	}
+	// mark hot call sites
 	ir.VisitFuncsBottomUp(typecheck.Target.Decls, func(list []*ir.Func, recursive bool) {
 		for _, f := range list {
 			name := ir.PkgFuncName(f)
-			if n, ok := pgo.WeightedCG.IRNodes[name]; ok {
-				nodeweight := pgo.WeightInPercentage(n.Flat, pgo.GlobalTotalNodeWeight)
-				if nodeweight > inlineHotFuncThresholdPercent {
-					candHotNodeMap[n] = struct{}{}
-				}
-				for _, e := range pgo.WeightedCG.OutEdges[n] {
+			if n, ok := p.WeightedCG.IRNodes[name]; ok {
+				for _, e := range p.WeightedCG.OutEdges[n] {
 					if e.Weight != 0 {
-						edgeweightpercent := pgo.WeightInPercentage(e.Weight, pgo.GlobalTotalEdgeWeight)
+						edgeweightpercent := pgo.WeightInPercentage(e.Weight, p.TotalEdgeWeight)
 						if edgeweightpercent > inlineHotCallSiteThresholdPercent {
-							csi := pgo.CallSiteInfo{Line: e.CallSite, Caller: n.AST, Callee: e.Dst.AST}
+							csi := pgo.CallSiteInfo{LineOffset: e.CallSiteOffset, Caller: n.AST}
 							if _, ok := candHotEdgeMap[csi]; !ok {
 								candHotEdgeMap[csi] = struct{}{}
 							}
@@ -119,29 +124,68 @@ func InlinePrologue() {
 	})
 	if base.Debug.PGOInline > 0 {
 		fmt.Printf("hot-cg before inline in dot format:")
-		pgo.PrintWeightedCallGraphDOT(inlineHotFuncThresholdPercent, inlineHotCallSiteThresholdPercent)
+		p.PrintWeightedCallGraphDOT(inlineHotCallSiteThresholdPercent)
 	}
 }
 
-// InlineEpilogue updates IRGraph after inlining.
-func InlineEpilogue() {
+// computeThresholdFromCDF computes an edge weight threshold based on the
+// CDF of edge weights from the profile. Returns the threshold, and the
+// list of edges that make up the given percentage of the CDF.
+func computeThresholdFromCDF(p *pgo.Profile) (float64, []pgo.NodeMapKey) {
+	nodes := make([]pgo.NodeMapKey, len(p.NodeMap))
+	i := 0
+	for n := range p.NodeMap {
+		nodes[i] = n
+		i++
+	}
+	sort.Slice(nodes, func(i, j int) bool {
+		ni, nj := nodes[i], nodes[j]
+		if wi, wj := p.NodeMap[ni].EWeight, p.NodeMap[nj].EWeight; wi != wj {
+			return wi > wj // want larger weight first
+		}
+		// same weight, order by name/line number
+		if ni.CallerName != nj.CallerName {
+			return ni.CallerName < nj.CallerName
+		}
+		if ni.CalleeName != nj.CalleeName {
+			return ni.CalleeName < nj.CalleeName
+		}
+		return ni.CallSiteOffset < nj.CallSiteOffset
+	})
+	cum := int64(0)
+	for i, n := range nodes {
+		w := p.NodeMap[n].EWeight
+		cum += w
+		if pgo.WeightInPercentage(cum, p.TotalEdgeWeight) > inlineCDFHotCallSiteThresholdPercent {
+			return pgo.WeightInPercentage(w, p.TotalEdgeWeight), nodes[:i]
+		}
+	}
+	return 100, nil
+}
+
+// pgoInlineEpilogue updates IRGraph after inlining.
+func pgoInlineEpilogue(p *pgo.Profile) {
 	if base.Debug.PGOInline > 0 {
 		ir.VisitFuncsBottomUp(typecheck.Target.Decls, func(list []*ir.Func, recursive bool) {
 			for _, f := range list {
 				name := ir.PkgFuncName(f)
-				if n, ok := pgo.WeightedCG.IRNodes[name]; ok {
-					pgo.RedirectEdges(n, inlinedCallSites)
+				if n, ok := p.WeightedCG.IRNodes[name]; ok {
+					p.RedirectEdges(n, inlinedCallSites)
 				}
 			}
 		})
 		// Print the call-graph after inlining. This is a debugging feature.
 		fmt.Printf("hot-cg after inline in dot:")
-		pgo.PrintWeightedCallGraphDOT(inlineHotFuncThresholdPercent, inlineHotCallSiteThresholdPercent)
+		p.PrintWeightedCallGraphDOT(inlineHotCallSiteThresholdPercent)
 	}
 }
 
 // InlinePackage finds functions that can be inlined and clones them before walk expands them.
-func InlinePackage() {
+func InlinePackage(p *pgo.Profile) {
+	if p != nil {
+		pgoInlinePrologue(p)
+	}
+
 	ir.VisitFuncsBottomUp(typecheck.Target.Decls, func(list []*ir.Func, recursive bool) {
 		numfns := numNonClosures(list)
 		for _, n := range list {
@@ -149,27 +193,28 @@ func InlinePackage() {
 				// We allow inlining if there is no
 				// recursion, or the recursion cycle is
 				// across more than one function.
-				CanInline(n)
+				CanInline(n, p)
 			} else {
 				if base.Flag.LowerM > 1 {
 					fmt.Printf("%v: cannot inline %v: recursive\n", ir.Line(n), n.Nname)
 				}
 			}
-			InlineCalls(n)
+			InlineCalls(n, p)
 		}
 	})
+
+	if p != nil {
+		pgoInlineEpilogue(p)
+	}
 }
 
 // CanInline determines whether fn is inlineable.
 // If so, CanInline saves copies of fn.Body and fn.Dcl in fn.Inl.
 // fn and fn.Body will already have been typechecked.
-func CanInline(fn *ir.Func) {
+func CanInline(fn *ir.Func, profile *pgo.Profile) {
 	if fn.Nname == nil {
 		base.Fatalf("CanInline no nname %+v", fn)
 	}
-
-	// Initialize an empty list of hot callsites for this caller.
-	pgo.ListOfHotCallSites = make(map[pgo.CallSiteInfo]struct{})
 
 	var reason string // reason, if any, that the function was not inlined
 	if base.Flag.LowerM > 1 || logopt.Enabled() {
@@ -260,9 +305,9 @@ func CanInline(fn *ir.Func) {
 
 	// Update the budget for profile-guided inlining.
 	budget := int32(inlineMaxBudget)
-	if base.Flag.PgoProfile != "" && pgo.WeightedCG != nil {
-		if n, ok := pgo.WeightedCG.IRNodes[ir.PkgFuncName(fn)]; ok {
-			if _, ok := candHotNodeMap[n]; ok {
+	if profile != nil {
+		if n, ok := profile.WeightedCG.IRNodes[ir.PkgFuncName(fn)]; ok {
+			if _, ok := candHotCalleeMap[n]; ok {
 				budget = int32(inlineHotMaxBudget)
 				if base.Debug.PGOInline > 0 {
 					fmt.Printf("hot-node enabled increased budget=%v for func=%v\n", budget, ir.PkgFuncName(fn))
@@ -285,6 +330,7 @@ func CanInline(fn *ir.Func) {
 		budget:        budget,
 		maxBudget:     budget,
 		extraCallCost: cc,
+		profile:       profile,
 	}
 	if visitor.tooHairy(fn) {
 		reason = visitor.reason
@@ -352,6 +398,7 @@ type hairyVisitor struct {
 	extraCallCost int32
 	usedLocals    ir.NameSet
 	do            func(ir.Node) bool
+	profile       *pgo.Profile
 }
 
 func (v *hairyVisitor) tooHairy(fn *ir.Func) bool {
@@ -402,7 +449,7 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 			// failures (a good example is the TestAllocations in
 			// crypto/ed25519).
 			if isAtomicCoverageCounterUpdate(n) {
-				break
+				return false
 			}
 		}
 		if n.X.Op() == ir.OMETHEXPR {
@@ -438,13 +485,12 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 			}
 		}
 
-		// Determine if the callee edge is a for hot callee or not.
-		if base.Flag.PgoProfile != "" && pgo.WeightedCG != nil && v.curFunc != nil {
-			if fn := inlCallee(n.X); fn != nil && typecheck.HaveInlineBody(fn) {
-				ln := pgo.ConvertLine2Int(ir.Line(n))
-				csi := pgo.CallSiteInfo{Line: ln, Caller: v.curFunc, Callee: fn}
+		// Determine if the callee edge is for an inlinable hot callee or not.
+		if v.profile != nil && v.curFunc != nil {
+			if fn := inlCallee(n.X, v.profile); fn != nil && typecheck.HaveInlineBody(fn) {
+				lineOffset := pgo.NodeLineOffset(n, fn)
+				csi := pgo.CallSiteInfo{LineOffset: lineOffset, Caller: v.curFunc}
 				if _, o := candHotEdgeMap[csi]; o {
-					pgo.ListOfHotCallSites[pgo.CallSiteInfo{Line: ln, Caller: v.curFunc}] = struct{}{}
 					if base.Debug.PGOInline > 0 {
 						fmt.Printf("hot-callsite identified at line=%v for func=%v\n", ir.Line(n), ir.PkgFuncName(v.curFunc))
 					}
@@ -457,7 +503,7 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 			break
 		}
 
-		if fn := inlCallee(n.X); fn != nil && typecheck.HaveInlineBody(fn) {
+		if fn := inlCallee(n.X, v.profile); fn != nil && typecheck.HaveInlineBody(fn) {
 			v.budget -= fn.Inl.Cost
 			break
 		}
@@ -619,7 +665,7 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 		// then result in test failures (a good example is the
 		// TestAllocations in crypto/ed25519).
 		n := n.(*ir.AssignStmt)
-		if n.X.Op() == ir.OINDEX && isIndexingCoverageCounter(n) {
+		if n.X.Op() == ir.OINDEX && isIndexingCoverageCounter(n.X) {
 			return false
 		}
 	}
@@ -687,7 +733,7 @@ func inlcopy(n ir.Node) ir.Node {
 
 // InlineCalls/inlnode walks fn's statements and expressions and substitutes any
 // calls made to inlineable functions. This is the external entry point.
-func InlineCalls(fn *ir.Func) {
+func InlineCalls(fn *ir.Func, profile *pgo.Profile) {
 	savefn := ir.CurFunc
 	ir.CurFunc = fn
 	maxCost := int32(inlineMaxBudget)
@@ -697,7 +743,7 @@ func InlineCalls(fn *ir.Func) {
 	var inlCalls []*ir.InlinedCallExpr
 	var edit func(ir.Node) ir.Node
 	edit = func(n ir.Node) ir.Node {
-		return inlnode(n, maxCost, &inlCalls, edit)
+		return inlnode(n, maxCost, &inlCalls, edit, profile)
 	}
 	ir.EditChildren(fn, edit)
 
@@ -728,7 +774,7 @@ func InlineCalls(fn *ir.Func) {
 // The result of inlnode MUST be assigned back to n, e.g.
 //
 //	n.Left = inlnode(n.Left)
-func inlnode(n ir.Node, maxCost int32, inlCalls *[]*ir.InlinedCallExpr, edit func(ir.Node) ir.Node) ir.Node {
+func inlnode(n ir.Node, maxCost int32, inlCalls *[]*ir.InlinedCallExpr, edit func(ir.Node) ir.Node, profile *pgo.Profile) ir.Node {
 	if n == nil {
 		return n
 	}
@@ -789,7 +835,7 @@ func inlnode(n ir.Node, maxCost int32, inlCalls *[]*ir.InlinedCallExpr, edit fun
 		if ir.IsIntrinsicCall(call) {
 			break
 		}
-		if fn := inlCallee(call.X); fn != nil && typecheck.HaveInlineBody(fn) {
+		if fn := inlCallee(call.X, profile); fn != nil && typecheck.HaveInlineBody(fn) {
 			n = mkinlcall(call, fn, maxCost, inlCalls, edit)
 		}
 	}
@@ -801,7 +847,7 @@ func inlnode(n ir.Node, maxCost int32, inlCalls *[]*ir.InlinedCallExpr, edit fun
 
 // inlCallee takes a function-typed expression and returns the underlying function ONAME
 // that it refers to if statically known. Otherwise, it returns nil.
-func inlCallee(fn ir.Node) *ir.Func {
+func inlCallee(fn ir.Node, profile *pgo.Profile) *ir.Func {
 	fn = ir.StaticValue(fn)
 	switch fn.Op() {
 	case ir.OMETHEXPR:
@@ -822,7 +868,7 @@ func inlCallee(fn ir.Node) *ir.Func {
 	case ir.OCLOSURE:
 		fn := fn.(*ir.ClosureExpr)
 		c := fn.Func
-		CanInline(c)
+		CanInline(c, profile)
 		return c
 	}
 	return nil
@@ -873,9 +919,9 @@ func mkinlcall(n *ir.CallExpr, fn *ir.Func, maxCost int32, inlCalls *[]*ir.Inlin
 	}
 	if fn.Inl.Cost > maxCost {
 		// If the callsite is hot and it is under the inlineHotMaxBudget budget, then try to inline it, or else bail.
-		ln := pgo.ConvertLine2Int(ir.Line(n))
-		csi := pgo.CallSiteInfo{Line: ln, Caller: ir.CurFunc}
-		if _, ok := pgo.ListOfHotCallSites[csi]; ok {
+		lineOffset := pgo.NodeLineOffset(n, fn)
+		csi := pgo.CallSiteInfo{LineOffset: lineOffset, Caller: ir.CurFunc}
+		if _, ok := candHotEdgeMap[csi]; ok {
 			if fn.Inl.Cost > inlineHotMaxBudget {
 				if logopt.Enabled() {
 					logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(ir.CurFunc),
@@ -1038,8 +1084,7 @@ func mkinlcall(n *ir.CallExpr, fn *ir.Func, maxCost int32, inlCalls *[]*ir.Inlin
 	}
 
 	if base.Debug.PGOInline > 0 {
-		ln := pgo.ConvertLine2Int(ir.Line(n))
-		csi := pgo.CallSiteInfo{Line: ln, Caller: ir.CurFunc}
+		csi := pgo.CallSiteInfo{LineOffset: pgo.NodeLineOffset(n, fn), Caller: ir.CurFunc}
 		if _, ok := inlinedCallSites[csi]; !ok {
 			inlinedCallSites[csi] = struct{}{}
 		}
@@ -1719,7 +1764,8 @@ func isAtomicCoverageCounterUpdate(cn *ir.CallExpr) bool {
 		return false
 	}
 	fn := name.Sym().Name
-	if name.Sym().Pkg.Path != "sync/atomic" || fn != "AddUint32" {
+	if name.Sym().Pkg.Path != "sync/atomic" ||
+		(fn != "AddUint32" && fn != "StoreUint32") {
 		return false
 	}
 	if len(cn.Args) != 2 || cn.Args[0].Op() != ir.OADDR {
