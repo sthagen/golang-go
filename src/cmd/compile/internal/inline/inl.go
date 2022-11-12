@@ -76,15 +76,15 @@ var (
 	// that is, for a threshold of X the hottest callsites that
 	// make up the top X% of total edge weight will be
 	// considered hot for inlining candidates.
-	inlineCDFHotCallSiteThresholdPercent = float64(95)
+	inlineCDFHotCallSiteThresholdPercent = float64(99)
 
 	// Budget increased due to hotness.
-	inlineHotMaxBudget int32 = 160
+	inlineHotMaxBudget int32 = 2000
 )
 
 // pgoInlinePrologue records the hot callsites from ir-graph.
-func pgoInlinePrologue(p *pgo.Profile) {
-	if s, err := strconv.ParseFloat(base.Debug.InlineHotCallSiteCDFThreshold, 64); err == nil {
+func pgoInlinePrologue(p *pgo.Profile, decls []ir.Node) {
+	if s, err := strconv.ParseFloat(base.Debug.PGOInlineCDFThreshold, 64); err == nil {
 		inlineCDFHotCallSiteThresholdPercent = s
 	}
 	var hotCallsites []pgo.NodeMapKey
@@ -93,8 +93,8 @@ func pgoInlinePrologue(p *pgo.Profile) {
 		fmt.Printf("hot-callsite-thres-from-CDF=%v\n", inlineHotCallSiteThresholdPercent)
 	}
 
-	if base.Debug.InlineHotBudget != 0 {
-		inlineHotMaxBudget = int32(base.Debug.InlineHotBudget)
+	if x := base.Debug.PGOInlineBudget; x != 0 {
+		inlineHotMaxBudget = int32(x)
 	}
 
 	// mark inlineable callees from hot edges
@@ -104,7 +104,7 @@ func pgoInlinePrologue(p *pgo.Profile) {
 		}
 	}
 	// mark hot call sites
-	ir.VisitFuncsBottomUp(typecheck.Target.Decls, func(list []*ir.Func, recursive bool) {
+	ir.VisitFuncsBottomUp(decls, func(list []*ir.Func, recursive bool) {
 		for _, f := range list {
 			name := ir.PkgFuncName(f)
 			if n, ok := p.WeightedCG.IRNodes[name]; ok {
@@ -122,7 +122,7 @@ func pgoInlinePrologue(p *pgo.Profile) {
 			}
 		}
 	})
-	if base.Debug.PGOInline > 0 {
+	if base.Debug.PGOInline >= 2 {
 		fmt.Printf("hot-cg before inline in dot format:")
 		p.PrintWeightedCallGraphDOT(inlineHotCallSiteThresholdPercent)
 	}
@@ -164,9 +164,9 @@ func computeThresholdFromCDF(p *pgo.Profile) (float64, []pgo.NodeMapKey) {
 }
 
 // pgoInlineEpilogue updates IRGraph after inlining.
-func pgoInlineEpilogue(p *pgo.Profile) {
-	if base.Debug.PGOInline > 0 {
-		ir.VisitFuncsBottomUp(typecheck.Target.Decls, func(list []*ir.Func, recursive bool) {
+func pgoInlineEpilogue(p *pgo.Profile, decls []ir.Node) {
+	if base.Debug.PGOInline >= 2 {
+		ir.VisitFuncsBottomUp(decls, func(list []*ir.Func, recursive bool) {
 			for _, f := range list {
 				name := ir.PkgFuncName(f)
 				if n, ok := p.WeightedCG.IRNodes[name]; ok {
@@ -182,11 +182,16 @@ func pgoInlineEpilogue(p *pgo.Profile) {
 
 // InlinePackage finds functions that can be inlined and clones them before walk expands them.
 func InlinePackage(p *pgo.Profile) {
+	InlineDecls(p, typecheck.Target.Decls, true)
+}
+
+// InlineDecls applies inlining to the given batch of declarations.
+func InlineDecls(p *pgo.Profile, decls []ir.Node, doInline bool) {
 	if p != nil {
-		pgoInlinePrologue(p)
+		pgoInlinePrologue(p, decls)
 	}
 
-	ir.VisitFuncsBottomUp(typecheck.Target.Decls, func(list []*ir.Func, recursive bool) {
+	ir.VisitFuncsBottomUp(decls, func(list []*ir.Func, recursive bool) {
 		numfns := numNonClosures(list)
 		for _, n := range list {
 			if !recursive || numfns > 1 {
@@ -199,12 +204,14 @@ func InlinePackage(p *pgo.Profile) {
 					fmt.Printf("%v: cannot inline %v: recursive\n", ir.Line(n), n.Nname)
 				}
 			}
-			InlineCalls(n, p)
+			if doInline {
+				InlineCalls(n, p)
+			}
 		}
 	})
 
 	if p != nil {
-		pgoInlineEpilogue(p)
+		pgoInlineEpilogue(p, decls)
 	}
 }
 
@@ -919,7 +926,7 @@ func mkinlcall(n *ir.CallExpr, fn *ir.Func, maxCost int32, inlCalls *[]*ir.Inlin
 	}
 	if fn.Inl.Cost > maxCost {
 		// If the callsite is hot and it is under the inlineHotMaxBudget budget, then try to inline it, or else bail.
-		lineOffset := pgo.NodeLineOffset(n, fn)
+		lineOffset := pgo.NodeLineOffset(n, ir.CurFunc)
 		csi := pgo.CallSiteInfo{LineOffset: lineOffset, Caller: ir.CurFunc}
 		if _, ok := candHotEdgeMap[csi]; ok {
 			if fn.Inl.Cost > inlineHotMaxBudget {
@@ -930,7 +937,7 @@ func mkinlcall(n *ir.CallExpr, fn *ir.Func, maxCost int32, inlCalls *[]*ir.Inlin
 				return n
 			}
 			if base.Debug.PGOInline > 0 {
-				fmt.Printf("hot-budget check allows inlining for callsite at %v\n", ir.Line(n))
+				fmt.Printf("hot-budget check allows inlining for call %s at %v\n", ir.PkgFuncName(fn), ir.Line(n))
 			}
 		} else {
 			// The inlined function body is too big. Typically we use this check to restrict

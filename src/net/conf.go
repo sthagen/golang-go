@@ -29,7 +29,6 @@ type conf struct {
 	goos          string // the runtime.GOOS, to ease testing
 	dnsDebugLevel int
 
-	nss    *nssConf
 	resolv *dnsConfig
 }
 
@@ -110,10 +109,6 @@ func initConfVal() {
 	if runtime.GOOS == "openbsd" && os.Getenv("ASR_CONFIG") != "" {
 		confVal.forceCgoLookupHost = true
 		return
-	}
-
-	if runtime.GOOS != "openbsd" {
-		confVal.nss = parseNSSConfFile("/etc/nsswitch.conf")
 	}
 
 	confVal.resolv = dnsReadConfig("/etc/resolv.conf")
@@ -224,7 +219,7 @@ func (c *conf) hostLookupOrder(r *Resolver, hostname string) (ret hostLookupOrde
 		return fallbackOrder
 	}
 
-	nss := c.nss
+	nss := getSystemNSS()
 	srcs := nss.sources["hosts"]
 	// If /etc/nsswitch.conf doesn't exist or doesn't specify any
 	// sources for "hosts", assume Go's DNS will work fine.
@@ -246,7 +241,7 @@ func (c *conf) hostLookupOrder(r *Resolver, hostname string) (ret hostLookupOrde
 	var first string
 	for _, src := range srcs {
 		if src.source == "myhostname" {
-			if isLocalhost(hostname) || isGateway(hostname) {
+			if isLocalhost(hostname) || isGateway(hostname) || isOutbound(hostname) {
 				return fallbackOrder
 			}
 			hn, err := getHostname()
@@ -348,5 +343,11 @@ func isLocalhost(h string) bool {
 // isGateway reports whether h should be considered a "gateway"
 // name for the myhostname NSS module.
 func isGateway(h string) bool {
-	return stringsEqualFold(h, "gateway")
+	return stringsEqualFold(h, "_gateway")
+}
+
+// isOutbound reports whether h should be considered a "outbound"
+// name for the myhostname NSS module.
+func isOutbound(h string) bool {
+	return stringsEqualFold(h, "_outbound")
 }

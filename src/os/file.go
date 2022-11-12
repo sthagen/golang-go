@@ -254,9 +254,6 @@ func (f *File) WriteString(s string) (n int, err error) {
 // bits (before umask).
 // If there is an error, it will be of type *PathError.
 func Mkdir(name string, perm FileMode) error {
-	if runtime.GOOS == "windows" && isWindowsNulName(name) {
-		return &PathError{Op: "mkdir", Path: name, Err: syscall.ENOTDIR}
-	}
 	longName := fixLongPath(name)
 	e := ignoringEINTR(func() error {
 		return syscall.Mkdir(longName, syscallMode(perm))
@@ -591,24 +588,6 @@ func (f *File) SyscallConn() (syscall.RawConn, error) {
 	return newRawConn(f)
 }
 
-// isWindowsNulName reports whether name is os.DevNull ('NUL') on Windows.
-// True is returned if name is 'NUL' whatever the case.
-func isWindowsNulName(name string) bool {
-	if len(name) != 3 {
-		return false
-	}
-	if name[0] != 'n' && name[0] != 'N' {
-		return false
-	}
-	if name[1] != 'u' && name[1] != 'U' {
-		return false
-	}
-	if name[2] != 'l' && name[2] != 'L' {
-		return false
-	}
-	return true
-}
-
 // DirFS returns a file system (an fs.FS) for the tree of files rooted at the directory dir.
 //
 // Note that DirFS("/prefix") only guarantees that the Open calls it makes to the
@@ -731,6 +710,8 @@ func ReadFile(name string) ([]byte, error) {
 // WriteFile writes data to the named file, creating it if necessary.
 // If the file does not exist, WriteFile creates it with permissions perm (before umask);
 // otherwise WriteFile truncates it before writing, without changing permissions.
+// Since Writefile requires multiple system calls to complete, a failure mid-operation
+// can leave the file in a partially written state.
 func WriteFile(name string, data []byte, perm FileMode) error {
 	f, err := OpenFile(name, O_WRONLY|O_CREATE|O_TRUNC, perm)
 	if err != nil {

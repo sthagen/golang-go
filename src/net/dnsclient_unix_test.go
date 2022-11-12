@@ -2170,6 +2170,56 @@ func TestRootNS(t *testing.T) {
 	}
 }
 
+func TestGoLookupIPCNAMEOrderHostsAliasesFilesOnlyMode(t *testing.T) {
+	defer func(orig string) { testHookHostsPath = orig }(testHookHostsPath)
+	testHookHostsPath = "testdata/aliases"
+	mode := hostLookupFiles
+
+	for _, v := range lookupStaticHostAliasesTest {
+		testGoLookupIPCNAMEOrderHostsAliases(t, mode, v.lookup, absDomainName(v.res))
+	}
+}
+
+func TestGoLookupIPCNAMEOrderHostsAliasesFilesDNSMode(t *testing.T) {
+	defer func(orig string) { testHookHostsPath = orig }(testHookHostsPath)
+	testHookHostsPath = "testdata/aliases"
+	mode := hostLookupFilesDNS
+
+	for _, v := range lookupStaticHostAliasesTest {
+		testGoLookupIPCNAMEOrderHostsAliases(t, mode, v.lookup, absDomainName(v.res))
+	}
+}
+
+var goLookupIPCNAMEOrderDNSFilesModeTests = []struct {
+	lookup, res string
+}{
+	// 127.0.1.1
+	{"invalid.invalid", "invalid.test"},
+}
+
+func TestGoLookupIPCNAMEOrderHostsAliasesDNSFilesMode(t *testing.T) {
+	defer func(orig string) { testHookHostsPath = orig }(testHookHostsPath)
+	testHookHostsPath = "testdata/aliases"
+	mode := hostLookupDNSFiles
+
+	for _, v := range goLookupIPCNAMEOrderDNSFilesModeTests {
+		testGoLookupIPCNAMEOrderHostsAliases(t, mode, v.lookup, absDomainName(v.res))
+	}
+}
+
+func testGoLookupIPCNAMEOrderHostsAliases(t *testing.T, mode hostLookupOrder, lookup, lookupRes string) {
+	ins := []string{lookup, absDomainName(lookup), strings.ToLower(lookup), strings.ToUpper(lookup)}
+	for _, in := range ins {
+		_, res, err := goResolver.goLookupIPCNAMEOrder(context.Background(), "ip", in, mode)
+		if err != nil {
+			t.Errorf("expected err == nil, but got error: %v", err)
+		}
+		if res.String() != lookupRes {
+			t.Errorf("goLookupIPCNAMEOrder(%v): got %v, want %v", in, res, lookupRes)
+		}
+	}
+}
+
 // Test that we advertise support for a larger DNS packet size.
 // This isn't a great test as it just tests the dnsmessage package
 // against itself.
@@ -2281,6 +2331,10 @@ func TestLongDNSNames(t *testing.T) {
 			case dnsmessage.TypeSRV:
 				r.Answers[0].Body = &dnsmessage.SRVResource{
 					Target: dnsmessage.MustNewName("go.dev."),
+				}
+			case dnsmessage.TypeCNAME:
+				r.Answers[0].Body = &dnsmessage.CNAMEResource{
+					CNAME: dnsmessage.MustNewName("fake.cname."),
 				}
 			default:
 				panic("unknown dnsmessage type")

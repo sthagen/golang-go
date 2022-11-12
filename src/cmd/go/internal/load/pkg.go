@@ -1814,6 +1814,9 @@ func (p *Package) load(ctx context.Context, opts PackageOpts, path string, stk *
 		// Local import turned into absolute path.
 		// No permanent install target.
 		p.Target = ""
+	} else if p.Standard && cfg.BuildContext.Compiler == "gccgo" {
+		// gccgo has a preinstalled standard library that cmd/go cannot rebuild.
+		p.Target = ""
 	} else {
 		p.Target = p.Internal.Build.PkgObj
 		if cfg.BuildBuildmode == "shared" && p.Internal.Build.PkgTargetRoot != "" {
@@ -1987,11 +1990,6 @@ func (p *Package) load(ctx context.Context, opts PackageOpts, path string, stk *
 		// asynchronously when we're actually ready to build the package, or when we
 		// actually need to evaluate whether the package's metadata is stale.
 		p.setBuildInfo(opts.AutoVCS)
-	}
-
-	// unsafe is a fake package.
-	if p.Standard && (p.ImportPath == "unsafe" || cfg.BuildContext.Compiler == "gccgo") {
-		p.Target = ""
 	}
 
 	// If cgo is not enabled, ignore cgo supporting sources
@@ -2385,6 +2383,13 @@ func (p *Package) setBuildInfo(autoVCS bool) {
 		// record the system-independent parts of the flags.
 		if !cfg.BuildTrimpath {
 			appendSetting("-ldflags", ldflags)
+		}
+	}
+	if cfg.BuildPGOFile != "" {
+		if cfg.BuildTrimpath {
+			appendSetting("-pgo", filepath.Base(cfg.BuildPGOFile))
+		} else {
+			appendSetting("-pgo", cfg.BuildPGOFile)
 		}
 	}
 	if cfg.BuildMSan {
