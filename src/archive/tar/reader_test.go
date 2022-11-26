@@ -1615,3 +1615,60 @@ func TestFileReader(t *testing.T) {
 		}
 	}
 }
+
+func TestInsecurePaths(t *testing.T) {
+	t.Setenv("GODEBUG", "tarinsecurepath=0")
+	for _, path := range []string{
+		"../foo",
+		"/foo",
+		"a/b/../../../c",
+	} {
+		var buf bytes.Buffer
+		tw := NewWriter(&buf)
+		tw.WriteHeader(&Header{
+			Name: path,
+		})
+		const securePath = "secure"
+		tw.WriteHeader(&Header{
+			Name: securePath,
+		})
+		tw.Close()
+
+		tr := NewReader(&buf)
+		h, err := tr.Next()
+		if err != ErrInsecurePath {
+			t.Errorf("tr.Next for file %q: got err %v, want ErrInsecurePath", path, err)
+			continue
+		}
+		if h.Name != path {
+			t.Errorf("tr.Next for file %q: got name %q, want %q", path, h.Name, path)
+		}
+		// Error should not be sticky.
+		h, err = tr.Next()
+		if err != nil {
+			t.Errorf("tr.Next for file %q: got err %v, want nil", securePath, err)
+		}
+		if h.Name != securePath {
+			t.Errorf("tr.Next for file %q: got name %q, want %q", securePath, h.Name, securePath)
+		}
+	}
+}
+
+func TestDisableInsecurePathCheck(t *testing.T) {
+	t.Setenv("GODEBUG", "tarinsecurepath=1")
+	var buf bytes.Buffer
+	tw := NewWriter(&buf)
+	const name = "/foo"
+	tw.WriteHeader(&Header{
+		Name: name,
+	})
+	tw.Close()
+	tr := NewReader(&buf)
+	h, err := tr.Next()
+	if err != nil {
+		t.Fatalf("tr.Next with tarinsecurepath=1: got err %v, want nil", err)
+	}
+	if h.Name != name {
+		t.Fatalf("tr.Next with tarinsecurepath=1: got name %q, want %q", h.Name, name)
+	}
+}

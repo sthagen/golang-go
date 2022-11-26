@@ -35,6 +35,9 @@ var intOne = &Int{false, natOne}
 //	 0 if x == 0
 //	+1 if x >  0
 func (x *Int) Sign() int {
+	// This function is used in cryptographic operations. It must not leak
+	// anything but the Int's sign and bit size through side-channels. Any
+	// changes must be reviewed by a security expert.
 	if len(x.abs) == 0 {
 		return 0
 	}
@@ -96,6 +99,9 @@ func (z *Int) Set(x *Int) *Int {
 // Bits is intended to support implementation of missing low-level Int
 // functionality outside this package; it should be avoided otherwise.
 func (x *Int) Bits() []Word {
+	// This function is used in cryptographic operations. It must not leak
+	// anything but the Int's sign and bit size through side-channels. Any
+	// changes must be reviewed by a security expert.
 	return x.abs
 }
 
@@ -487,6 +493,9 @@ func (z *Int) SetBytes(buf []byte) *Int {
 //
 // To use a fixed length slice, or a preallocated one, use FillBytes.
 func (x *Int) Bytes() []byte {
+	// This function is used in cryptographic operations. It must not leak
+	// anything but the Int's sign and bit size through side-channels. Any
+	// changes must be reviewed by a security expert.
 	buf := make([]byte, len(x.abs)*_S)
 	return buf[x.abs.bytes(buf):]
 }
@@ -507,6 +516,9 @@ func (x *Int) FillBytes(buf []byte) []byte {
 // BitLen returns the length of the absolute value of x in bits.
 // The bit length of 0 is 0.
 func (x *Int) BitLen() int {
+	// This function is used in cryptographic operations. It must not leak
+	// anything but the Int's sign and bit size through side-channels. Any
+	// changes must be reviewed by a security expert.
 	return x.abs.bitLen()
 }
 
@@ -671,7 +683,7 @@ func lehmerSimulate(A, B *Int) (u0, u1, v0, v1 Word, even bool) {
 // where the signs of u0, u1, v0, v1 are given by even
 // For even == true: u0, v1 >= 0 && u1, v0 <= 0
 // For even == false: u0, v1 <= 0 && u1, v0 >= 0
-// q, r, s, t are temporary variables to avoid allocations in the multiplication
+// q, r, s, t are temporary variables to avoid allocations in the multiplication.
 func lehmerUpdate(A, B, q, r, s, t *Int, u0, u1, v0, v1 Word, even bool) {
 
 	t.abs = t.abs.setWord(u0)
@@ -695,7 +707,7 @@ func lehmerUpdate(A, B, q, r, s, t *Int, u0, u1, v0, v1 Word, even bool) {
 }
 
 // euclidUpdate performs a single step of the Euclidean GCD algorithm
-// if extended is true, it also updates the cosequence Ua, Ub
+// if extended is true, it also updates the cosequence Ua, Ub.
 func euclidUpdate(A, B, Ua, Ub, q, r, s, t *Int, extended bool) {
 	q, r = q.QuoRem(A, B, r)
 

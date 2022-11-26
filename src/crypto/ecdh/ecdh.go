@@ -15,16 +15,6 @@ import (
 )
 
 type Curve interface {
-	// ECDH performs a ECDH exchange and returns the shared secret.
-	//
-	// For NIST curves, this performs ECDH as specified in SEC 1, Version 2.0,
-	// Section 3.3.1, and returns the x-coordinate encoded according to SEC 1,
-	// Version 2.0, Section 2.3.5. The result is never the point at infinity.
-	//
-	// For X25519, this performs ECDH as specified in RFC 7748, Section 6.1. If
-	// the result is the all-zero value, ECDH returns an error.
-	ECDH(local *PrivateKey, remote *PublicKey) ([]byte, error)
-
 	// GenerateKey generates a new PrivateKey from rand.
 	GenerateKey(rand io.Reader) (*PrivateKey, error)
 
@@ -49,19 +39,27 @@ type Curve interface {
 	// selected public keys can cause ECDH to return an error.
 	NewPublicKey(key []byte) (*PublicKey, error)
 
+	// ecdh performs a ECDH exchange and returns the shared secret. It's exposed
+	// as the PrivateKey.ECDH method.
+	//
+	// The private method also allow us to expand the ECDH interface with more
+	// methods in the future without breaking backwards compatibility.
+	ecdh(local *PrivateKey, remote *PublicKey) ([]byte, error)
+
 	// privateKeyToPublicKey converts a PrivateKey to a PublicKey. It's exposed
 	// as the PrivateKey.PublicKey method.
 	//
 	// This method always succeeds: for X25519, the zero key can't be
 	// constructed due to clamping; for NIST curves, it is rejected by
 	// NewPrivateKey.
-	//
-	// The private method also allow us to expand the ECDH interface with more
-	// methods in the future without breaking backwards compatibility.
 	privateKeyToPublicKey(*PrivateKey) *PublicKey
 }
 
 // PublicKey is an ECDH public key, usually a peer's ECDH share sent over the wire.
+//
+// These keys can be parsed with [crypto/x509.ParsePKIXPublicKey] and encoded
+// with [crypto/x509.MarshalPKIXPublicKey]. For NIST curves, they then need to
+// be converted with [crypto/ecdsa.PublicKey.ECDH] after parsing.
 type PublicKey struct {
 	curve     Curve
 	publicKey []byte
@@ -97,6 +95,10 @@ func (k *PublicKey) Curve() Curve {
 }
 
 // PrivateKey is an ECDH private key, usually kept secret.
+//
+// These keys can be parsed with [crypto/x509.ParsePKCS8PrivateKey] and encoded
+// with [crypto/x509.MarshalPKCS8PrivateKey]. For NIST curves, they then need to
+// be converted with [crypto/ecdsa.PrivateKey.ECDH] after parsing.
 type PrivateKey struct {
 	curve      Curve
 	privateKey []byte
@@ -105,6 +107,18 @@ type PrivateKey struct {
 	// NewPrivateKey without having to perform a scalar multiplication.
 	publicKey     *PublicKey
 	publicKeyOnce sync.Once
+}
+
+// ECDH performs a ECDH exchange and returns the shared secret.
+//
+// For NIST curves, this performs ECDH as specified in SEC 1, Version 2.0,
+// Section 3.3.1, and returns the x-coordinate encoded according to SEC 1,
+// Version 2.0, Section 2.3.5. The result is never the point at infinity.
+//
+// For X25519, this performs ECDH as specified in RFC 7748, Section 6.1. If
+// the result is the all-zero value, ECDH returns an error.
+func (k *PrivateKey) ECDH(remote *PublicKey) ([]byte, error) {
+	return k.curve.ecdh(k, remote)
 }
 
 // Bytes returns a copy of the encoding of the private key.

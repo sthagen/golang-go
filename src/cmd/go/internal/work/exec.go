@@ -278,13 +278,8 @@ func (b *Builder) buildActionID(a *Action) cache.ActionID {
 		fmt.Fprintf(h, "CC=%q %q %q %q\n", ccExe, cppflags, cflags, ldflags)
 		// Include the C compiler tool ID so that if the C
 		// compiler changes we rebuild the package.
-		// But don't do that for standard library packages like net,
-		// so that the prebuilt .a files from a Go binary install
-		// don't need to be rebuilt with the local compiler.
-		if !p.Standard {
-			if ccID, _, err := b.gccToolID(ccExe[0], "c"); err == nil {
-				fmt.Fprintf(h, "CC ID=%q\n", ccID)
-			}
+		if ccID, _, err := b.gccToolID(ccExe[0], "c"); err == nil {
+			fmt.Fprintf(h, "CC ID=%q\n", ccID)
 		}
 		if len(p.CXXFiles)+len(p.SwigCXXFiles) > 0 {
 			cxxExe := b.cxxExe()
@@ -479,7 +474,7 @@ func (b *Builder) build(ctx context.Context, a *Action) (err error) {
 				p.BuildID = a.buildID
 			}
 			if need&needCompiledGoFiles != 0 {
-				if err := b.loadCachedSrcFiles(a); err == nil {
+				if err := b.loadCachedCompiledGoFiles(a); err == nil {
 					need &^= needCompiledGoFiles
 				}
 			}
@@ -488,7 +483,7 @@ func (b *Builder) build(ctx context.Context, a *Action) (err error) {
 		// Source files might be cached, even if the full action is not
 		// (e.g., go list -compiled -find).
 		if !cachedBuild && need&needCompiledGoFiles != 0 {
-			if err := b.loadCachedSrcFiles(a); err == nil {
+			if err := b.loadCachedCompiledGoFiles(a); err == nil {
 				need &^= needCompiledGoFiles
 			}
 		}
@@ -773,7 +768,7 @@ OverlayLoop:
 		need &^= needVet
 	}
 	if need&needCompiledGoFiles != 0 {
-		if err := b.loadCachedSrcFiles(a); err != nil {
+		if err := b.loadCachedCompiledGoFiles(a); err != nil {
 			return fmt.Errorf("loading compiled Go files from cache: %w", err)
 		}
 		need &^= needCompiledGoFiles
@@ -1040,28 +1035,30 @@ func (b *Builder) loadCachedVet(a *Action) error {
 	return nil
 }
 
-func (b *Builder) loadCachedSrcFiles(a *Action) error {
+func (b *Builder) loadCachedCompiledGoFiles(a *Action) error {
 	c := cache.Default()
 	list, _, err := c.GetBytes(cache.Subkey(a.actionID, "srcfiles"))
 	if err != nil {
 		return fmt.Errorf("reading srcfiles list: %w", err)
 	}
-	var files []string
+	var gofiles []string
 	for _, name := range strings.Split(string(list), "\n") {
 		if name == "" { // end of list
 			continue
+		} else if !strings.HasSuffix(name, ".go") {
+			continue
 		}
 		if strings.HasPrefix(name, "./") {
-			files = append(files, name[len("./"):])
+			gofiles = append(gofiles, name[len("./"):])
 			continue
 		}
 		file, err := b.findCachedObjdirFile(a, c, name)
 		if err != nil {
 			return fmt.Errorf("finding %s: %w", name, err)
 		}
-		files = append(files, file)
+		gofiles = append(gofiles, file)
 	}
-	a.Package.CompiledGoFiles = files
+	a.Package.CompiledGoFiles = gofiles
 	return nil
 }
 

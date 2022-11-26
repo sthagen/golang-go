@@ -133,7 +133,7 @@ func genpltstub(ctxt *ld.Link, ldr *loader.Loader, r loader.Reloc, s loader.Sym)
 	return stub.Sym(), firstUse
 }
 
-// Scan relocs and generate PLT stubs and generate/fixup ABI defined functions created by the linker
+// Scan relocs and generate PLT stubs and generate/fixup ABI defined functions created by the linker.
 func genstubs(ctxt *ld.Link, ldr *loader.Loader) {
 	var stubs []loader.Sym
 	var abifuncs []loader.Sym
@@ -933,7 +933,7 @@ func archrelocaddr(ldr *loader.Loader, target *ld.Target, syms *ld.ArchSyms, r l
 	return packInstPair(target, o1, o2)
 }
 
-// Determine if the code was compiled so that the TOC register R2 is initialized and maintained
+// Determine if the code was compiled so that the TOC register R2 is initialized and maintained.
 func r2Valid(ctxt *ld.Link) bool {
 	switch ctxt.BuildMode {
 	case ld.BuildModeCArchive, ld.BuildModeCShared, ld.BuildModePIE, ld.BuildModeShared, ld.BuildModePlugin:
@@ -943,7 +943,7 @@ func r2Valid(ctxt *ld.Link) bool {
 	return ctxt.IsSharedGoLink()
 }
 
-// resolve direct jump relocation r in s, and add trampoline if necessary
+// resolve direct jump relocation r in s, and add trampoline if necessary.
 func trampoline(ctxt *ld.Link, ldr *loader.Loader, ri int, rs, s loader.Sym) {
 
 	// Trampolines are created if the branch offset is too large and the linker cannot insert a call stub to handle it.
@@ -994,8 +994,9 @@ func trampoline(ctxt *ld.Link, ldr *loader.Loader, ri int, rs, s loader.Sym) {
 				if ldr.SymValue(tramp) == 0 {
 					break
 				}
-
-				t = ldr.SymValue(tramp) + r.Add() - (ldr.SymValue(s) + int64(r.Off()))
+				// Note, the trampoline is always called directly. The addend of the original relocation is accounted for in the
+				// trampoline itself.
+				t = ldr.SymValue(tramp) - (ldr.SymValue(s) + int64(r.Off()))
 
 				// With internal linking, the trampoline can be used if it is not too far.
 				// With external linking, the trampoline must be in this section for it to be reused.
@@ -1461,7 +1462,7 @@ func addpltsym(ctxt *ld.Link, ldr *loader.Loader, s loader.Sym) {
 	}
 }
 
-// Generate the glink resolver stub if necessary and return the .glink section
+// Generate the glink resolver stub if necessary and return the .glink section.
 func ensureglinkresolver(ctxt *ld.Link, ldr *loader.Loader) *loader.SymbolBuilder {
 	glink := ldr.CreateSymForUpdate(".glink", 0)
 	if glink.Size() != 0 {

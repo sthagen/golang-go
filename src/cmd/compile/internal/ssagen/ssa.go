@@ -252,7 +252,7 @@ func abiForFunc(fn *ir.Func, abi0, abi1 *abi.ABIConfig) *abi.ABIConfig {
 	return a
 }
 
-// dvarint writes a varint v to the funcdata in symbol x and returns the new offset
+// dvarint writes a varint v to the funcdata in symbol x and returns the new offset.
 func dvarint(x *obj.LSym, off int, v int64) int {
 	if v < 0 || v > 1e9 {
 		panic(fmt.Sprintf("dvarint: bad offset for funcdata - %v", v))
@@ -6525,7 +6525,7 @@ func (s *state) variable(n ir.Node, t *types.Type) *ssa.Value {
 
 	if s.curBlock == s.f.Entry {
 		// No variable should be live at entry.
-		s.Fatalf("Value live at entry. It shouldn't be. func %s, node %v, value %v", s.f.Name, n, v)
+		s.f.Fatalf("value %v (%v) incorrectly live at entry", n, v)
 	}
 	// Make a FwdRef, which records a value that's live on block input.
 	// We'll find the matching definition as part of insertPhis.

@@ -80,8 +80,8 @@ type CmdFlags struct {
 	LowerV *bool      "help:\"increase debug verbosity\""
 
 	// Special characters
-	Percent          int  "flag:\"%\" help:\"debug non-static initializers\""
-	CompilingRuntime bool "flag:\"+\" help:\"compiling runtime\""
+	Percent          CountFlag "flag:\"%\" help:\"debug non-static initializers\""
+	CompilingRuntime bool      "flag:\"+\" help:\"compiling runtime\""
 
 	// Longer names
 	AsmHdr             string       "help:\"write assembly header to `file`\""
@@ -167,6 +167,7 @@ func ParseFlags() {
 
 	Debug.ConcurrentOk = true
 	Debug.InlFuncsWithClosures = 1
+	Debug.InlStaticInit = 1
 	if buildcfg.Experiment.Unified {
 		Debug.Unified = 1
 	}
