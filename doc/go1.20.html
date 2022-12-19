@@ -30,7 +30,7 @@ Do not send CLs removing the interior tags from such phrases.
 </p>
 
 <p><!-- https://go.dev/issue/46505 -->
-  Go 1.17 added <a href="/ref/spec#Conversions_from_slice_to_array_pointer">conversions from slice to an array pointer</a>.
+  Go 1.17 added <a href="/ref/spec#Conversions_from_slice_to_array_or_array_pointer">conversions from slice to an array pointer</a>.
   Go 1.20 extends this to allow conversions from a slice to an array:
   given a slice <code>x</code>, <code>[4]byte(x)</code> can now be written
   instead of <code>*(*[4]byte)(x)</code>.
@@ -67,9 +67,16 @@ Do not send CLs removing the interior tags from such phrases.
 
 <h2 id="ports">Ports</h2>
 
+<h3 id="windows">Windows</h3>
+
+<p><!-- https://go.dev/issue/57003, https://go.dev/issue/57004 -->
+  Go 1.20 is the last release that will run on any release of Windows 7, 8, Server 2008 and Server 2012.
+  Go 1.21 will require at least Windows 10 or Server 2016.
+</p>
+
 <h3 id="darwin">Darwin and iOS</h3>
 
-<p><!-- golang.org/issue/23011 -->
+<p><!-- https://go.dev/issue/23011 -->
   Go 1.20 is the last release that will run on macOS 10.13 High Sierra or 10.14 Mojave.
   Go 1.21 will require macOS 10.15 Catalina or later.
 </p>
@@ -102,9 +109,9 @@ Do not send CLs removing the interior tags from such phrases.
   Programs that run <code>go</code> <code>test</code> <code>-json</code>
   do not need any updates.
   Programs that invoke <code>go</code> <code>tool</code> <code>test2json</code>
-  directly should now run the test binary with <code>-v=json</code>
-  (for example, <code>go</code> <code>test</code> <code>-v=json</code>
-  or <code>./pkg.test</code> <code>-test.v=json</code>)
+  directly should now run the test binary with <code>-v=test2json</code>
+  (for example, <code>go</code> <code>test</code> <code>-v=test2json</code>
+  or <code>./pkg.test</code> <code>-test.v=test2json</code>)
   instead of plain <code>-v</code>.
 </p>
 
@@ -175,6 +182,14 @@ Do not send CLs removing the interior tags from such phrases.
   Specifying <code>-pgo=off</code> turns off profile-guided optimization.
 </p>
 
+<p><!-- https://go.dev/issue/51430 -->
+  The <code>go</code> <code>build</code>, <code>go</code> <code>install</code>,
+  and other build-related commands now support a <code>-cover</code>
+  flag that builds the specified target with code coverage instrumentation.
+  This is described in more detail in the
+  <a href="#cover">Cover</a> section below.
+</p>
+
 <h4 id="go-version"><code>go</code> <code>version</code></h4>
 
 <p><!-- https://go.dev/issue/48187 -->
@@ -228,7 +243,19 @@ Do not send CLs removing the interior tags from such phrases.
 <h3 id="cover">Cover</h3>
 
 <p><!-- CL 436236, CL 401236, CL 438503 -->
-  TODO coverage
+  Go 1.20 supports collecting code coverage profiles for programs
+  (applications and integration tests), as opposed to just unit tests.
+</p>
+
+<p>
+  To collect coverage data for a program, build it with <code>go</code>
+  <code>build</code>'s <code>-cover</code> flag, then run the resulting
+  binary with the environment variable <code>GOCOVERDIR</code> set
+  to an output directory for coverage profiles.
+  See the
+  <a href="https://go.dev/testing/coverage">'coverage for integration tests' landing page</a> for more on how to get started.
+  For details on the design and implementation, see the
+  <a href="https://golang.org/issue/51430">proposal</a>.
 </p>
 
 <h3 id="vet">Vet</h3>
@@ -285,6 +312,13 @@ Do not send CLs removing the interior tags from such phrases.
   assists in some circumstances.
 </p>
 
+<p><!-- https://go.dev/issue/51430 -->
+  Go 1.20 adds a new <code>runtime/coverage</code> package
+  containing APIs for writing coverage profile data at
+  runtime from long-running and/or server programs that
+  do not terminate via <code>os.Exit()</code>.
+</p>
+
 <h2 id="compiler">Compiler</h2>
 
 <p><!-- https://go.dev/issue/55022 -->
@@ -306,7 +340,18 @@ Do not send CLs removing the interior tags from such phrases.
 </p>
 
 <p>
-  TODO: complete this section
+  The Go 1.20 compiler upgraded its front-end to use a new way of handling the
+  compiler's internal data, which fixes several generic-types bugs and enables
+  local types in generic functions and methods.
+</p>
+
+<p><!-- https://go.dev/issue/56103, CL 445598 -->
+  The compiler now <a href="https://go.dev/issue/56103">disallows anonymous interface cycles</a>.
+</p>
+
+<p><!-- https://go.dev/issue/49569 -->
+  Relative to Go 1.19, generated code performance is generally slightly improved,
+  build wall times are slightly increased, build user times are slightly decreased.
 </p>
 
 <h2 id="linker">Linker</h2>
@@ -351,7 +396,7 @@ Do not send CLs removing the interior tags from such phrases.
 
 <h3 id="crypto/ecdh">New crypto/ecdh package</h3>
 
-<p><!-- https://go.dev/issue/52221, CL 398914, CL 450335 -->
+<p><!-- https://go.dev/issue/52221, CL 398914, CL 450335, https://go.dev/issue/56052 -->
   Go 1.20 adds a new <a href="/pkg/crypto/ecdh/"><code>crypto/ecdh</code></a> package
   to provide direct support for Elliptic Curve Diffie-Hellman key exchange
   over NIST curves and Curve25519.
@@ -482,10 +527,6 @@ proxyHandler := &httputil.ReverseProxy{
   made with the Go 1 <a href="/doc/go1compat">promise of compatibility</a>
   in mind.
   There are also various performance improvements, not enumerated here.
-</p>
-
-<p>
-  TODO: complete this section
 </p>
 
 <dl id="archive/tar"><dt><a href="/pkg/archive/tar/">archive/tar</a></dt>
@@ -768,6 +809,17 @@ proxyHandler := &httputil.ReverseProxy{
   </dd>
 </dl><!-- go/token -->
 
+<dl id="go/types"><dt><a href="/pkg/go/types/">go/types</a></dt>
+  <dd>
+    <p><!-- CL 454575 -->
+      The new <a href="/pkg/go/types/#Satisfies"><code>Satisfies</code></a> function reports
+      whether a type satisfies a constraint.
+      This change aligns with the <a href="#language">new language semantics</a>
+      that distinguish satisfying a constraint from implementing an interface.
+    </p>
+  </dd>
+</dl><!-- go/types -->
+
 <dl id="io"><dt><a href="/pkg/io/">io</a></dt>
   <dd>
     <p><!-- https://go.dev/issue/45899, CL 406776 -->
@@ -838,7 +890,7 @@ proxyHandler := &httputil.ReverseProxy{
       if a <code>CNAME</code> record referred to a name that with no <code>A</code>,
       <code>AAAA</code>, or <code>CNAME</code> record. This change modifies
       <code>LookupCNAME</code> to match the previous behavior on Windows,
-      allowing allowing <code>LookupCNAME</code> to succeed whenever a
+      allowing <code>LookupCNAME</code> to succeed whenever a
       <code>CNAME</code> exists.
     </p>
 
@@ -1019,7 +1071,7 @@ proxyHandler := &httputil.ReverseProxy{
 
 <dl id="runtime/cgo"><dt><a href="/pkg/runtime/cgo/">runtime/cgo</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/46731 -->
+    <p><!-- https://go.dev/issue/46731, CL 421879 -->
       Go 1.20 adds new <a href="/pkg/runtime/cgo/#Incomplete"><code>Incomplete</code></a> marker type.
       Code generated by cgo will use <code>cgo.Incomplete</code> to mark an incomplete C type.
     </p>
@@ -1180,3 +1232,9 @@ proxyHandler := &httputil.ReverseProxy{
 <!-- https://go.dev/issue/54850 x/net/http2 Transport.MaxReadFrameSize -->
 <!-- https://go.dev/issue/56054 x/net/http2 SETTINGS_HEADER_TABLE_SIZE -->
 <!-- CL 450375 reverted -->
+<!-- CL 453259 tracking deprecations in api -->
+<!-- CL 453260 tracking darwin port in api -->
+<!-- CL 453615 fix deprecation comment in archive/tar -->
+<!-- CL 453616 fix deprecation comment in archive/zip -->
+<!-- CL 453617 fix deprecation comment in encoding/csv -->
+<!-- https://go.dev/issue/54661 x/tools/go/analysis -->
