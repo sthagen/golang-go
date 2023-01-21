@@ -168,7 +168,7 @@ func (check *Checker) validateTArgLen(pos syntax.Pos, ntparams, ntargs int) bool
 func (check *Checker) verify(pos syntax.Pos, tparams []*TypeParam, targs []Type, ctxt *Context) (int, error) {
 	smap := makeSubstMap(tparams, targs)
 	for i, tpar := range tparams {
-		// Ensure that we have a (possibly implicit) interface as type bound (issue #51048).
+		// Ensure that we have a (possibly implicit) interface as type bound (go.dev/issue/51048).
 		tpar.iface()
 		// The type parameter bound is parameterized with the same type parameters
 		// as the instantiated type; before we can use it for bounds checking we
@@ -196,7 +196,7 @@ func (check *Checker) implements(V, T Type, constraint bool, cause *string) bool
 		return true // avoid follow-on errors
 	}
 	if p, _ := Vu.(*Pointer); p != nil && under(p.base) == Typ[Invalid] {
-		return true // avoid follow-on errors (see issue #49541 for an example)
+		return true // avoid follow-on errors (see go.dev/issue/49541 for an example)
 	}
 
 	verb := "implement"
@@ -257,15 +257,6 @@ func (check *Checker) implements(V, T Type, constraint bool, cause *string) bool
 		// If V is strictly comparable, we're done.
 		if comparable(V, false /* strict comparability */, nil, nil) {
 			return true
-		}
-		// If check.conf.OldComparableSemantics is set (by the compiler or
-		// a test), we only consider strict comparability and we're done.
-		// TODO(gri) remove this check for Go 1.21
-		if check != nil && check.conf.OldComparableSemantics {
-			if cause != nil {
-				*cause = check.sprintf("%s does not %s comparable", V, verb)
-			}
-			return false
 		}
 		// For constraint satisfaction, use dynamic (spec) comparability
 		// so that ordinary, non-type parameter interfaces implement comparable.
