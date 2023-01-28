@@ -9,7 +9,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
@@ -182,6 +181,31 @@ func testSymlinkSameFile(t *testing.T, path, link string) {
 	}
 }
 
+func testSymlinkSameFileOpen(t *testing.T, link string) {
+	f, err := os.Open(link)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer f.Close()
+
+	fi, err := f.Stat()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	fi2, err := os.Stat(link)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	if !os.SameFile(fi, fi2) {
+		t.Errorf("os.Open(%q).Stat() and os.Stat(%q) are not the same file", link, link)
+	}
+}
+
 func TestDirAndSymlinkStats(t *testing.T) {
 	testenv.MustHaveSymlink(t)
 	t.Parallel()
@@ -199,6 +223,7 @@ func TestDirAndSymlinkStats(t *testing.T) {
 	}
 	testSymlinkStats(t, dirlink, true)
 	testSymlinkSameFile(t, dir, dirlink)
+	testSymlinkSameFileOpen(t, dirlink)
 
 	linklink := filepath.Join(tmpdir, "linklink")
 	if err := os.Symlink(dirlink, linklink); err != nil {
@@ -206,6 +231,7 @@ func TestDirAndSymlinkStats(t *testing.T) {
 	}
 	testSymlinkStats(t, linklink, true)
 	testSymlinkSameFile(t, dir, linklink)
+	testSymlinkSameFileOpen(t, linklink)
 }
 
 func TestFileAndSymlinkStats(t *testing.T) {
@@ -225,6 +251,7 @@ func TestFileAndSymlinkStats(t *testing.T) {
 	}
 	testSymlinkStats(t, filelink, false)
 	testSymlinkSameFile(t, file, filelink)
+	testSymlinkSameFileOpen(t, filelink)
 
 	linklink := filepath.Join(tmpdir, "linklink")
 	if err := os.Symlink(filelink, linklink); err != nil {
@@ -232,6 +259,7 @@ func TestFileAndSymlinkStats(t *testing.T) {
 	}
 	testSymlinkStats(t, linklink, false)
 	testSymlinkSameFile(t, file, linklink)
+	testSymlinkSameFileOpen(t, linklink)
 }
 
 // see issue 27225 for details
@@ -250,11 +278,7 @@ func TestSymlinkWithTrailingSlash(t *testing.T) {
 	}
 	dirlinkWithSlash := dirlink + string(os.PathSeparator)
 
-	if runtime.GOOS == "windows" {
-		testSymlinkStats(t, dirlinkWithSlash, true)
-	} else {
-		testDirStats(t, dirlinkWithSlash)
-	}
+	testDirStats(t, dirlinkWithSlash)
 
 	fi1, err := os.Stat(dir)
 	if err != nil {

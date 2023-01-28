@@ -45,8 +45,7 @@ func (e *escape) callCommon(ks []hole, call ir.Node, init *ir.Nodes, wrapper *ir
 
 	case ir.OCALLFUNC, ir.OCALLMETH, ir.OCALLINTER:
 		call := call.(*ir.CallExpr)
-		typecheck.FixVariadicCall(call)
-		typecheck.FixMethodCall(call)
+		typecheck.AssertFixedCall(call)
 
 		// Pick out the function callee, if statically known.
 		//
@@ -244,7 +243,7 @@ func (e *escape) goDeferStmt(n *ir.GoDeferStmt) {
 	// Create a new no-argument function that we'll hand off to defer.
 	fn := ir.NewClosureFunc(n.Pos(), true)
 	fn.SetWrapper(true)
-	fn.Nname.SetType(types.NewSignature(types.LocalPkg, nil, nil, nil, nil))
+	fn.Nname.SetType(types.NewSignature(nil, nil, nil))
 	fn.Body = []ir.Node{call}
 	if call, ok := call.(*ir.CallExpr); ok && call.Op() == ir.OCALLFUNC {
 		// If the callee is a named function, link to the original callee.
