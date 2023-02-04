@@ -14,6 +14,7 @@ package net
 import (
 	"context"
 	"errors"
+	"net/netip"
 	"syscall"
 	"unsafe"
 
@@ -240,15 +241,11 @@ const (
 )
 
 func cgoLookupPTR(ctx context.Context, addr string) (names []string, err error, completed bool) {
-	var zone string
-	ip := parseIPv4(addr)
-	if ip == nil {
-		ip, zone = parseIPv6Zone(addr)
-	}
-	if ip == nil {
+	ip, err := netip.ParseAddr(addr)
+	if err != nil {
 		return nil, &DNSError{Err: "invalid address", Name: addr}, true
 	}
-	sa, salen := cgoSockaddr(ip, zone)
+	sa, salen := cgoSockaddr(IP(ip.AsSlice()), ip.Zone())
 	if sa == nil {
 		return nil, &DNSError{Err: "invalid address " + ip.String(), Name: addr}, true
 	}
@@ -280,17 +277,21 @@ func cgoLookupAddrPTR(addr string, sa *_C_struct_sockaddr, salen _C_socklen_t) (
 		}
 	}
 	if gerrno != 0 {
+		isErrorNoSuchHost := false
 		isTemporary := false
 		switch gerrno {
 		case _C_EAI_SYSTEM:
 			if err == nil { // see golang.org/issue/6232
 				err = syscall.EMFILE
 			}
+		case _C_EAI_NONAME:
+			err = errNoSuchHost
+			isErrorNoSuchHost = true
 		default:
 			err = addrinfoErrno(gerrno)
 			isTemporary = addrinfoErrno(gerrno).Temporary()
 		}
-		return nil, &DNSError{Err: err.Error(), Name: addr, IsTemporary: isTemporary}
+		return nil, &DNSError{Err: err.Error(), Name: addr, IsTemporary: isTemporary, IsNotFound: isErrorNoSuchHost}
 	}
 	for i := 0; i < len(b); i++ {
 		if b[i] == 0 {

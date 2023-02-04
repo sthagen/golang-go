@@ -164,7 +164,9 @@ func (check *Checker) unary(x *operand, e *ast.UnaryExpr) {
 	if x.mode == invalid {
 		return
 	}
-	switch e.Op {
+
+	op := e.Op
+	switch op {
 	case token.AND:
 		// spec: "As an exception to the addressability
 		// requirement x may also be a composite literal."
@@ -202,13 +204,17 @@ func (check *Checker) unary(x *operand, e *ast.UnaryExpr) {
 		return
 
 	case token.TILDE:
-		// Provide a better error position and message than what check.op below could do.
-		check.error(e, UndefinedOp, "cannot use ~ outside of interface or type constraint")
-		x.mode = invalid
-		return
+		// Provide a better error position and message than what check.op below would do.
+		if !allInteger(x.typ) {
+			check.error(e, UndefinedOp, "cannot use ~ outside of interface or type constraint")
+			x.mode = invalid
+			return
+		}
+		check.error(e, UndefinedOp, "cannot use ~ outside of interface or type constraint (use ^ for bitwise complement)")
+		op = token.XOR
 	}
 
-	if !check.op(unaryOpPredicates, x, e.Op) {
+	if !check.op(unaryOpPredicates, x, op) {
 		x.mode = invalid
 		return
 	}
@@ -222,7 +228,7 @@ func (check *Checker) unary(x *operand, e *ast.UnaryExpr) {
 		if isUnsigned(x.typ) {
 			prec = uint(check.conf.sizeof(x.typ) * 8)
 		}
-		x.val = constant.UnaryOp(e.Op, x.val, prec)
+		x.val = constant.UnaryOp(op, x.val, prec)
 		x.expr = e
 		check.overflow(x, x.Pos())
 		return
@@ -689,7 +695,7 @@ func (check *Checker) implicitTypeAndValue(x *operand, target Type) (Type, const
 			if !hasNil(target) {
 				return nil, nil, InvalidUntypedConversion
 			}
-			// Preserve the type of nil as UntypedNil: see #13061.
+			// Preserve the type of nil as UntypedNil: see go.dev/issue/13061.
 			return Typ[UntypedNil], nil, 0
 		default:
 			return nil, nil, InvalidUntypedConversion
@@ -705,7 +711,7 @@ func (check *Checker) implicitTypeAndValue(x *operand, target Type) (Type, const
 			}) {
 				return nil, nil, InvalidUntypedConversion
 			}
-			// keep nil untyped (was bug #39755)
+			// keep nil untyped (was bug go.dev/issue/39755)
 			if x.isNil() {
 				return Typ[UntypedNil], nil, 0
 			}
@@ -932,7 +938,7 @@ func (check *Checker) shift(x, y *operand, e ast.Expr, op token.Token) {
 
 		if isUntyped(y.typ) {
 			// Caution: Check for representability here, rather than in the switch
-			// below, because isInteger includes untyped integers (was bug #43697).
+			// below, because isInteger includes untyped integers (was bug go.dev/issue/43697).
 			check.representable(y, Typ[Uint])
 			if y.mode == invalid {
 				x.mode = invalid
@@ -950,7 +956,7 @@ func (check *Checker) shift(x, y *operand, e ast.Expr, op token.Token) {
 			}
 		case isUntyped(y.typ):
 			// This is incorrect, but preserves pre-existing behavior.
-			// See also bug #47410.
+			// See also go.dev/issue/47410.
 			check.convertUntyped(y, Typ[Uint])
 			if y.mode == invalid {
 				x.mode = invalid
@@ -1327,11 +1333,11 @@ func (check *Checker) exprInternal(x *operand, e ast.Expr, hint Type) exprKind {
 				// init expression/func declaration which contains
 				// them: use existing package-level declaration info.
 				decl := check.decl // capture for use in closure below
-				iota := check.iota // capture for use in closure below (#22345)
+				iota := check.iota // capture for use in closure below (go.dev/issue/22345)
 				// Don't type-check right away because the function may
 				// be part of a type definition to which the function
 				// body refers. Instead, type-check as soon as possible,
-				// but before the enclosing scope contents changes (#22992).
+				// but before the enclosing scope contents changes (go.dev/issue/22992).
 				check.later(func() {
 					check.funcBody(decl, "<function literal>", sig, e.Body, iota)
 				}).describef(e, "func literal")

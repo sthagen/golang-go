@@ -56,20 +56,27 @@ func Init() (*sys.Arch, ld.Arch) {
 		Archreloc:        archreloc,
 		Archrelocvariant: archrelocvariant,
 		Extreloc:         extreloc,
-		Elfreloc1:        elfreloc1,
-		ElfrelocSize:     8,
-		Elfsetupplt:      elfsetupplt,
 		Gentext:          gentext,
 		Machoreloc1:      machoreloc1,
 
-		Linuxdynld:     "/lib/ld.so.1",
-		LinuxdynldMusl: musl,
+		ELF: ld.ELFArch{
+			Linuxdynld:     "/lib/ld.so.1",
+			LinuxdynldMusl: musl,
 
-		Freebsddynld:   "XXX",
-		Openbsddynld:   "XXX",
-		Netbsddynld:    "XXX",
-		Dragonflydynld: "XXX",
-		Solarisdynld:   "XXX",
+			Freebsddynld:   "XXX",
+			Openbsddynld:   "XXX",
+			Netbsddynld:    "XXX",
+			Dragonflydynld: "XXX",
+			Solarisdynld:   "XXX",
+
+			Reloc1:    elfreloc1,
+			RelocSize: 8,
+			SetupPLT:  elfsetupplt,
+
+			// Historically GNU ld creates a read-only
+			// .dynamic section.
+			DynamicReadOnly: true,
+		},
 	}
 
 	return arch, theArch
