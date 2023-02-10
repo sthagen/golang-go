@@ -14,6 +14,8 @@ import (
 	"cmd/compile/internal/types"
 	"cmd/internal/obj"
 	"cmd/internal/src"
+	"fmt"
+	"os"
 )
 
 // MakeInit creates a synthetic init function to handle any
@@ -36,10 +38,18 @@ func MakeInit() {
 	}
 	fn.Dcl = append(fn.Dcl, typecheck.InitTodoFunc.Dcl...)
 	typecheck.InitTodoFunc.Dcl = nil
+	fn.SetIsPackageInit(true)
+
+	// Outline (if legal/profitable) global map inits.
+	newfuncs := []*ir.Func{}
+	nf, newfuncs = staticinit.OutlineMapInits(nf)
 
 	// Suppress useless "can inline" diagnostics.
 	// Init functions are only called dynamically.
 	fn.SetInlinabilityChecked(true)
+	for _, nfn := range newfuncs {
+		nfn.SetInlinabilityChecked(true)
+	}
 
 	fn.Body = nf
 	typecheck.FinishFuncBody()
@@ -49,6 +59,16 @@ func MakeInit() {
 		typecheck.Stmts(nf)
 	})
 	typecheck.Target.Decls = append(typecheck.Target.Decls, fn)
+	if base.Debug.WrapGlobalMapDbg > 1 {
+		fmt.Fprintf(os.Stderr, "=-= len(newfuncs) is %d for %v\n",
+			len(newfuncs), fn)
+	}
+	for _, nfn := range newfuncs {
+		if base.Debug.WrapGlobalMapDbg > 1 {
+			fmt.Fprintf(os.Stderr, "=-= add to target.decls %v\n", nfn)
+		}
+		typecheck.Target.Decls = append(typecheck.Target.Decls, ir.Node(nfn))
+	}
 
 	// Prepend to Inits, so it runs first, before any user-declared init
 	// functions.
@@ -109,7 +129,7 @@ func Task() *ir.Name {
 			name := noder.Renameinit()
 			fnInit := typecheck.DeclFunc(name, nil, nil, nil)
 
-			// Get an array of intrumented global variables.
+			// Get an array of instrumented global variables.
 			globals := instrumentGlobals(fnInit)
 
 			// Call runtime.asanregisterglobals function to poison redzones.

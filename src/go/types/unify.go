@@ -11,6 +11,7 @@ package types
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -42,9 +43,6 @@ const (
 // corresponding types inferred for each type parameter.
 // A unifier is created by calling newUnifier.
 type unifier struct {
-	// tparams is the initial list of type parameters provided.
-	// Only used to print/return types in reproducible order.
-	tparams []*TypeParam
 	// handles maps each type parameter to its inferred type through
 	// an indirection *Type called (inferred type) "handle".
 	// Initially, each type parameter has its own, separate handle,
@@ -76,7 +74,7 @@ func newUnifier(tparams []*TypeParam, targs []Type) *unifier {
 		}
 		handles[x] = &t
 	}
-	return &unifier{tparams, handles, 0}
+	return &unifier{handles, 0}
 }
 
 // unify attempts to unify x and y and reports whether it succeeded.
@@ -92,10 +90,19 @@ func (u *unifier) tracef(format string, args ...interface{}) {
 // String returns a string representation of the current mapping
 // from type parameters to types.
 func (u *unifier) String() string {
+	// sort type parameters for reproducible strings
+	tparams := make(typeParamsById, len(u.handles))
+	i := 0
+	for tpar := range u.handles {
+		tparams[i] = tpar
+		i++
+	}
+	sort.Sort(tparams)
+
 	var buf bytes.Buffer
 	w := newTypeWriter(&buf, nil)
 	w.byte('[')
-	for i, x := range u.tparams {
+	for i, x := range tparams {
 		if i > 0 {
 			w.string(", ")
 		}
@@ -106,6 +113,12 @@ func (u *unifier) String() string {
 	w.byte(']')
 	return buf.String()
 }
+
+type typeParamsById []*TypeParam
+
+func (s typeParamsById) Len() int           { return len(s) }
+func (s typeParamsById) Less(i, j int) bool { return s[i].id < s[j].id }
+func (s typeParamsById) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 
 // join unifies the given type parameters x and y.
 // If both type parameters already have a type associated with them
@@ -163,15 +176,13 @@ func (u *unifier) at(x *TypeParam) Type {
 }
 
 // set sets the type t for type parameter x;
-// t must not be nil and it must not have been set before.
+// t must not be nil.
 func (u *unifier) set(x *TypeParam, t Type) {
 	assert(t != nil)
 	if traceInference {
 		u.tracef("%s ➞ %s", x, t)
 	}
-	h := u.handles[x]
-	assert(*h == nil)
-	*h = t
+	*u.handles[x] = t
 }
 
 // unknowns returns the number of type parameters for which no type has been set yet.
@@ -185,21 +196,16 @@ func (u *unifier) unknowns() int {
 	return n
 }
 
-// inferred returns the list of inferred types (via unification) for the type parameters
-// recorded with u, and an index. If all types were inferred, the returned index is < 0.
-// Otherwise, it is the index of the first type parameter which couldn't be inferred;
-// i.e., for which list[index] is nil.
-func (u *unifier) inferred() (list []Type, index int) {
-	list = make([]Type, len(u.tparams))
-	index = -1
-	for i, x := range u.tparams {
-		t := u.at(x)
-		list[i] = t
-		if index < 0 && t == nil {
-			index = i
-		}
+// inferred returns the list of inferred types for the given type parameter list.
+// The result is never nil and has the same length as tparams; result types that
+// could not be inferred are nil. Corresponding type parameters and result types
+// have identical indices.
+func (u *unifier) inferred(tparams []*TypeParam) []Type {
+	list := make([]Type, len(tparams))
+	for i, x := range tparams {
+		list[i] = u.at(x)
 	}
-	return
+	return list
 }
 
 func (u *unifier) nifyEq(x, y Type, p *ifacePair) bool {
@@ -261,7 +267,7 @@ func (u *unifier) nify(x, y Type, p *ifacePair) (result bool) {
 	}
 
 	// Cases where at least one of x or y is a type parameter recorded with u.
-	// If we have ar least one type parameter, there is one in x.
+	// If we have at least one type parameter, there is one in x.
 	switch px, py := u.asTypeParam(x), u.asTypeParam(y); {
 	case px != nil && py != nil:
 		// both x and y are type parameters
@@ -273,8 +279,19 @@ func (u *unifier) nify(x, y Type, p *ifacePair) (result bool) {
 
 	case px != nil:
 		// x is a type parameter, y is not
-		if tx := u.at(px); tx != nil {
-			return u.nifyEq(tx, y, p)
+		if x := u.at(px); x != nil {
+			// x has an inferred type which must match y
+			if u.nifyEq(x, y, p) {
+				// If we have a match, possibly through underlying types,
+				// and y is a defined type, make sure we record that type
+				// for type parameter x, which may have until now only
+				// recorded an underlying type (go.dev/issue/43056).
+				if _, ok := y.(*Named); ok {
+					u.set(px, y)
+				}
+				return true
+			}
+			return false
 		}
 		// otherwise, infer type from y
 		u.set(px, y)
@@ -502,7 +519,7 @@ func (u *unifier) nify(x, y Type, p *ifacePair) (result bool) {
 		// avoid a crash in case of nil type
 
 	default:
-		panic(sprintf(nil, nil, true, "u.nify(%s, %s), u.tparams = %s", x, y, u.tparams))
+		panic(sprintf(nil, nil, true, "u.nify(%s, %s)", x, y))
 	}
 
 	return false

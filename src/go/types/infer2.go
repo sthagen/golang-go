@@ -13,6 +13,10 @@ import (
 	. "internal/types/errors"
 )
 
+// If compareWithInfer1, infer2 results must match infer1 results.
+// Disable before releasing Go 1.21.
+const compareWithInfer1 = true
+
 // infer attempts to infer the complete set of type arguments for generic function instantiation/call
 // based on the given type parameters tparams, type arguments targs, function parameters params, and
 // function arguments args, if any. There must be at least one type parameter, no more type arguments
@@ -21,18 +25,22 @@ import (
 // type parameter. Otherwise the result is nil and appropriate errors will be reported.
 func (check *Checker) infer(posn positioner, tparams []*TypeParam, targs []Type, params *Tuple, args []*operand) []Type {
 	r2 := check.infer2(posn, tparams, targs, params, args)
-	r1 := check.infer1(posn, tparams, targs, params, args, r2 == nil) // be silent on errors if infer2 failed
-	assert(len(r2) == len(r1))
-	for i, targ2 := range r2 {
-		targ1 := r1[i]
-		var c comparer
-		c.ignoreInvalids = true
-		if !c.identical(targ2, targ1, nil) {
-			tpar := tparams[i]
-			check.dump("%v: type argument for %s: infer1: %s, infer2: %s", tpar.Obj().Pos(), tpar, targ1, targ2)
-			panic("inconsistent type inference")
+
+	if compareWithInfer1 {
+		r1 := check.infer1(posn, tparams, targs, params, args, r2 == nil) // be silent on errors if infer2 failed
+		assert(len(r2) == len(r1))
+		for i, targ2 := range r2 {
+			targ1 := r1[i]
+			var c comparer
+			c.ignoreInvalids = true
+			if !c.identical(targ2, targ1, nil) {
+				tpar := tparams[i]
+				check.dump("%v: type argument for %s: infer1: %s, infer2: %s", tpar.Obj().Pos(), tpar, targ1, targ2)
+				panic("inconsistent type inference")
+			}
 		}
 	}
+
 	return r2
 }
 
@@ -70,51 +78,6 @@ func (check *Checker) infer2(posn positioner, tparams []*TypeParam, targs []Type
 	// Rename type parameters to avoid conflicts in recursive instantiation scenarios.
 	tparams, params = check.renameTParams(posn.Pos(), tparams, params)
 
-	// If we have more than 2 arguments, we may have arguments with named and unnamed types.
-	// If that is the case, permutate params and args such that the arguments with named
-	// types are first in the list. This doesn't affect type inference if all types are taken
-	// as is. But when we have inexact unification enabled (as is the case for function type
-	// inference), when a named type is unified with an unnamed type, unification proceeds
-	// with the underlying type of the named type because otherwise unification would fail
-	// right away. This leads to an asymmetry in type inference: in cases where arguments of
-	// named and unnamed types are passed to parameters with identical type, different types
-	// (named vs underlying) may be inferred depending on the order of the arguments.
-	// By ensuring that named types are seen first, order dependence is avoided and unification
-	// succeeds where it can (go.dev/issue/43056).
-	const enableArgSorting = true
-	if m := len(args); m >= 2 && enableArgSorting {
-		// Determine indices of arguments with named and unnamed types.
-		var named, unnamed []int
-		for i, arg := range args {
-			if hasName(arg.typ) {
-				named = append(named, i)
-			} else {
-				unnamed = append(unnamed, i)
-			}
-		}
-
-		// If we have named and unnamed types, move the arguments with
-		// named types first. Update the parameter list accordingly.
-		// Make copies so as not to clobber the incoming slices.
-		if len(named) != 0 && len(unnamed) != 0 {
-			params2 := make([]*Var, m)
-			args2 := make([]*operand, m)
-			i := 0
-			for _, j := range named {
-				params2[i] = params.At(j)
-				args2[i] = args[j]
-				i++
-			}
-			for _, j := range unnamed {
-				params2[i] = params.At(j)
-				args2[i] = args[j]
-				i++
-			}
-			params = NewTuple(params2...)
-			args = args2
-		}
-	}
-
 	// Make sure we have a "full" list of type arguments, some of which may
 	// be nil (unknown). Make a copy so as to not clobber the incoming slice.
 	if len(targs) < n {
@@ -146,8 +109,8 @@ func (check *Checker) infer2(posn positioner, tparams []*TypeParam, targs []Type
 
 	errorf := func(kind string, tpar, targ Type, arg *operand) {
 		// provide a better error message if we can
-		targs, index := u.inferred()
-		if index == 0 {
+		targs := u.inferred(tparams)
+		if targs[0] == nil {
 			// The first type parameter couldn't be inferred.
 			// If none of them could be inferred, don't try
 			// to provide the inferred type in the error msg.
@@ -217,7 +180,7 @@ func (check *Checker) infer2(posn positioner, tparams []*TypeParam, targs []Type
 	}
 
 	if traceInference {
-		inferred, _ := u.inferred()
+		inferred := u.inferred(tparams)
 		u.tracef("=> %s ➞ %s\n", tparams, inferred)
 	}
 
@@ -308,7 +271,7 @@ func (check *Checker) infer2(posn positioner, tparams []*TypeParam, targs []Type
 	}
 
 	if traceInference {
-		inferred, _ := u.inferred()
+		inferred := u.inferred(tparams)
 		u.tracef("=> %s ➞ %s\n", tparams, inferred)
 	}
 
@@ -349,14 +312,14 @@ func (check *Checker) infer2(posn positioner, tparams []*TypeParam, targs []Type
 
 	// --- simplify ---
 
-	// u.inferred() now contains the incoming type arguments plus any additional type
+	// u.inferred(tparams) now contains the incoming type arguments plus any additional type
 	// arguments which were inferred. The inferred non-nil entries may still contain
 	// references to other type parameters found in constraints.
 	// For instance, for [A any, B interface{ []C }, C interface{ *A }], if A == int
 	// was given, unification produced the type list [int, []C, *A]. We eliminate the
 	// remaining type parameters by substituting the type parameters in this type list
 	// until nothing changes anymore.
-	inferred, _ = u.inferred()
+	inferred = u.inferred(tparams)
 	if debug {
 		for i, targ := range targs {
 			assert(targ == nil || inferred[i] == targ)

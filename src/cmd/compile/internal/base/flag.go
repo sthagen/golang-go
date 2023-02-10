@@ -123,6 +123,7 @@ type CmdFlags struct {
 	TraceProfile       string       "help:\"write an execution trace to `file`\""
 	TrimPath           string       "help:\"remove `prefix` from recorded source file paths\""
 	WB                 bool         "help:\"enable write barrier\"" // TODO: remove
+	WrapGlobalMapInit  bool         "help:\"wrap global map large inits in their own functions (to permit deadcode)\""
 	PgoProfile         string       "help:\"read profile from `file`\""
 
 	// Configuration derived from flags; not a flag itself.
@@ -163,10 +164,11 @@ func ParseFlags() {
 	Flag.LinkShared = &Ctxt.Flag_linkshared
 	Flag.Shared = &Ctxt.Flag_shared
 	Flag.WB = true
+	Flag.WrapGlobalMapInit = true
 
 	Debug.ConcurrentOk = true
 	Debug.InlFuncsWithClosures = 1
-	Debug.InlStaticInit = 1
+	Debug.InlStaticInit = 0
 	Debug.SyncFrames = -1 // disable sync markers by default
 
 	Debug.Checkptr = -1 // so we can tell whether it is set explicitly

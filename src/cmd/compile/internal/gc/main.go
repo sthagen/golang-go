@@ -22,6 +22,7 @@ import (
 	"cmd/compile/internal/reflectdata"
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/ssagen"
+	"cmd/compile/internal/staticinit"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
 	"cmd/internal/dwarf"
@@ -292,11 +293,6 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	base.Timer.Start("fe", "escapes")
 	escape.Funcs(typecheck.Target.Decls)
 
-	// TODO(mdempsky): This is a hack. We need a proper, global work
-	// queue for scheduling function compilation so components don't
-	// need to adjust their behavior depending on when they're called.
-	reflectdata.AfterGlobalEscapeAnalysis = true
-
 	// Collect information for go:nowritebarrierrec
 	// checking. This must happen before transforming closures during Walk
 	// We'll do the final check after write barriers are
@@ -328,6 +324,11 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	if base.Flag.CompilingRuntime {
 		// Write barriers are now known. Check the call graph.
 		ssagen.NoWriteBarrierRecCheck()
+	}
+
+	// Add keep relocations for global maps.
+	if base.Flag.WrapGlobalMapInit {
+		staticinit.AddKeepRelocations()
 	}
 
 	// Finalize DWARF inline routine DIEs, then explicitly turn off
