@@ -11,6 +11,7 @@ import (
 	"cmd/internal/objabi"
 	"cmd/internal/src"
 	"fmt"
+	"internal/buildcfg"
 )
 
 // A ZeroRegion records parts of an object which are known to be zero.
@@ -24,10 +25,60 @@ type ZeroRegion struct {
 	mask uint64
 }
 
+// mightBeHeapPointer reports whether v might point to the heap.
+// v must have pointer type.
+func mightBeHeapPointer(v *Value) bool {
+	if IsGlobalAddr(v) {
+		return false
+	}
+	return true
+}
+
+// mightContainHeapPointer reports whether the data currently at addresses
+// [ptr,ptr+size) might contain heap pointers. "currently" means at memory state mem.
+// zeroes contains ZeroRegion data to help make that decision (see computeZeroMap).
+func mightContainHeapPointer(ptr *Value, size int64, mem *Value, zeroes map[ID]ZeroRegion) bool {
+	if IsReadOnlyGlobalAddr(ptr) {
+		// The read-only globals section cannot contain any heap pointers.
+		return false
+	}
+
+	// See if we can prove that the queried memory is all zero.
+
+	// Find base pointer and offset. Hopefully, the base is the result of a new(T).
+	var off int64
+	for ptr.Op == OpOffPtr {
+		off += ptr.AuxInt
+		ptr = ptr.Args[0]
+	}
+
+	ptrSize := ptr.Block.Func.Config.PtrSize
+	if off%ptrSize != 0 || size%ptrSize != 0 {
+		ptr.Fatalf("unaligned pointer write")
+	}
+	if off < 0 || off+size > 64*ptrSize {
+		// memory range goes off end of tracked offsets
+		return true
+	}
+	z := zeroes[mem.ID]
+	if ptr != z.base {
+		// This isn't the object we know about at this memory state.
+		return true
+	}
+	// Mask of bits we're asking about
+	m := (uint64(1)<<(size/ptrSize) - 1) << (off / ptrSize)
+
+	if z.mask&m == m {
+		// All locations are known to be zero, so no heap pointers.
+		return false
+	}
+	return true
+}
+
 // needwb reports whether we need write barrier for store op v.
 // v must be Store/Move/Zero.
 // zeroes provides known zero information (keyed by ID of memory-type values).
-func needwb(v *Value, zeroes map[ID]ZeroRegion, select1 []*Value) bool {
+func needwb(v *Value, zeroes map[ID]ZeroRegion) bool {
 	t, ok := v.Aux.(*types.Type)
 	if !ok {
 		v.Fatalf("store aux is not a type: %s", v.LongString())
@@ -35,43 +86,30 @@ func needwb(v *Value, zeroes map[ID]ZeroRegion, select1 []*Value) bool {
 	if !t.HasPointers() {
 		return false
 	}
-	if IsStackAddr(v.Args[0]) {
-		return false // write on stack doesn't need write barrier
+	dst := v.Args[0]
+	if IsStackAddr(dst) {
+		return false // writes into the stack don't need write barrier
 	}
-	if v.Op == OpMove && IsReadOnlyGlobalAddr(v.Args[1]) {
-		if mem, ok := IsNewObject(v.Args[0], select1); ok && mem == v.MemoryArg() {
-			// Copying data from readonly memory into a fresh object doesn't need a write barrier.
+	// If we're writing to a place that might have heap pointers, we need
+	// the write barrier.
+	if mightContainHeapPointer(dst, t.Size(), v.MemoryArg(), zeroes) {
+		return true
+	}
+	// Lastly, check if the values we're writing might be heap pointers.
+	// If they aren't, we don't need a write barrier.
+	switch v.Op {
+	case OpStore:
+		if !mightBeHeapPointer(v.Args[1]) {
 			return false
 		}
-	}
-	if v.Op == OpStore && IsGlobalAddr(v.Args[1]) {
-		// Storing pointers to non-heap locations into zeroed memory doesn't need a write barrier.
-		ptr := v.Args[0]
-		var off int64
-		size := v.Aux.(*types.Type).Size()
-		for ptr.Op == OpOffPtr {
-			off += ptr.AuxInt
-			ptr = ptr.Args[0]
+	case OpZero:
+		return false // nil is not a heap pointer
+	case OpMove:
+		if !mightContainHeapPointer(v.Args[1], t.Size(), v.Args[2], zeroes) {
+			return false
 		}
-		ptrSize := v.Block.Func.Config.PtrSize
-		if off%ptrSize != 0 || size%ptrSize != 0 {
-			v.Fatalf("unaligned pointer write")
-		}
-		if off < 0 || off+size > 64*ptrSize {
-			// write goes off end of tracked offsets
-			return true
-		}
-		z := zeroes[v.MemoryArg().ID]
-		if ptr != z.base {
-			return true
-		}
-		for i := off; i < off+size; i += ptrSize {
-			if z.mask>>uint(i/ptrSize)&1 == 0 {
-				return true // not known to be zero
-			}
-		}
-		// All written locations are known to be zero - write barrier not needed.
-		return false
+	default:
+		v.Fatalf("store op unknown: %s", v.LongString())
 	}
 	return true
 }
@@ -94,7 +132,7 @@ func writebarrier(f *Func) {
 	}
 
 	var sb, sp, wbaddr, const0 *Value
-	var typedmemmove, typedmemclr, gcWriteBarrier *obj.LSym
+	var typedmemmove, typedmemclr, gcWriteBarrier, cgoCheckPtrWrite, cgoCheckMemmove *obj.LSym
 	var stores, after []*Value
 	var sset *sparseSet
 	var storeNumber []int32
@@ -122,7 +160,7 @@ func writebarrier(f *Func) {
 		for _, v := range b.Values {
 			switch v.Op {
 			case OpStore, OpMove, OpZero:
-				if needwb(v, zeroes, select1) {
+				if needwb(v, zeroes) {
 					switch v.Op {
 					case OpStore:
 						v.Op = OpStoreWB
@@ -149,6 +187,10 @@ func writebarrier(f *Func) {
 			gcWriteBarrier = f.fe.Syslook("gcWriteBarrier")
 			typedmemmove = f.fe.Syslook("typedmemmove")
 			typedmemclr = f.fe.Syslook("typedmemclr")
+			if buildcfg.Experiment.CgoCheck2 {
+				cgoCheckPtrWrite = f.fe.Syslook("cgoCheckPtrWrite")
+				cgoCheckMemmove = f.fe.Syslook("cgoCheckMemmove")
+			}
 			const0 = f.ConstInt32(f.Config.Types.UInt32, 0)
 
 			// allocate auxiliary data structures for computing store order
@@ -160,8 +202,6 @@ func writebarrier(f *Func) {
 
 		// order values in store order
 		b.Values = storeOrder(b.Values, sset, storeNumber)
-
-		firstSplit := true
 	again:
 		// find the start and end of the last contiguous WB store sequence.
 		// a branch will be inserted there. values after it will be moved
@@ -302,6 +342,11 @@ func writebarrier(f *Func) {
 			switch w.Op {
 			case OpStoreWB, OpMoveWB, OpZeroWB:
 				if w.Op == OpStoreWB {
+					if buildcfg.Experiment.CgoCheck2 {
+						// Issue cgo checking code.
+						memThen = wbcall(pos, bThen, cgoCheckPtrWrite, nil, ptr, val, memThen, sp, sb)
+					}
+
 					memThen = bThen.NewValue3A(pos, OpWB, types.TypeMem, gcWriteBarrier, ptr, val, memThen)
 				} else {
 					srcval := val
@@ -324,8 +369,16 @@ func writebarrier(f *Func) {
 			// else block: normal store
 			switch w.Op {
 			case OpStoreWB:
+				if buildcfg.Experiment.CgoCheck2 {
+					// Issue cgo checking code.
+					memElse = wbcall(pos, bElse, cgoCheckPtrWrite, nil, ptr, val, memElse, sp, sb)
+				}
 				memElse = bElse.NewValue3A(pos, OpStore, types.TypeMem, w.Aux, ptr, val, memElse)
 			case OpMoveWB:
+				if buildcfg.Experiment.CgoCheck2 {
+					// Issue cgo checking code.
+					memElse = wbcall(pos, bElse, cgoCheckMemmove, reflectdata.TypeLinksym(w.Aux.(*types.Type)), ptr, val, memElse, sp, sb)
+				}
 				memElse = bElse.NewValue3I(pos, OpMove, types.TypeMem, w.AuxInt, ptr, val, memElse)
 				memElse.Aux = w.Aux
 			case OpZeroWB:
@@ -337,17 +390,19 @@ func writebarrier(f *Func) {
 		}
 
 		// merge memory
-		// Splice memory Phi into the last memory of the original sequence,
-		// which may be used in subsequent blocks. Other memories in the
-		// sequence must be dead after this block since there can be only
-		// one memory live.
+		mem = bEnd.NewValue2(pos, OpPhi, types.TypeMem, memThen, memElse)
+		// The last store becomes the WBend marker. This marker is used by the liveness
+		// pass to determine what parts of the code are preemption-unsafe.
+		// All subsequent memory operations use this memory, so we have to sacrifice the
+		// previous last memory op to become this new value.
 		bEnd.Values = append(bEnd.Values, last)
 		last.Block = bEnd
-		last.reset(OpPhi)
+		last.reset(OpWBend)
 		last.Pos = last.Pos.WithNotStmt()
 		last.Type = types.TypeMem
-		last.AddArg(memThen)
-		last.AddArg(memElse)
+		last.AddArg(mem)
+
+		// Free all the old stores, except last which became the WBend marker.
 		for _, w := range stores {
 			if w != last {
 				w.resetArgs()
@@ -363,23 +418,6 @@ func writebarrier(f *Func) {
 		bEnd.Values = append(bEnd.Values, after...)
 		for _, w := range after {
 			w.Block = bEnd
-		}
-
-		// Preemption is unsafe between loading the write
-		// barrier-enabled flag and performing the write
-		// because that would allow a GC phase transition,
-		// which would invalidate the flag. Remember the
-		// conditional block so liveness analysis can disable
-		// safe-points. This is somewhat subtle because we're
-		// splitting b bottom-up.
-		if firstSplit {
-			// Add b itself.
-			b.Func.WBLoads = append(b.Func.WBLoads, b)
-			firstSplit = false
-		} else {
-			// We've already split b, so we just pushed a
-			// write barrier test into bEnd.
-			b.Func.WBLoads = append(b.Func.WBLoads, bEnd)
 		}
 
 		// if we have more stores in this block, do this block again
@@ -508,7 +546,7 @@ func wbcall(pos src.XPos, b *Block, fn, typ *obj.LSym, ptr, val, mem, sp, sb *Va
 	off := config.ctxt.Arch.FixedFrameSize
 
 	var argTypes []*types.Type
-	if typ != nil { // for typedmemmove
+	if typ != nil { // for typedmemmove/cgoCheckMemmove
 		taddr := b.NewValue1A(pos, OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
 		argTypes = append(argTypes, b.Func.Config.Types.Uintptr)
 		off = round(off, taddr.Type.Alignment())
@@ -592,7 +630,7 @@ func IsReadOnlyGlobalAddr(v *Value) bool {
 		// Nil pointers are read only. See issue 33438.
 		return true
 	}
-	if v.Op == OpAddr && v.Aux.(*obj.LSym).Type == objabi.SRODATA {
+	if v.Op == OpAddr && v.Aux != nil && v.Aux.(*obj.LSym).Type == objabi.SRODATA {
 		return true
 	}
 	return false
