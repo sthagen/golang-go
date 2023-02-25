@@ -175,12 +175,12 @@ func MarshalIndent(v any, prefix, indent string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	var buf bytes.Buffer
-	err = Indent(&buf, b, prefix, indent)
+	b2 := make([]byte, 0, indentGrowthFactor*len(b))
+	b2, err = appendIndent(b2, b, prefix, indent)
 	if err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	return b2, nil
 }
 
 // HTMLEscape appends to dst the JSON-encoded src with <, >, &, U+2028 and U+2029
@@ -284,7 +284,6 @@ var hex = "0123456789abcdef"
 // An encodeState encodes JSON into a bytes.Buffer.
 type encodeState struct {
 	bytes.Buffer // accumulated output
-	scratch      [64]byte
 
 	// Keep track of what pointers we've seen in the current recursive call
 	// path, to avoid cycles that could lead to a stack overflow. Only do
@@ -293,6 +292,10 @@ type encodeState struct {
 	// reasonable amount of nested pointers deep.
 	ptrLevel uint
 	ptrSeen  map[any]struct{}
+}
+
+func (e *encodeState) AvailableBuffer() []byte {
+	return availableBuffer(&e.Buffer)
 }
 
 const startDetectingCyclesAfter = 1000
@@ -341,7 +344,7 @@ func isEmptyValue(v reflect.Value) bool {
 	case reflect.Array, reflect.Map, reflect.Slice, reflect.String:
 		return v.Len() == 0
 	case reflect.Bool:
-		return !v.Bool()
+		return v.Bool() == false
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return v.Int() == 0
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
@@ -476,8 +479,10 @@ func marshalerEncoder(e *encodeState, v reflect.Value, opts encOpts) {
 	}
 	b, err := m.MarshalJSON()
 	if err == nil {
-		// copy JSON into buffer, checking validity.
-		err = compact(&e.Buffer, b, opts.escapeHTML)
+		e.Grow(len(b))
+		out := availableBuffer(&e.Buffer)
+		out, err = appendCompact(out, b, opts.escapeHTML)
+		e.Buffer.Write(out)
 	}
 	if err != nil {
 		e.error(&MarshalerError{v.Type(), err, "MarshalJSON"})
@@ -493,8 +498,10 @@ func addrMarshalerEncoder(e *encodeState, v reflect.Value, opts encOpts) {
 	m := va.Interface().(Marshaler)
 	b, err := m.MarshalJSON()
 	if err == nil {
-		// copy JSON into buffer, checking validity.
-		err = compact(&e.Buffer, b, opts.escapeHTML)
+		e.Grow(len(b))
+		out := availableBuffer(&e.Buffer)
+		out, err = appendCompact(out, b, opts.escapeHTML)
+		e.Buffer.Write(out)
 	}
 	if err != nil {
 		e.error(&MarshalerError{v.Type(), err, "MarshalJSON"})
@@ -515,7 +522,7 @@ func textMarshalerEncoder(e *encodeState, v reflect.Value, opts encOpts) {
 	if err != nil {
 		e.error(&MarshalerError{v.Type(), err, "MarshalText"})
 	}
-	e.stringBytes(b, opts.escapeHTML)
+	e.Write(appendString(e.AvailableBuffer(), b, opts.escapeHTML))
 }
 
 func addrTextMarshalerEncoder(e *encodeState, v reflect.Value, opts encOpts) {
@@ -529,43 +536,31 @@ func addrTextMarshalerEncoder(e *encodeState, v reflect.Value, opts encOpts) {
 	if err != nil {
 		e.error(&MarshalerError{v.Type(), err, "MarshalText"})
 	}
-	e.stringBytes(b, opts.escapeHTML)
+	e.Write(appendString(e.AvailableBuffer(), b, opts.escapeHTML))
 }
 
 func boolEncoder(e *encodeState, v reflect.Value, opts encOpts) {
-	if opts.quoted {
-		e.WriteByte('"')
-	}
-	if v.Bool() {
-		e.WriteString("true")
-	} else {
-		e.WriteString("false")
-	}
-	if opts.quoted {
-		e.WriteByte('"')
-	}
+	b := e.AvailableBuffer()
+	b = mayAppendQuote(b, opts.quoted)
+	b = strconv.AppendBool(b, v.Bool())
+	b = mayAppendQuote(b, opts.quoted)
+	e.Write(b)
 }
 
 func intEncoder(e *encodeState, v reflect.Value, opts encOpts) {
-	b := strconv.AppendInt(e.scratch[:0], v.Int(), 10)
-	if opts.quoted {
-		e.WriteByte('"')
-	}
+	b := e.AvailableBuffer()
+	b = mayAppendQuote(b, opts.quoted)
+	b = strconv.AppendInt(b, v.Int(), 10)
+	b = mayAppendQuote(b, opts.quoted)
 	e.Write(b)
-	if opts.quoted {
-		e.WriteByte('"')
-	}
 }
 
 func uintEncoder(e *encodeState, v reflect.Value, opts encOpts) {
-	b := strconv.AppendUint(e.scratch[:0], v.Uint(), 10)
-	if opts.quoted {
-		e.WriteByte('"')
-	}
+	b := e.AvailableBuffer()
+	b = mayAppendQuote(b, opts.quoted)
+	b = strconv.AppendUint(b, v.Uint(), 10)
+	b = mayAppendQuote(b, opts.quoted)
 	e.Write(b)
-	if opts.quoted {
-		e.WriteByte('"')
-	}
 }
 
 type floatEncoder int // number of bits
@@ -581,7 +576,8 @@ func (bits floatEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 	// See golang.org/issue/6384 and golang.org/issue/14135.
 	// Like fmt %g, but the exponent cutoffs are different
 	// and exponents themselves are not padded to two digits.
-	b := e.scratch[:0]
+	b := e.AvailableBuffer()
+	b = mayAppendQuote(b, opts.quoted)
 	abs := math.Abs(f)
 	fmt := byte('f')
 	// Note: Must use float32 comparisons for underlying float32 value to get precise cutoffs right.
@@ -599,14 +595,8 @@ func (bits floatEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 			b = b[:n-1]
 		}
 	}
-
-	if opts.quoted {
-		e.WriteByte('"')
-	}
+	b = mayAppendQuote(b, opts.quoted)
 	e.Write(b)
-	if opts.quoted {
-		e.WriteByte('"')
-	}
 }
 
 var (
@@ -625,24 +615,18 @@ func stringEncoder(e *encodeState, v reflect.Value, opts encOpts) {
 		if !isValidNumber(numStr) {
 			e.error(fmt.Errorf("json: invalid number literal %q", numStr))
 		}
-		if opts.quoted {
-			e.WriteByte('"')
-		}
-		e.WriteString(numStr)
-		if opts.quoted {
-			e.WriteByte('"')
-		}
+		b := e.AvailableBuffer()
+		b = mayAppendQuote(b, opts.quoted)
+		b = append(b, numStr...)
+		b = mayAppendQuote(b, opts.quoted)
+		e.Write(b)
 		return
 	}
 	if opts.quoted {
-		e2 := newEncodeState()
-		// Since we encode the string twice, we only need to escape HTML
-		// the first time.
-		e2.string(v.String(), opts.escapeHTML)
-		e.stringBytes(e2.Bytes(), false)
-		encodeStatePool.Put(e2)
+		b := appendString(nil, v.String(), opts.escapeHTML)
+		e.Write(appendString(e.AvailableBuffer(), b, false)) // no need to escape again since it is already escaped
 	} else {
-		e.string(v.String(), opts.escapeHTML)
+		e.Write(appendString(e.AvailableBuffer(), v.String(), opts.escapeHTML))
 	}
 }
 
@@ -807,7 +791,7 @@ func (me mapEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
 		if i > 0 {
 			e.WriteByte(',')
 		}
-		e.string(kv.ks, opts.escapeHTML)
+		e.Write(appendString(e.AvailableBuffer(), kv.ks, opts.escapeHTML))
 		e.WriteByte(':')
 		me.elemEnc(e, kv.v, opts)
 	}
@@ -835,28 +819,16 @@ func encodeByteSlice(e *encodeState, v reflect.Value, _ encOpts) {
 		return
 	}
 	s := v.Bytes()
-	e.WriteByte('"')
 	encodedLen := base64.StdEncoding.EncodedLen(len(s))
-	if encodedLen <= len(e.scratch) {
-		// If the encoded bytes fit in e.scratch, avoid an extra
-		// allocation and use the cheaper Encoding.Encode.
-		dst := e.scratch[:encodedLen]
-		base64.StdEncoding.Encode(dst, s)
-		e.Write(dst)
-	} else if encodedLen <= 1024 {
-		// The encoded bytes are short enough to allocate for, and
-		// Encoding.Encode is still cheaper.
-		dst := make([]byte, encodedLen)
-		base64.StdEncoding.Encode(dst, s)
-		e.Write(dst)
-	} else {
-		// The encoded bytes are too long to cheaply allocate, and
-		// Encoding.Encode is no longer noticeably cheaper.
-		enc := base64.NewEncoder(base64.StdEncoding, e)
-		enc.Write(s)
-		enc.Close()
-	}
-	e.WriteByte('"')
+	e.Grow(len(`"`) + encodedLen + len(`"`))
+
+	// TODO(https://go.dev/issue/53693): Use base64.Encoding.AppendEncode.
+	b := e.AvailableBuffer()
+	b = append(b, '"')
+	base64.StdEncoding.Encode(b[len(b):][:encodedLen], s)
+	b = b[:len(b)+encodedLen]
+	b = append(b, '"')
+	e.Write(b)
 }
 
 // sliceEncoder just wraps an arrayEncoder, checking to make sure the value isn't nil.
@@ -1025,49 +997,49 @@ func (w *reflectWithString) resolve() error {
 	panic("unexpected map key type")
 }
 
-// NOTE: keep in sync with stringBytes below.
-func (e *encodeState) string(s string, escapeHTML bool) {
-	e.WriteByte('"')
+func appendString[Bytes []byte | string](dst []byte, src Bytes, escapeHTML bool) []byte {
+	dst = append(dst, '"')
 	start := 0
-	for i := 0; i < len(s); {
-		if b := s[i]; b < utf8.RuneSelf {
+	for i := 0; i < len(src); {
+		if b := src[i]; b < utf8.RuneSelf {
 			if htmlSafeSet[b] || (!escapeHTML && safeSet[b]) {
 				i++
 				continue
 			}
-			if start < i {
-				e.WriteString(s[start:i])
-			}
-			e.WriteByte('\\')
+			dst = append(dst, src[start:i]...)
 			switch b {
 			case '\\', '"':
-				e.WriteByte(b)
+				dst = append(dst, '\\', b)
 			case '\n':
-				e.WriteByte('n')
+				dst = append(dst, '\\', 'n')
 			case '\r':
-				e.WriteByte('r')
+				dst = append(dst, '\\', 'r')
 			case '\t':
-				e.WriteByte('t')
+				dst = append(dst, '\\', 't')
 			default:
 				// This encodes bytes < 0x20 except for \t, \n and \r.
 				// If escapeHTML is set, it also escapes <, >, and &
 				// because they can lead to security holes when
 				// user-controlled strings are rendered into JSON
 				// and served to some browsers.
-				e.WriteString(`u00`)
-				e.WriteByte(hex[b>>4])
-				e.WriteByte(hex[b&0xF])
+				dst = append(dst, '\\', 'u', '0', '0', hex[b>>4], hex[b&0xF])
 			}
 			i++
 			start = i
 			continue
 		}
-		c, size := utf8.DecodeRuneInString(s[i:])
+		// TODO(https://go.dev/issue/56948): Use generic utf8 functionality.
+		// For now, cast only a small portion of byte slices to a string
+		// so that it can be stack allocated. This slows down []byte slightly
+		// due to the extra copy, but keeps string performance roughly the same.
+		n := len(src) - i
+		if n > utf8.UTFMax {
+			n = utf8.UTFMax
+		}
+		c, size := utf8.DecodeRuneInString(string(src[i : i+n]))
 		if c == utf8.RuneError && size == 1 {
-			if start < i {
-				e.WriteString(s[start:i])
-			}
-			e.WriteString(`\ufffd`)
+			dst = append(dst, src[start:i]...)
+			dst = append(dst, `\ufffd`...)
 			i += size
 			start = i
 			continue
@@ -1080,93 +1052,17 @@ func (e *encodeState) string(s string, escapeHTML bool) {
 		// escape them, so we do so unconditionally.
 		// See http://timelessrepo.com/json-isnt-a-javascript-subset for discussion.
 		if c == '\u2028' || c == '\u2029' {
-			if start < i {
-				e.WriteString(s[start:i])
-			}
-			e.WriteString(`\u202`)
-			e.WriteByte(hex[c&0xF])
+			dst = append(dst, src[start:i]...)
+			dst = append(dst, '\\', 'u', '2', '0', '2', hex[c&0xF])
 			i += size
 			start = i
 			continue
 		}
 		i += size
 	}
-	if start < len(s) {
-		e.WriteString(s[start:])
-	}
-	e.WriteByte('"')
-}
-
-// NOTE: keep in sync with string above.
-func (e *encodeState) stringBytes(s []byte, escapeHTML bool) {
-	e.WriteByte('"')
-	start := 0
-	for i := 0; i < len(s); {
-		if b := s[i]; b < utf8.RuneSelf {
-			if htmlSafeSet[b] || (!escapeHTML && safeSet[b]) {
-				i++
-				continue
-			}
-			if start < i {
-				e.Write(s[start:i])
-			}
-			e.WriteByte('\\')
-			switch b {
-			case '\\', '"':
-				e.WriteByte(b)
-			case '\n':
-				e.WriteByte('n')
-			case '\r':
-				e.WriteByte('r')
-			case '\t':
-				e.WriteByte('t')
-			default:
-				// This encodes bytes < 0x20 except for \t, \n and \r.
-				// If escapeHTML is set, it also escapes <, >, and &
-				// because they can lead to security holes when
-				// user-controlled strings are rendered into JSON
-				// and served to some browsers.
-				e.WriteString(`u00`)
-				e.WriteByte(hex[b>>4])
-				e.WriteByte(hex[b&0xF])
-			}
-			i++
-			start = i
-			continue
-		}
-		c, size := utf8.DecodeRune(s[i:])
-		if c == utf8.RuneError && size == 1 {
-			if start < i {
-				e.Write(s[start:i])
-			}
-			e.WriteString(`\ufffd`)
-			i += size
-			start = i
-			continue
-		}
-		// U+2028 is LINE SEPARATOR.
-		// U+2029 is PARAGRAPH SEPARATOR.
-		// They are both technically valid characters in JSON strings,
-		// but don't work in JSONP, which has to be evaluated as JavaScript,
-		// and can lead to security holes there. It is valid JSON to
-		// escape them, so we do so unconditionally.
-		// See http://timelessrepo.com/json-isnt-a-javascript-subset for discussion.
-		if c == '\u2028' || c == '\u2029' {
-			if start < i {
-				e.Write(s[start:i])
-			}
-			e.WriteString(`\u202`)
-			e.WriteByte(hex[c&0xF])
-			i += size
-			start = i
-			continue
-		}
-		i += size
-	}
-	if start < len(s) {
-		e.Write(s[start:])
-	}
-	e.WriteByte('"')
+	dst = append(dst, src[start:]...)
+	dst = append(dst, '"')
+	return dst
 }
 
 // A field represents a single field found in a struct.
@@ -1414,4 +1310,11 @@ func cachedTypeFields(t reflect.Type) structFields {
 	}
 	f, _ := fieldCache.LoadOrStore(t, typeFields(t))
 	return f.(structFields)
+}
+
+func mayAppendQuote(b []byte, quoted bool) []byte {
+	if quoted {
+		b = append(b, '"')
+	}
+	return b
 }
