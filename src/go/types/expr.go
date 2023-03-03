@@ -1741,12 +1741,10 @@ func keyVal(x constant.Value) interface{} {
 
 // typeAssertion checks x.(T). The type of x must be an interface.
 func (check *Checker) typeAssertion(e ast.Expr, x *operand, T Type, typeSwitch bool) {
-	method, alt := check.assertableTo(under(x.typ).(*Interface), T)
-	if method == nil {
+	var cause string
+	if check.assertableTo(x.typ, T, &cause) {
 		return // success
 	}
-
-	cause := check.missingMethodCause(T, x.typ, method, alt)
 
 	if typeSwitch {
 		check.errorf(e, ImpossibleAssert, "impossible type switch case: %s\n\t%s cannot have dynamic type %s %s", e, x, T, cause)

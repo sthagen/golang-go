@@ -694,7 +694,7 @@ func TestExtraFiles(t *testing.T) {
 
 	// This test runs with cgo disabled. External linking needs cgo, so
 	// it doesn't work if external linking is required.
-	testenv.MustInternalLink(t)
+	testenv.MustInternalLink(t, false)
 
 	if runtime.GOOS == "windows" {
 		t.Skipf("skipping test on %q", runtime.GOOS)
@@ -1039,7 +1039,7 @@ func TestDedupEnvEcho(t *testing.T) {
 
 func TestEnvNULCharacter(t *testing.T) {
 	if runtime.GOOS == "plan9" {
-		t.Skip("plan9 explicitly allows NUL in the enviroment")
+		t.Skip("plan9 explicitly allows NUL in the environment")
 	}
 	cmd := helperCommand(t, "echoenv", "FOO", "BAR")
 	cmd.Env = append(cmd.Environ(), "FOO=foo\x00BAR=bar")

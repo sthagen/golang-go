@@ -7171,7 +7171,7 @@ func genssa(f *ssa.Func, pp *objw.Progs) {
 			// This ensures that runtime.FuncForPC(uintptr(reflect.ValueOf(fn).Pointer())).Name()
 			// returns the right answer. See issue 58300.
 			for p := pp.Text; p != nil; p = p.Link {
-				if p.As == obj.AFUNCDATA || p.As == obj.APCDATA || p.As == obj.ATEXT {
+				if p.As == obj.AFUNCDATA || p.As == obj.APCDATA || p.As == obj.ATEXT || p.As == obj.ANOP {
 					continue
 				}
 				if base.Ctxt.PosTable.Pos(p.Pos).Base().InliningIndex() >= 0 {
@@ -7950,10 +7950,9 @@ func clobberBase(n ir.Node) ir.Node {
 // callTargetLSym returns the correct LSym to call 'callee' using its ABI.
 func callTargetLSym(callee *ir.Name) *obj.LSym {
 	if callee.Func == nil {
-		// TODO(austin): This happens in a few cases of
-		// compiler-generated functions. These are all
-		// ABIInternal. It would be better if callee.Func was
-		// never nil and we didn't need this case.
+		// TODO(austin): This happens in case of interface method I.M from imported package.
+		// It's ABIInternal, and would be better if callee.Func was never nil and we didn't
+		// need this case.
 		return callee.Linksym()
 	}
 

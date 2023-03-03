@@ -98,7 +98,7 @@ var (
 	flagDebugNosplit  = flag.Bool("debugnosplit", false, "dump nosplit call graph")
 	FlagStrictDups    = flag.Int("strictdups", 0, "sanity check duplicate symbol contents during object file reading (1=warn 2=err).")
 	FlagRound         = flag.Int("R", -1, "set address rounding `quantum`")
-	FlagTextAddr      = flag.Int64("T", -1, "set text segment `address`")
+	FlagTextAddr      = flag.Int64("T", -1, "set the start address of text symbols")
 	flagEntrySymbol   = flag.String("E", "", "set `entry` symbol name")
 	flagPruneWeakMap  = flag.Bool("pruneweakmap", true, "prune weak mapinit refs")
 	cpuprofile        = flag.String("cpuprofile", "", "write cpu profile to `file`")
@@ -267,6 +267,9 @@ func Main(arch *sys.Arch, theArch Arch) {
 	}
 	bench.Start("loadlib")
 	ctxt.loadlib()
+
+	bench.Start("inittasks")
+	ctxt.inittasks()
 
 	bench.Start("deadcode")
 	deadcode(ctxt)

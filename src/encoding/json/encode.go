@@ -183,41 +183,6 @@ func MarshalIndent(v any, prefix, indent string) ([]byte, error) {
 	return b2, nil
 }
 
-// HTMLEscape appends to dst the JSON-encoded src with <, >, &, U+2028 and U+2029
-// characters inside string literals changed to \u003c, \u003e, \u0026, \u2028, \u2029
-// so that the JSON will be safe to embed inside HTML <script> tags.
-// For historical reasons, web browsers don't honor standard HTML
-// escaping within <script> tags, so an alternative JSON encoding must
-// be used.
-func HTMLEscape(dst *bytes.Buffer, src []byte) {
-	// The characters can only appear in string literals,
-	// so just scan the string one byte at a time.
-	start := 0
-	for i, c := range src {
-		if c == '<' || c == '>' || c == '&' {
-			if start < i {
-				dst.Write(src[start:i])
-			}
-			dst.WriteString(`\u00`)
-			dst.WriteByte(hex[c>>4])
-			dst.WriteByte(hex[c&0xF])
-			start = i + 1
-		}
-		// Convert U+2028 and U+2029 (E2 80 A8 and E2 80 A9).
-		if c == 0xE2 && i+2 < len(src) && src[i+1] == 0x80 && src[i+2]&^1 == 0xA8 {
-			if start < i {
-				dst.Write(src[start:i])
-			}
-			dst.WriteString(`\u202`)
-			dst.WriteByte(hex[src[i+2]&0xF])
-			start = i + 3
-		}
-	}
-	if start < len(src) {
-		dst.Write(src[start:])
-	}
-}
-
 // Marshaler is the interface implemented by types that
 // can marshal themselves into valid JSON.
 type Marshaler interface {
@@ -707,8 +672,9 @@ type structEncoder struct {
 }
 
 type structFields struct {
-	list      []field
-	nameIndex map[string]int
+	list         []field
+	byExactName  map[string]*field
+	byFoldedName map[string]*field
 }
 
 func (se structEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
@@ -1068,8 +1034,7 @@ func appendString[Bytes []byte | string](dst []byte, src Bytes, escapeHTML bool)
 // A field represents a single field found in a struct.
 type field struct {
 	name      string
-	nameBytes []byte                 // []byte(name)
-	equalFold func(s, t []byte) bool // bytes.EqualFold or equivalent
+	nameBytes []byte // []byte(name)
 
 	nameNonEsc  string // `"` + name + `":`
 	nameEscHTML string // `"` + HTMLEscape(name) + `":`
@@ -1119,8 +1084,8 @@ func typeFields(t reflect.Type) structFields {
 	// Fields found.
 	var fields []field
 
-	// Buffer to run HTMLEscape on field names.
-	var nameEscBuf bytes.Buffer
+	// Buffer to run appendHTMLEscape on field names.
+	var nameEscBuf []byte
 
 	for len(next) > 0 {
 		current, next = next, current[:0]
@@ -1196,14 +1161,10 @@ func typeFields(t reflect.Type) structFields {
 						quoted:    quoted,
 					}
 					field.nameBytes = []byte(field.name)
-					field.equalFold = foldFunc(field.nameBytes)
 
 					// Build nameEscHTML and nameNonEsc ahead of time.
-					nameEscBuf.Reset()
-					nameEscBuf.WriteString(`"`)
-					HTMLEscape(&nameEscBuf, field.nameBytes)
-					nameEscBuf.WriteString(`":`)
-					field.nameEscHTML = nameEscBuf.String()
+					nameEscBuf = appendHTMLEscape(nameEscBuf[:0], field.nameBytes)
+					field.nameEscHTML = `"` + string(nameEscBuf) + `":`
 					field.nameNonEsc = `"` + field.name + `":`
 
 					fields = append(fields, field)
@@ -1278,11 +1239,16 @@ func typeFields(t reflect.Type) structFields {
 		f := &fields[i]
 		f.encoder = typeEncoder(typeByIndex(t, f.index))
 	}
-	nameIndex := make(map[string]int, len(fields))
+	exactNameIndex := make(map[string]*field, len(fields))
+	foldedNameIndex := make(map[string]*field, len(fields))
 	for i, field := range fields {
-		nameIndex[field.name] = i
+		exactNameIndex[field.name] = &fields[i]
+		// For historical reasons, first folded match takes precedence.
+		if _, ok := foldedNameIndex[string(foldName(field.nameBytes))]; !ok {
+			foldedNameIndex[string(foldName(field.nameBytes))] = &fields[i]
+		}
 	}
-	return structFields{fields, nameIndex}
+	return structFields{fields, exactNameIndex, foldedNameIndex}
 }
 
 // dominantField looks through the fields, all of which are known to

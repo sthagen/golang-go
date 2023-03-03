@@ -133,6 +133,16 @@ type Func struct {
 	// For wrapper functions, WrappedFunc point to the original Func.
 	// Currently only used for go/defer wrappers.
 	WrappedFunc *Func
+
+	// WasmImport is used by the //go:wasmimport directive to store info about
+	// a WebAssembly function import.
+	WasmImport *WasmImport
+}
+
+// WasmImport stores metadata associated with the //go:wasmimport pragma.
+type WasmImport struct {
+	Module string
+	Name   string
 }
 
 func NewFunc(pos src.XPos) *Func {
@@ -273,6 +283,14 @@ func PkgFuncName(f *Func) string {
 	pkg := s.Pkg
 
 	return pkg.Path + "." + s.Name
+}
+
+// IsEqOrHashFunc reports whether f is type eq/hash function.
+func IsEqOrHashFunc(f *Func) bool {
+	if f == nil || f.Nname == nil {
+		return false
+	}
+	return types.IsTypePkg(f.Sym().Pkg)
 }
 
 var CurFunc *Func
