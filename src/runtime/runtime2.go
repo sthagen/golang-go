@@ -7,6 +7,7 @@ package runtime
 import (
 	"internal/goarch"
 	"runtime/internal/atomic"
+	"runtime/internal/sys"
 	"unsafe"
 )
 
@@ -268,6 +269,11 @@ func (gp *guintptr) set(g *g) { *gp = guintptr(unsafe.Pointer(g)) }
 //go:nosplit
 func (gp *guintptr) cas(old, new guintptr) bool {
 	return atomic.Casuintptr((*uintptr)(unsafe.Pointer(gp)), uintptr(old), uintptr(new))
+}
+
+//go:nosplit
+func (gp *g) guintptr() guintptr {
+	return guintptr(unsafe.Pointer(gp))
 }
 
 // setGNoWB performs *gp = new without a write barrier.
@@ -881,6 +887,8 @@ const (
 // Keep in sync with linker (../cmd/link/internal/ld/pcln.go:/pclntab)
 // and with package debug/gosym and with symtab.go in package runtime.
 type _func struct {
+	sys.NotInHeap // Only in static data
+
 	entryOff uint32 // start pc, as offset from moduledata.text/pcHeader.textStart
 	nameOff  int32  // function name, as index into moduledata.funcnametab.
 
@@ -924,6 +932,8 @@ type _func struct {
 // Pseudo-Func that is returned for PCs that occur in inlined code.
 // A *Func can be either a *_func or a *funcinl, and they are distinguished
 // by the first uintptr.
+//
+// TODO(austin): Can we merge this with inlinedCall?
 type funcinl struct {
 	ones      uint32  // set to ^0 to distinguish from _func
 	entry     uintptr // entry of the real (the "outermost") frame
@@ -1038,12 +1048,6 @@ type ancestorInfo struct {
 	goid uint64    // goroutine id of this goroutine; original goroutine possibly dead
 	gopc uintptr   // pc of go statement that created this goroutine
 }
-
-const (
-	_TraceRuntimeFrames = 1 << iota // include frames for internal runtime functions.
-	_TraceTrap                      // the initial PC, SP are from a trap, not a return PC from a call
-	_TraceJumpStack                 // if traceback is on a systemstack, resume trace at g that called into it
-)
 
 // The maximum number of frames we print for a traceback
 const _TracebackMaxFrames = 100
