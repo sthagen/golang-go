@@ -158,11 +158,19 @@ func (f *File) ReadFrom(r io.Reader) (n int64, err error) {
 }
 
 func genericReadFrom(f *File, r io.Reader) (int64, error) {
-	return io.Copy(onlyWriter{f}, r)
+	return io.Copy(fileWithoutReadFrom{f}, r)
 }
 
-type onlyWriter struct {
-	io.Writer
+// fileWithoutReadFrom implements all the methods of *File other
+// than ReadFrom. This is used to permit ReadFrom to call io.Copy
+// without leading to a recursive call to ReadFrom.
+type fileWithoutReadFrom struct {
+	*File
+}
+
+// This ReadFrom method hides the *File ReadFrom method.
+func (fileWithoutReadFrom) ReadFrom(fileWithoutReadFrom) {
+	panic("unreachable")
 }
 
 // Write writes len(b) bytes from b to the File.
@@ -724,7 +732,7 @@ func ReadFile(name string) ([]byte, error) {
 // WriteFile writes data to the named file, creating it if necessary.
 // If the file does not exist, WriteFile creates it with permissions perm (before umask);
 // otherwise WriteFile truncates it before writing, without changing permissions.
-// Since Writefile requires multiple system calls to complete, a failure mid-operation
+// Since WriteFile requires multiple system calls to complete, a failure mid-operation
 // can leave the file in a partially written state.
 func WriteFile(name string, data []byte, perm FileMode) error {
 	f, err := OpenFile(name, O_WRONLY|O_CREATE|O_TRUNC, perm)

@@ -2239,12 +2239,38 @@ func (e *prefixSuffixError) ImportPath() string {
 func formatOutput(workDir, dir, importPath, desc, out string) *prefixSuffixError {
 	prefix := "# " + desc
 	suffix := "\n" + out
-	if reldir := base.ShortPath(dir); reldir != dir {
-		suffix = strings.ReplaceAll(suffix, " "+dir, " "+reldir)
-		suffix = strings.ReplaceAll(suffix, "\n"+dir, "\n"+reldir)
-		suffix = strings.ReplaceAll(suffix, "\n\t"+dir, "\n\t"+reldir)
-	}
+
 	suffix = strings.ReplaceAll(suffix, " "+workDir, " $WORK")
+
+	for {
+		// Note that dir starts out long, something like
+		// /foo/bar/baz/root/a
+		// The target string to be reduced is something like
+		// (blah-blah-blah) /foo/bar/baz/root/sibling/whatever.go:blah:blah
+		// /foo/bar/baz/root/a doesn't match /foo/bar/baz/root/sibling, but the prefix
+		// /foo/bar/baz/root does.  And there may be other niblings sharing shorter
+		// prefixes, the only way to find them is to look.
+		// This doesn't always produce a relative path --
+		// /foo is shorter than ../../.., for example.
+		//
+		if reldir := base.ShortPath(dir); reldir != dir {
+			suffix = strings.ReplaceAll(suffix, " "+dir, " "+reldir)
+			suffix = strings.ReplaceAll(suffix, "\n"+dir, "\n"+reldir)
+			suffix = strings.ReplaceAll(suffix, "\n\t"+dir, "\n\t"+reldir)
+			if filepath.Separator == '\\' {
+				// Don't know why, sometimes this comes out with slashes, not backslashes.
+				wdir := strings.ReplaceAll(dir, "\\", "/")
+				suffix = strings.ReplaceAll(suffix, " "+wdir, " "+reldir)
+				suffix = strings.ReplaceAll(suffix, "\n"+wdir, "\n"+reldir)
+				suffix = strings.ReplaceAll(suffix, "\n\t"+wdir, "\n\t"+reldir)
+			}
+		}
+		dirP := filepath.Dir(dir)
+		if dir == dirP {
+			break
+		}
+		dir = dirP
+	}
 
 	return &prefixSuffixError{importPath: importPath, prefix: prefix, suffix: suffix}
 }
@@ -3120,6 +3146,36 @@ func (b *Builder) cgo(a *Action, cgoExe, objdir string, pcCFLAGS, pcLDFLAGS, cgo
 		}
 	}
 
+	// Scrutinize CFLAGS and related for flags that might cause
+	// problems if we are using internal linking (for example, use of
+	// plugins, LTO, etc) by calling a helper routine that builds on
+	// the existing CGO flags allow-lists. If we see anything
+	// suspicious, emit a special token file "preferlinkext" (known to
+	// the linker) in the object file to signal the that it should not
+	// try to link internally and should revert to external linking.
+	// The token we pass is a suggestion, not a mandate; if a user is
+	// explicitly asking for a specific linkmode via the "-linkmode"
+	// flag, the token will be ignored. NB: in theory we could ditch
+	// the token approach and just pass a flag to the linker when we
+	// eventually invoke it, and the linker flag could then be
+	// documented (although coming up with a simple explanation of the
+	// flag might be challenging). For more context see issues #58619,
+	// #58620, and #58848.
+	flagSources := []string{"CGO_CFLAGS", "CGO_CXXFLAGS", "CGO_FFLAGS"}
+	flagLists := [][]string{cgoCFLAGS, cgoCXXFLAGS, cgoFFLAGS}
+	if flagsNotCompatibleWithInternalLinking(flagSources, flagLists) {
+		tokenFile := objdir + "preferlinkext"
+		if cfg.BuildN || cfg.BuildX {
+			b.Showcmd("", "echo > %s", tokenFile)
+		}
+		if !cfg.BuildN {
+			if err := os.WriteFile(tokenFile, nil, 0666); err != nil {
+				return nil, nil, err
+			}
+		}
+		outObj = append(outObj, tokenFile)
+	}
+
 	if cfg.BuildMSan {
 		cgoCFLAGS = append([]string{"-fsanitize=memory"}, cgoCFLAGS...)
 		cgoLDFLAGS = append([]string{"-fsanitize=memory"}, cgoLDFLAGS...)
@@ -3367,6 +3423,24 @@ func (b *Builder) cgo(a *Action, cgoExe, objdir string, pcCFLAGS, pcLDFLAGS, cgo
 	}
 
 	return outGo, outObj, nil
+}
+
+// flagsNotCompatibleWithInternalLinking scans the list of cgo
+// compiler flags (C/C++/Fortran) looking for flags that might cause
+// problems if the build in question uses internal linking. The
+// primary culprits are use of plugins or use of LTO, but we err on
+// the side of caution, supporting only those flags that are on the
+// allow-list for safe flags from security perspective. Return is TRUE
+// if a sensitive flag is found, FALSE otherwise.
+func flagsNotCompatibleWithInternalLinking(sourceList []string, flagListList [][]string) bool {
+	for i := range sourceList {
+		sn := sourceList[i]
+		fll := flagListList[i]
+		if err := checkCompilerFlagsForInternalLink(sn, sn, fll); err != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // dynimport creates a Go source file named importGo containing

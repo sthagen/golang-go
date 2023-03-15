@@ -313,6 +313,9 @@ var clangos = []string{
 // compilerEnvLookup returns the compiler settings for goos/goarch in map m.
 // kind is "CC" or "CXX".
 func compilerEnvLookup(kind string, m map[string]string, goos, goarch string) string {
+	if !needCC() {
+		return ""
+	}
 	if cc := m[goos+"/"+goarch]; cc != "" {
 		return cc
 	}
@@ -1325,7 +1328,7 @@ func toolenv() []string {
 		// Do not include local development, so that people working in the
 		// main branch for day-to-day work on the Go toolchain itself can
 		// still have full paths for stack traces for compiler crashes and the like.
-		env = append(env, "GOFLAGS=-trimpath")
+		env = append(env, "GOFLAGS=-trimpath -ldflags=-w -gcflags=cmd/...=-dwarf=false")
 	}
 	return env
 }
@@ -1568,7 +1571,7 @@ func cmdbootstrap() {
 	}
 
 	// Remove go_bootstrap now that we're done.
-	xremove(pathf("%s/go_bootstrap", tooldir))
+	xremove(pathf("%s/go_bootstrap"+exe, tooldir))
 
 	if goos == "android" {
 		// Make sure the exec wrapper will sync a fresh $GOROOT to the device.
@@ -1739,14 +1742,10 @@ var firstClass = map[string]bool{
 	"windows/amd64": true,
 }
 
+// We only need CC if cgo is forced on, or if the platform requires external linking.
+// Otherwise the go command will automatically disable it.
 func needCC() bool {
-	switch os.Getenv("CGO_ENABLED") {
-	case "1":
-		return true
-	case "0":
-		return false
-	}
-	return cgoEnabled[gohostos+"/"+gohostarch]
+	return os.Getenv("CGO_ENABLED") == "1" || mustLinkExternal(gohostos, gohostarch, false)
 }
 
 func checkCC() {
