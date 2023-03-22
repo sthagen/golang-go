@@ -267,32 +267,8 @@ func (check *Checker) exprList(elist []ast.Expr, allowCommaOk bool) (xlist []*op
 	switch len(elist) {
 	case 0:
 		// nothing to do
-
 	case 1:
-		// single (possibly comma-ok) value, or function returning multiple values
-		e := elist[0]
-		var x operand
-		check.multiExpr(&x, e)
-		if t, ok := x.typ.(*Tuple); ok && x.mode != invalid {
-			// multiple values
-			xlist = make([]*operand, t.Len())
-			for i, v := range t.vars {
-				xlist[i] = &operand{mode: value, expr: e, typ: v.typ}
-			}
-			break
-		}
-
-		// exactly one (possibly invalid or comma-ok) value
-		xlist = []*operand{&x}
-		if allowCommaOk && (x.mode == mapindex || x.mode == commaok || x.mode == commaerr) {
-			x2 := &operand{mode: value, expr: e, typ: Typ[UntypedBool]}
-			if x.mode == commaerr {
-				x2.typ = universeError
-			}
-			xlist = append(xlist, x2)
-			commaOk = true
-		}
-
+		return check.multiExpr(elist[0], allowCommaOk)
 	default:
 		// multiple (possibly invalid) values
 		xlist = make([]*operand, len(elist))
@@ -302,7 +278,6 @@ func (check *Checker) exprList(elist []ast.Expr, allowCommaOk bool) (xlist []*op
 			xlist[i] = &x
 		}
 	}
-
 	return
 }
 
@@ -774,44 +749,17 @@ Error:
 func (check *Checker) use(arg ...ast.Expr) {
 	var x operand
 	for _, e := range arg {
-		// The nil check below is necessary since certain AST fields
-		// may legally be nil (e.g., the ast.SliceExpr.High field).
-		if e != nil {
-			check.rawExpr(&x, e, nil, false)
-		}
-	}
-}
-
-// useLHS is like use, but doesn't "use" top-level identifiers.
-// It should be called instead of use if the arguments are
-// expressions on the lhs of an assignment.
-// The arguments must not be nil.
-func (check *Checker) useLHS(arg ...ast.Expr) {
-	var x operand
-	for _, e := range arg {
-		// If the lhs is an identifier denoting a variable v, this assignment
-		// is not a 'use' of v. Remember current value of v.used and restore
-		// after evaluating the lhs via check.rawExpr.
-		var v *Var
-		var v_used bool
-		if ident, _ := unparen(e).(*ast.Ident); ident != nil {
-			// never type-check the blank name on the lhs
-			if ident.Name == "_" {
+		switch n := e.(type) {
+		case nil:
+			// some AST fields may be nil (e.g., the ast.SliceExpr.High field)
+			// TODO(gri) can those fields really make it here?
+			continue
+		case *ast.Ident:
+			// don't report an error evaluating blank
+			if n.Name == "_" {
 				continue
-			}
-			if _, obj := check.scope.LookupParent(ident.Name, nopos); obj != nil {
-				// It's ok to mark non-local variables, but ignore variables
-				// from other packages to avoid potential race conditions with
-				// dot-imported variables.
-				if w, _ := obj.(*Var); w != nil && w.pkg == check.pkg {
-					v = w
-					v_used = v.used
-				}
 			}
 		}
 		check.rawExpr(&x, e, nil, false)
-		if v != nil {
-			v.used = v_used // restore v.used
-		}
 	}
 }
