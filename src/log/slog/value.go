@@ -17,6 +17,7 @@ import (
 // it can represent most small values without an allocation.
 // The zero Value corresponds to nil.
 type Value struct {
+	_ [0]func() // disallow ==
 	// num holds the value for Kinds Int64, Uint64, Float64, Bool and Duration,
 	// the string length for KindString, and nanoseconds since the epoch for KindTime.
 	num uint64
@@ -371,7 +372,7 @@ func (v Value) group() []Attr {
 
 //////////////// Other
 
-// Equal reports whether v and w have equal keys and values.
+// Equal reports whether v and w represent the same Go value.
 func (v Value) Equal(w Value) bool {
 	k1 := v.Kind()
 	k2 := w.Kind()
@@ -414,8 +415,10 @@ func (v Value) append(dst []byte) []byte {
 		return append(dst, v.duration().String()...)
 	case KindTime:
 		return append(dst, v.time().String()...)
-	case KindAny, KindGroup, KindLogValuer:
-		return append(dst, fmt.Sprint(v.any)...)
+	case KindGroup:
+		return fmt.Append(dst, v.group())
+	case KindAny, KindLogValuer:
+		return fmt.Append(dst, v.any)
 	default:
 		panic(fmt.Sprintf("bad kind: %s", v.Kind()))
 	}

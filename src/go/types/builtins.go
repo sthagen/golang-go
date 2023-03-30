@@ -46,7 +46,7 @@ func (check *Checker) builtin(x *operand, call *ast.CallExpr, id builtinId) (_ b
 	switch id {
 	default:
 		// make argument getter
-		xlist, _ := check.exprList(call.Args, false)
+		xlist := check.exprList(call.Args)
 		arg = func(x *operand, i int) { *x = *xlist[i] }
 		nargs = len(xlist)
 		// evaluate first argument, if present
@@ -679,7 +679,7 @@ func (check *Checker) builtin(x *operand, call *ast.CallExpr, id builtinId) (_ b
 			return
 		}
 
-		check.expr(x, selx.X)
+		check.expr(nil, x, selx.X)
 		if x.mode == invalid {
 			return
 		}
@@ -726,8 +726,13 @@ func (check *Checker) builtin(x *operand, call *ast.CallExpr, id builtinId) (_ b
 				check.recordBuiltinType(call.Fun, makeSig(Typ[Uintptr], obj.Type()))
 			}
 		} else {
+			offs := check.conf.offsetof(base, index)
+			if offs < 0 {
+				check.errorf(x, TypeTooLarge, "%s is too large", x)
+				return
+			}
 			x.mode = constant_
-			x.val = constant.MakeInt64(check.conf.offsetof(base, index))
+			x.val = constant.MakeInt64(offs)
 			// result is constant - no need to record signature
 		}
 		x.typ = Typ[Uintptr]
@@ -745,8 +750,13 @@ func (check *Checker) builtin(x *operand, call *ast.CallExpr, id builtinId) (_ b
 				check.recordBuiltinType(call.Fun, makeSig(Typ[Uintptr], x.typ))
 			}
 		} else {
+			size := check.conf.sizeof(x.typ)
+			if size < 0 {
+				check.errorf(x, TypeTooLarge, "%s is too large", x)
+				return
+			}
 			x.mode = constant_
-			x.val = constant.MakeInt64(check.conf.sizeof(x.typ))
+			x.val = constant.MakeInt64(size)
 			// result is constant - no need to record signature
 		}
 		x.typ = Typ[Uintptr]
@@ -869,7 +879,7 @@ func (check *Checker) builtin(x *operand, call *ast.CallExpr, id builtinId) (_ b
 		var t operand
 		x1 := x
 		for _, arg := range call.Args {
-			check.rawExpr(x1, arg, nil, false) // permit trace for types, e.g.: new(trace(T))
+			check.rawExpr(nil, x1, arg, nil, false) // permit trace for types, e.g.: new(trace(T))
 			check.dump("%v: %s", x1.Pos(), x1)
 			x1 = &t // use incoming x only for first argument
 		}
