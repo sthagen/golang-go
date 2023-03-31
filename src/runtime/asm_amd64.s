@@ -428,15 +428,18 @@ TEXT gogo<>(SB), NOSPLIT, $0
 TEXT runtime·mcall<ABIInternal>(SB), NOSPLIT, $0-8
 	MOVQ	AX, DX	// DX = fn
 
-	// Save state in g->sched.
-	// The original frame pointer is stored in BP,
-	// which is useful for stack unwinding.
+	// Save state in g->sched. The caller's SP and PC are restored by gogo to
+	// resume execution in the caller's frame (implicit return). The caller's BP
+	// is also restored to support frame pointer unwinding.
 	MOVQ	SP, BX	// hide (SP) reads from vet
 	MOVQ	8(BX), BX	// caller's PC
 	MOVQ	BX, (g_sched+gobuf_pc)(R14)
 	LEAQ	fn+0(FP), BX	// caller's SP
 	MOVQ	BX, (g_sched+gobuf_sp)(R14)
-	MOVQ	BP, (g_sched+gobuf_bp)(R14)
+	// Get the caller's frame pointer by dereferencing BP. Storing BP as it is
+	// can cause a frame pointer cycle, see CL 476235.
+	MOVQ	(BP), BX // caller's BP
+	MOVQ	BX, (g_sched+gobuf_bp)(R14)
 
 	// switch to m->g0 & its stack, call fn
 	MOVQ	g_m(R14), BX
@@ -2084,3 +2087,7 @@ TEXT runtime·retpolineR12(SB),NOSPLIT|NOFRAME,$0; RETPOLINE(12)
 TEXT runtime·retpolineR13(SB),NOSPLIT|NOFRAME,$0; RETPOLINE(13)
 TEXT runtime·retpolineR14(SB),NOSPLIT|NOFRAME,$0; RETPOLINE(14)
 TEXT runtime·retpolineR15(SB),NOSPLIT|NOFRAME,$0; RETPOLINE(15)
+
+TEXT ·getcallerfp<ABIInternal>(SB),NOSPLIT|NOFRAME,$0
+	MOVQ BP, AX
+	RET

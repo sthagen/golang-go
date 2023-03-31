@@ -86,6 +86,7 @@ var okgoos = []string{
 	"illumos",
 	"ios",
 	"js",
+	"wasip1",
 	"linux",
 	"android",
 	"solaris",
@@ -1703,6 +1704,7 @@ var cgoEnabled = map[string]bool{
 	"ios/arm64":       true,
 	"ios/amd64":       true,
 	"js/wasm":         false,
+	"wasip1/wasm":     false,
 	"netbsd/386":      true,
 	"netbsd/amd64":    true,
 	"netbsd/arm":      true,
@@ -1729,6 +1731,7 @@ var cgoEnabled = map[string]bool{
 // See go.dev/issue/56679.
 var broken = map[string]bool{
 	"linux/sparc64": true, // An incomplete port. See CL 132155.
+	"wasip1/wasm":   true, // An incomplete port. See CL 479627.
 }
 
 // List of platforms which are first class ports. See go.dev/issue/38874.
