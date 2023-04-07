@@ -229,6 +229,19 @@ func InlineDecls(p *pgo.Profile, decls []ir.Node, doInline bool) {
 		}
 	})
 
+	// Rewalk post-inlining functions to check for closures that are
+	// still visible but were (over-agressively) marked as dead, and
+	// undo that marking here. See #59404 for more context.
+	ir.VisitFuncsBottomUp(decls, func(list []*ir.Func, recursive bool) {
+		for _, n := range list {
+			ir.Visit(n, func(node ir.Node) {
+				if clo, ok := node.(*ir.ClosureExpr); ok && clo.Func.IsHiddenClosure() {
+					clo.Func.SetIsDeadcodeClosure(false)
+				}
+			})
+		}
+	})
+
 	if p != nil {
 		pgoInlineEpilogue(p, decls)
 	}
@@ -446,6 +459,8 @@ func (v *hairyVisitor) tooHairy(fn *ir.Func) bool {
 	return false
 }
 
+// doNode visits n and its children, updates the state in v, and returns true if
+// n makes the current function too hairy for inlining.
 func (v *hairyVisitor) doNode(n ir.Node) bool {
 	if n == nil {
 		return false
@@ -577,13 +592,10 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 		// TODO(danscales): Maybe make budget proportional to number of closure
 		// variables, e.g.:
 		//v.budget -= int32(len(n.(*ir.ClosureExpr).Func.ClosureVars) * 3)
+		// TODO(austin): However, if we're able to inline this closure into
+		// v.curFunc, then we actually pay nothing for the closure captures. We
+		// should try to account for that if we're going to account for captures.
 		v.budget -= 15
-		// Scan body of closure (which DoChildren doesn't automatically
-		// do) to check for disallowed ops in the body and include the
-		// body in the budget.
-		if doList(n.(*ir.ClosureExpr).Func.Body, v.do) {
-			return true
-		}
 
 	case ir.OGO,
 		ir.ODEFER,
@@ -883,6 +895,30 @@ func inlnode(n ir.Node, maxCost int32, inlCalls *[]*ir.InlinedCallExpr, edit fun
 		}
 		if fn := inlCallee(call.X, profile); fn != nil && typecheck.HaveInlineBody(fn) {
 			n = mkinlcall(call, fn, maxCost, inlCalls, edit)
+			if fn.IsHiddenClosure() {
+				// Visit function to pick out any contained hidden
+				// closures to mark them as dead, since they will no
+				// longer be reachable (if we leave them live, they
+				// will get skipped during escape analysis, which
+				// could mean that go/defer statements don't get
+				// desugared, causing later problems in walk). See
+				// #59404 for more context. Note also that the code
+				// below can sometimes be too aggressive (marking a closure
+				// dead even though it was captured by a local var).
+				// In this case we'll undo the dead marking in a cleanup
+				// pass that happens at the end of InlineDecls.
+				var vis func(node ir.Node)
+				vis = func(node ir.Node) {
+					if clo, ok := node.(*ir.ClosureExpr); ok && clo.Func.IsHiddenClosure() && !clo.Func.IsDeadcodeClosure() {
+						if base.Flag.LowerM > 2 {
+							fmt.Printf("%v: closure %v marked as dead\n", ir.Line(clo.Func), clo.Func)
+						}
+						clo.Func.SetIsDeadcodeClosure(true)
+						ir.Visit(clo.Func, vis)
+					}
+				}
+				ir.Visit(fn, vis)
+			}
 		}
 	}
 
