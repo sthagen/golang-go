@@ -1476,6 +1476,9 @@ func (t *tester) hasSwig() bool {
 	return true
 }
 
+// hasParallelism is a copy of the function
+// internal/testenv.HasParallelism, which can't be used here
+// because cmd/dist can not import internal packages during bootstrap.
 func (t *tester) hasParallelism() bool {
 	switch goos {
 	case "js", "wasip1":
@@ -1730,7 +1733,7 @@ func buildModeSupported(compiler, buildmode, goos, goarch string) bool {
 
 	case "pie":
 		switch platform {
-		case "linux/386", "linux/amd64", "linux/arm", "linux/arm64", "linux/ppc64le", "linux/riscv64", "linux/s390x",
+		case "linux/386", "linux/amd64", "linux/arm", "linux/arm64", "linux/loong64", "linux/ppc64le", "linux/riscv64", "linux/s390x",
 			"android/amd64", "android/arm", "android/arm64", "android/386",
 			"freebsd/amd64",
 			"darwin/amd64", "darwin/arm64",

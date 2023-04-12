@@ -28,6 +28,7 @@ type ctxt0 struct {
 
 const (
 	FuncAlign = 4
+	loopAlign = 16
 )
 
 type Optab struct {
@@ -45,6 +46,10 @@ type Optab struct {
 
 const (
 	NOTUSETMP = 1 << iota // p expands to multiple instructions, but does NOT use REGTMP
+
+	// branchLoopHead marks loop entry.
+	// Used to insert padding for under-aligned loops.
+	branchLoopHead
 )
 
 var optab = []Optab{
@@ -156,11 +161,11 @@ var optab = []Optab{
 	{AMOVB, C_REG, C_NONE, C_NONE, C_ADDR, C_NONE, 50, 8, 0, 0},
 	{AMOVBU, C_REG, C_NONE, C_NONE, C_ADDR, C_NONE, 50, 8, 0, 0},
 	{AMOVBU, C_REG, C_NONE, C_NONE, C_ADDR, C_NONE, 50, 8, 0, 0},
-	{AMOVW, C_REG, C_NONE, C_NONE, C_TLS, C_NONE, 53, 16, 0, 0},
-	{AMOVWU, C_REG, C_NONE, C_NONE, C_TLS, C_NONE, 53, 16, 0, 0},
-	{AMOVV, C_REG, C_NONE, C_NONE, C_TLS, C_NONE, 53, 16, 0, 0},
-	{AMOVB, C_REG, C_NONE, C_NONE, C_TLS, C_NONE, 53, 16, 0, 0},
-	{AMOVBU, C_REG, C_NONE, C_NONE, C_TLS, C_NONE, 53, 16, 0, 0},
+	{AMOVW, C_REG, C_NONE, C_NONE, C_TLS_LE, C_NONE, 53, 16, 0, 0},
+	{AMOVWU, C_REG, C_NONE, C_NONE, C_TLS_LE, C_NONE, 53, 16, 0, 0},
+	{AMOVV, C_REG, C_NONE, C_NONE, C_TLS_LE, C_NONE, 53, 16, 0, 0},
+	{AMOVB, C_REG, C_NONE, C_NONE, C_TLS_LE, C_NONE, 53, 16, 0, 0},
+	{AMOVBU, C_REG, C_NONE, C_NONE, C_TLS_LE, C_NONE, 53, 16, 0, 0},
 
 	{AMOVW, C_LEXT, C_NONE, C_NONE, C_REG, C_NONE, 36, 12, 0, 0},
 	{AMOVWU, C_LEXT, C_NONE, C_NONE, C_REG, C_NONE, 36, 12, 0, 0},
@@ -185,11 +190,11 @@ var optab = []Optab{
 	{AMOVB, C_ADDR, C_NONE, C_NONE, C_REG, C_NONE, 51, 8, 0, 0},
 	{AMOVBU, C_ADDR, C_NONE, C_NONE, C_REG, C_NONE, 51, 8, 0, 0},
 	{AMOVBU, C_ADDR, C_NONE, C_NONE, C_REG, C_NONE, 51, 8, 0, 0},
-	{AMOVW, C_TLS, C_NONE, C_NONE, C_REG, C_NONE, 54, 16, 0, 0},
-	{AMOVWU, C_TLS, C_NONE, C_NONE, C_REG, C_NONE, 54, 16, 0, 0},
-	{AMOVV, C_TLS, C_NONE, C_NONE, C_REG, C_NONE, 54, 16, 0, 0},
-	{AMOVB, C_TLS, C_NONE, C_NONE, C_REG, C_NONE, 54, 16, 0, 0},
-	{AMOVBU, C_TLS, C_NONE, C_NONE, C_REG, C_NONE, 54, 16, 0, 0},
+	{AMOVW, C_TLS_LE, C_NONE, C_NONE, C_REG, C_NONE, 54, 16, 0, 0},
+	{AMOVWU, C_TLS_LE, C_NONE, C_NONE, C_REG, C_NONE, 54, 16, 0, 0},
+	{AMOVV, C_TLS_LE, C_NONE, C_NONE, C_REG, C_NONE, 54, 16, 0, 0},
+	{AMOVB, C_TLS_LE, C_NONE, C_NONE, C_REG, C_NONE, 54, 16, 0, 0},
+	{AMOVBU, C_TLS_LE, C_NONE, C_NONE, C_REG, C_NONE, 54, 16, 0, 0},
 
 	{AMOVW, C_SECON, C_NONE, C_NONE, C_REG, C_NONE, 3, 4, 0, 0},
 	{AMOVV, C_SECON, C_NONE, C_NONE, C_REG, C_NONE, 3, 4, 0, 0},
@@ -329,6 +334,18 @@ var optab = []Optab{
 	{AMOVW, C_ADDCON, C_NONE, C_NONE, C_FREG, C_NONE, 34, 8, 0, 0},
 	{AMOVW, C_ANDCON, C_NONE, C_NONE, C_FREG, C_NONE, 34, 8, 0, 0},
 
+	{AMOVB, C_REG, C_NONE, C_NONE, C_TLS_IE, C_NONE, 56, 16, 0, 0},
+	{AMOVW, C_REG, C_NONE, C_NONE, C_TLS_IE, C_NONE, 56, 16, 0, 0},
+	{AMOVV, C_REG, C_NONE, C_NONE, C_TLS_IE, C_NONE, 56, 16, 0, 0},
+	{AMOVBU, C_REG, C_NONE, C_NONE, C_TLS_IE, C_NONE, 56, 16, 0, 0},
+	{AMOVWU, C_REG, C_NONE, C_NONE, C_TLS_IE, C_NONE, 56, 16, 0, 0},
+
+	{AMOVB, C_TLS_IE, C_NONE, C_NONE, C_REG, C_NONE, 57, 16, 0, 0},
+	{AMOVW, C_TLS_IE, C_NONE, C_NONE, C_REG, C_NONE, 57, 16, 0, 0},
+	{AMOVV, C_TLS_IE, C_NONE, C_NONE, C_REG, C_NONE, 57, 16, 0, 0},
+	{AMOVBU, C_TLS_IE, C_NONE, C_NONE, C_REG, C_NONE, 57, 16, 0, 0},
+	{AMOVWU, C_TLS_IE, C_NONE, C_NONE, C_REG, C_NONE, 57, 16, 0, 0},
+
 	{AWORD, C_LCON, C_NONE, C_NONE, C_NONE, C_NONE, 40, 4, 0, 0},
 	{AWORD, C_DCON, C_NONE, C_NONE, C_NONE, C_NONE, 61, 4, 0, 0},
 
@@ -345,6 +362,7 @@ var optab = []Optab{
 	{ARDTIMED, C_NONE, C_NONE, C_NONE, C_REG, C_REG, 62, 4, 0, 0},
 
 	{obj.AUNDEF, C_NONE, C_NONE, C_NONE, C_NONE, C_NONE, 49, 4, 0, 0},
+	{obj.APCALIGN, C_SCON, C_NONE, C_NONE, C_NONE, C_NONE, 0, 0, 0, 0},
 	{obj.APCDATA, C_LCON, C_NONE, C_NONE, C_LCON, C_NONE, 0, 0, 0, 0},
 	{obj.APCDATA, C_DCON, C_NONE, C_NONE, C_DCON, C_NONE, 0, 0, 0, 0},
 	{obj.AFUNCDATA, C_SCON, C_NONE, C_NONE, C_ADDR, C_NONE, 0, 0, 0, 0},
@@ -357,6 +375,15 @@ var optab = []Optab{
 	{obj.ADUFFCOPY, C_NONE, C_NONE, C_NONE, C_LBRA, C_NONE, 11, 4, 0, 0}, // same as AJMP
 
 	{obj.AXXX, C_NONE, C_NONE, C_NONE, C_NONE, C_NONE, 0, 4, 0, 0},
+}
+
+// pcAlignPadLength returns the number of bytes required to align pc to alignedValue,
+// reporting an error if alignedValue is not a power of two or is out of range.
+func pcAlignPadLength(ctxt *obj.Link, pc int64, alignedValue int64) int {
+	if !((alignedValue&(alignedValue-1) == 0) && 8 <= alignedValue && alignedValue <= 2048) {
+		ctxt.Diag("alignment value of an instruction must be a power of two and in the range [8, 2048], got %d\n", alignedValue)
+	}
+	return int(-pc & (alignedValue - 1))
 }
 
 var oprange [ALAST & obj.AMask][]Optab
@@ -390,10 +417,20 @@ func span0(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 		o = c.oplook(p)
 		m = int(o.size)
 		if m == 0 {
-			if p.As != obj.ANOP && p.As != obj.AFUNCDATA && p.As != obj.APCDATA {
+			switch p.As {
+			case obj.APCALIGN:
+				alignedValue := p.From.Offset
+				m = pcAlignPadLength(ctxt, pc, alignedValue)
+				// Update the current text symbol alignment value.
+				if int32(alignedValue) > cursym.Func().Align {
+					cursym.Func().Align = int32(alignedValue)
+				}
+				break
+			case obj.ANOP, obj.AFUNCDATA, obj.APCDATA:
+				continue
+			default:
 				c.ctxt.Diag("zero-width instruction\n%v", p)
 			}
-			continue
 		}
 
 		pc += int64(m)
@@ -401,24 +438,58 @@ func span0(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 
 	c.cursym.Size = pc
 
-	/*
-	 * if any procedure is large enough to
-	 * generate a large SBRA branch, then
-	 * generate extra passes putting branches
-	 * around jmps to fix. this is rare.
-	 */
-	bflag := 1
+	// mark loop entry instructions for padding
+	// loop entrances are defined as targets of backward branches
+	for p = c.cursym.Func().Text.Link; p != nil; p = p.Link {
+		if q := p.To.Target(); q != nil && q.Pc < p.Pc {
+			q.Mark |= branchLoopHead
+		}
+	}
 
+	// Run these passes until convergence.
+	bflag := 1
 	var otxt int64
 	var q *obj.Prog
 	for bflag != 0 {
 		bflag = 0
 		pc = 0
-		for p = c.cursym.Func().Text.Link; p != nil; p = p.Link {
+		prev := c.cursym.Func().Text
+		for p = prev.Link; p != nil; prev, p = p, p.Link {
 			p.Pc = pc
 			o = c.oplook(p)
 
+			// Prepend a PCALIGN $loopAlign to each of the loop heads
+			// that need padding, if not already done so (because this
+			// pass may execute more than once).
+			//
+			// This needs to come before any pass that look at pc,
+			// because pc will be adjusted if padding happens.
+			if p.Mark&branchLoopHead != 0 && pc&(loopAlign-1) != 0 &&
+				!(prev.As == obj.APCALIGN && prev.From.Offset >= loopAlign) {
+				q = c.newprog()
+				prev.Link = q
+				q.Link = p
+				q.Pc = pc
+				q.As = obj.APCALIGN
+				q.From.Type = obj.TYPE_CONST
+				q.From.Offset = loopAlign
+				// Don't associate the synthesized PCALIGN with
+				// the original source position, for deterministic
+				// mapping between source and corresponding asm.
+				// q.Pos = p.Pos
+
+				// Manually make the PCALIGN come into effect,
+				// since this loop iteration is for p.
+				pc += int64(pcAlignPadLength(ctxt, pc, loopAlign))
+				p.Pc = pc
+			}
+
 			// very large conditional branches
+			//
+			// if any procedure is large enough to
+			// generate a large SBRA branch, then
+			// generate extra passes putting branches
+			// around jmps to fix. this is rare.
 			if o.type_ == 6 && p.To.Target() != nil {
 				otxt = p.To.Target().Pc - pc
 				if otxt < -(1<<17)+10 || otxt >= (1<<17)-10 {
@@ -443,10 +514,16 @@ func span0(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 
 			m = int(o.size)
 			if m == 0 {
-				if p.As != obj.ANOP && p.As != obj.AFUNCDATA && p.As != obj.APCDATA {
+				switch p.As {
+				case obj.APCALIGN:
+					alignedValue := p.From.Offset
+					m = pcAlignPadLength(ctxt, pc, alignedValue)
+					break
+				case obj.ANOP, obj.AFUNCDATA, obj.APCDATA:
+					continue
+				default:
 					c.ctxt.Diag("zero-width instruction\n%v", p)
 				}
-				continue
 			}
 
 			pc += int64(m)
@@ -469,6 +546,16 @@ func span0(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 		o = c.oplook(p)
 		if int(o.size) > 4*len(out) {
 			log.Fatalf("out array in span0 is too small, need at least %d for %v", o.size/4, p)
+		}
+		if p.As == obj.APCALIGN {
+			alignedValue := p.From.Offset
+			v := pcAlignPadLength(c.ctxt, p.Pc, alignedValue)
+			for i = 0; i < int32(v/4); i++ {
+				// emit ANOOP instruction by the padding size
+				c.ctxt.Arch.ByteOrder.PutUint32(bp, c.oprrr(ANOOP))
+				bp = bp[4:]
+			}
+			continue
 		}
 		c.asmout(p, o, out[:])
 		for i = 0; i < int32(o.size/4); i++ {
@@ -546,7 +633,11 @@ func (c *ctxt0) aclass(a *obj.Addr) int {
 			c.instoffset = a.Offset
 			if a.Sym != nil { // use relocation
 				if a.Sym.Type == objabi.STLSBSS {
-					return C_TLS
+					if c.ctxt.Flag_shared {
+						return C_TLS_IE
+					} else {
+						return C_TLS_LE
+					}
 				}
 				return C_ADDR
 			}
@@ -1062,6 +1153,7 @@ func buildop(ctxt *obj.Link) {
 			obj.ATEXT,
 			obj.AUNDEF,
 			obj.AFUNCDATA,
+			obj.APCALIGN,
 			obj.APCDATA,
 			obj.ADUFFZERO,
 			obj.ADUFFCOPY:
@@ -1503,8 +1595,8 @@ func (c *ctxt0) asmout(p *obj.Prog, o *Optab, out []uint32) {
 		o1 = c.oprrr(ABREAK)
 
 	// relocation operations
-	case 50: // mov r,addr ==> pcaddu12i + sw
-		o1 = OP_IR(c.opir(APCADDU12I), uint32(0), uint32(REGTMP))
+	case 50: // mov r,addr ==> pcalau12i + sw
+		o1 = OP_IR(c.opir(APCALAU12I), uint32(0), uint32(REGTMP))
 		rel := obj.Addrel(c.cursym)
 		rel.Off = int32(c.pc)
 		rel.Siz = 4
@@ -1520,8 +1612,8 @@ func (c *ctxt0) asmout(p *obj.Prog, o *Optab, out []uint32) {
 		rel2.Add = p.To.Offset
 		rel2.Type = objabi.R_ADDRLOONG64
 
-	case 51: // mov addr,r ==> pcaddu12i + lw
-		o1 = OP_IR(c.opir(APCADDU12I), uint32(0), uint32(REGTMP))
+	case 51: // mov addr,r ==> pcalau12i + lw
+		o1 = OP_IR(c.opir(APCALAU12I), uint32(0), uint32(REGTMP))
 		rel := obj.Addrel(c.cursym)
 		rel.Off = int32(c.pc)
 		rel.Siz = 4
@@ -1539,7 +1631,7 @@ func (c *ctxt0) asmout(p *obj.Prog, o *Optab, out []uint32) {
 	case 52: // mov $lext, r
 		// NOTE: this case does not use REGTMP. If it ever does,
 		// remove the NOTUSETMP flag in optab.
-		o1 = OP_IR(c.opir(APCADDU12I), uint32(0), uint32(p.To.Reg))
+		o1 = OP_IR(c.opir(APCALAU12I), uint32(0), uint32(p.To.Reg))
 		rel := obj.Addrel(c.cursym)
 		rel.Off = int32(c.pc)
 		rel.Siz = 4
@@ -1612,6 +1704,42 @@ func (c *ctxt0) asmout(p *obj.Prog, o *Optab, out []uint32) {
 		rel2.Add = p.From.Offset
 		rel2.Type = objabi.R_ADDRLOONG64TLS
 		o3 = OP_RRR(c.oprrr(AADDV), uint32(REG_R2), uint32(REGTMP), uint32(p.To.Reg))
+
+	case 56: // mov r, tlsvar IE model ==> (pcalau12i + ld.d)tlsvar@got + add.d + st.d
+		o1 = OP_IR(c.opir(APCALAU12I), uint32(0), uint32(REGTMP))
+		rel := obj.Addrel(c.cursym)
+		rel.Off = int32(c.pc)
+		rel.Siz = 4
+		rel.Sym = p.To.Sym
+		rel.Add = 0x0
+		rel.Type = objabi.R_LOONG64_TLS_IE_PCREL_HI
+		o2 = OP_12IRR(c.opirr(-p.As), uint32(0), uint32(REGTMP), uint32(REGTMP))
+		rel2 := obj.Addrel(c.cursym)
+		rel2.Off = int32(c.pc + 4)
+		rel2.Siz = 4
+		rel2.Sym = p.To.Sym
+		rel2.Add = 0x0
+		rel2.Type = objabi.R_LOONG64_TLS_IE_LO
+		o3 = OP_RRR(c.oprrr(AADDVU), uint32(REGTMP), uint32(REG_R2), uint32(REGTMP))
+		o4 = OP_12IRR(c.opirr(p.As), uint32(0), uint32(REGTMP), uint32(p.From.Reg))
+
+	case 57: // mov tlsvar, r IE model ==> (pcalau12i + ld.d)tlsvar@got + add.d + ld.d
+		o1 = OP_IR(c.opir(APCALAU12I), uint32(0), uint32(REGTMP))
+		rel := obj.Addrel(c.cursym)
+		rel.Off = int32(c.pc)
+		rel.Siz = 4
+		rel.Sym = p.From.Sym
+		rel.Add = 0x0
+		rel.Type = objabi.R_LOONG64_TLS_IE_PCREL_HI
+		o2 = OP_12IRR(c.opirr(-p.As), uint32(0), uint32(REGTMP), uint32(REGTMP))
+		rel2 := obj.Addrel(c.cursym)
+		rel2.Off = int32(c.pc + 4)
+		rel2.Siz = 4
+		rel2.Sym = p.From.Sym
+		rel2.Add = 0x0
+		rel2.Type = objabi.R_LOONG64_TLS_IE_LO
+		o3 = OP_RRR(c.oprrr(AADDVU), uint32(REGTMP), uint32(REG_R2), uint32(REGTMP))
+		o4 = OP_12IRR(c.opirr(-p.As), uint32(0), uint32(REGTMP), uint32(p.To.Reg))
 
 	case 59: // mov $dcon,r
 		// NOTE: this case does not use REGTMP. If it ever does,

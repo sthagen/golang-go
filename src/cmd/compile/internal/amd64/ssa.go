@@ -336,59 +336,34 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		// Result[0] (the quotient) is in AX.
 		// Result[1] (the remainder) is in DX.
 		r := v.Args[1].Reg()
-		var j1 *obj.Prog
+
+		var opCMP, opNEG, opSXD obj.As
+		switch v.Op {
+		case ssa.OpAMD64DIVQ:
+			opCMP, opNEG, opSXD = x86.ACMPQ, x86.ANEGQ, x86.ACQO
+		case ssa.OpAMD64DIVL:
+			opCMP, opNEG, opSXD = x86.ACMPL, x86.ANEGL, x86.ACDQ
+		case ssa.OpAMD64DIVW:
+			opCMP, opNEG, opSXD = x86.ACMPW, x86.ANEGW, x86.ACWD
+		}
 
 		// CPU faults upon signed overflow, which occurs when the most
 		// negative int is divided by -1. Handle divide by -1 as a special case.
+		var j1, j2 *obj.Prog
 		if ssa.DivisionNeedsFixUp(v) {
-			var c *obj.Prog
-			switch v.Op {
-			case ssa.OpAMD64DIVQ:
-				c = s.Prog(x86.ACMPQ)
-			case ssa.OpAMD64DIVL:
-				c = s.Prog(x86.ACMPL)
-			case ssa.OpAMD64DIVW:
-				c = s.Prog(x86.ACMPW)
-			}
+			c := s.Prog(opCMP)
 			c.From.Type = obj.TYPE_REG
 			c.From.Reg = r
 			c.To.Type = obj.TYPE_CONST
 			c.To.Offset = -1
-			j1 = s.Prog(x86.AJEQ)
+
+			// Divisor is not -1, proceed with normal division.
+			j1 = s.Prog(x86.AJNE)
 			j1.To.Type = obj.TYPE_BRANCH
-		}
 
-		// Sign extend dividend.
-		switch v.Op {
-		case ssa.OpAMD64DIVQ:
-			s.Prog(x86.ACQO)
-		case ssa.OpAMD64DIVL:
-			s.Prog(x86.ACDQ)
-		case ssa.OpAMD64DIVW:
-			s.Prog(x86.ACWD)
-		}
-
-		// Issue divide.
-		p := s.Prog(v.Op.Asm())
-		p.From.Type = obj.TYPE_REG
-		p.From.Reg = r
-
-		if j1 != nil {
-			// Skip over -1 fixup code.
-			j2 := s.Prog(obj.AJMP)
-			j2.To.Type = obj.TYPE_BRANCH
-
-			// Issue -1 fixup code.
+			// Divisor is -1, manually compute quotient and remainder via fixup code.
 			// n / -1 = -n
-			var n1 *obj.Prog
-			switch v.Op {
-			case ssa.OpAMD64DIVQ:
-				n1 = s.Prog(x86.ANEGQ)
-			case ssa.OpAMD64DIVL:
-				n1 = s.Prog(x86.ANEGL)
-			case ssa.OpAMD64DIVW:
-				n1 = s.Prog(x86.ANEGW)
-			}
+			n1 := s.Prog(opNEG)
 			n1.To.Type = obj.TYPE_REG
 			n1.To.Reg = x86.REG_AX
 
@@ -398,7 +373,21 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 			// TODO(khr): issue only the -1 fixup code we need.
 			// For instance, if only the quotient is used, no point in zeroing the remainder.
 
-			j1.To.SetTarget(n1)
+			// Skip over normal division.
+			j2 = s.Prog(obj.AJMP)
+			j2.To.Type = obj.TYPE_BRANCH
+		}
+
+		// Sign extend dividend and perform division.
+		p := s.Prog(opSXD)
+		if j1 != nil {
+			j1.To.SetTarget(p)
+		}
+		p = s.Prog(v.Op.Asm())
+		p.From.Type = obj.TYPE_REG
+		p.From.Reg = r
+
+		if j2 != nil {
 			j2.To.SetTarget(s.Pc())
 		}
 

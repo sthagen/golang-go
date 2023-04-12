@@ -208,8 +208,8 @@ func ParseFlags() {
 	//  GOCOMPILEDEBUG=loopvarhash=... -- search for failure cause
 	//
 	//  (*) For debugging purposes, providing loopvar flag >= 11 will expand the hash-eligible set of loops to all.
-	// (**) Currently this applies to all code in the compilation of some_package, including
-	//     inlines from other packages that may have been compiled w/o the change.
+	// (**) Loop semantics, changed or not, follow code from a package when it is inlined; that is, the behavior
+	//      of an application compiled with partially modified loop semantics does not depend on inlining.
 
 	if Debug.LoopVarHash != "" {
 		// This first little bit controls the inputs for debug-hash-matching.
@@ -255,7 +255,7 @@ func ParseFlags() {
 	if Flag.Race && !platform.RaceDetectorSupported(buildcfg.GOOS, buildcfg.GOARCH) {
 		log.Fatalf("%s/%s does not support -race", buildcfg.GOOS, buildcfg.GOARCH)
 	}
-	if (*Flag.Shared || *Flag.Dynlink || *Flag.LinkShared) && !Ctxt.Arch.InFamily(sys.AMD64, sys.ARM, sys.ARM64, sys.I386, sys.PPC64, sys.RISCV64, sys.S390X) {
+	if (*Flag.Shared || *Flag.Dynlink || *Flag.LinkShared) && !Ctxt.Arch.InFamily(sys.AMD64, sys.ARM, sys.ARM64, sys.I386, sys.Loong64, sys.PPC64, sys.RISCV64, sys.S390X) {
 		log.Fatalf("%s/%s does not support -shared", buildcfg.GOOS, buildcfg.GOARCH)
 	}
 	parseSpectre(Flag.Spectre) // left as string for RecordFlags

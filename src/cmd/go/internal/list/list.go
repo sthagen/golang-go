@@ -599,16 +599,9 @@ func runList(ctx context.Context, cmd *base.Command, args []string) {
 	}
 
 	pkgOpts := load.PackageOpts{
-		IgnoreImports:   *listFind,
-		ModResolveTests: *listTest,
-		AutoVCS:         true,
-		// SuppressDeps is set if the user opts to explicitly ask for the json fields they
-		// need, don't ask for Deps or DepsErrors. It's not set when using a template string,
-		// even if *listFmt doesn't contain .Deps because Deps are used to find import cycles
-		// for test variants of packages and users who have been providing format strings
-		// might not expect those errors to stop showing up.
-		// See issue #52443.
-		SuppressDeps:       !listJsonFields.needAny("Deps", "DepsErrors"),
+		IgnoreImports:      *listFind,
+		ModResolveTests:    *listTest,
+		AutoVCS:            true,
 		SuppressBuildInfo:  !*listExport && !listJsonFields.needAny("Stale", "StaleReason"),
 		SuppressEmbedFiles: !*listExport && !listJsonFields.needAny("EmbedFiles", "TestEmbedFiles", "XTestEmbedFiles"),
 	}
@@ -770,21 +763,29 @@ func runList(ctx context.Context, cmd *base.Command, args []string) {
 				delete(m, old)
 			}
 		}
-		if !pkgOpts.SuppressDeps {
-			// Recompute deps lists using new strings, from the leaves up.
+	}
+
+	if listJsonFields.needAny("Deps", "DepsErrors") {
+		all := pkgs
+		// Make sure we iterate through packages in a postorder traversal,
+		// which load.PackageList guarantees. If *listDeps, then all is
+		// already in PackageList order. Otherwise, calling load.PackageList
+		// provides the guarantee. In the case of an import cycle, the last package
+		// visited in the cycle, importing the first encountered package in the cycle,
+		// is visited first. The cycle import error will be bubbled up in the traversal
+		// order up to the first package in the cycle, covering all the packages
+		// in the cycle.
+		if !*listDeps {
+			all = load.PackageList(pkgs)
+		}
+		if listJsonFields.needAny("Deps") {
 			for _, p := range all {
-				deps := make(map[string]bool)
-				for _, p1 := range p.Internal.Imports {
-					deps[p1.ImportPath] = true
-					for _, d := range p1.Deps {
-						deps[d] = true
-					}
-				}
-				p.Deps = make([]string, 0, len(deps))
-				for d := range deps {
-					p.Deps = append(p.Deps, d)
-				}
-				sort.Strings(p.Deps)
+				collectDeps(p)
+			}
+		}
+		if listJsonFields.needAny("DepsErrors") {
+			for _, p := range all {
+				collectDepsErrors(p)
 			}
 		}
 	}
@@ -886,6 +887,53 @@ func loadPackageList(roots []*load.Package) []*load.Package {
 	}
 
 	return pkgs
+}
+
+// collectDeps populates p.Deps by iterating over p.Internal.Imports.
+// collectDeps must be called on all of p's Imports before being called on p.
+func collectDeps(p *load.Package) {
+	deps := make(map[string]bool)
+
+	for _, p := range p.Internal.Imports {
+		deps[p.ImportPath] = true
+		for _, q := range p.Deps {
+			deps[q] = true
+		}
+	}
+
+	p.Deps = make([]string, 0, len(deps))
+	for dep := range deps {
+		p.Deps = append(p.Deps, dep)
+	}
+	sort.Strings(p.Deps)
+}
+
+// collectDeps populates p.DepsErrors by iterating over p.Internal.Imports.
+// collectDepsErrors must be called on all of p's Imports before being called on p.
+func collectDepsErrors(p *load.Package) {
+	depsErrors := make(map[*load.PackageError]bool)
+
+	for _, p := range p.Internal.Imports {
+		if p.Error != nil {
+			depsErrors[p.Error] = true
+		}
+		for _, q := range p.DepsErrors {
+			depsErrors[q] = true
+		}
+	}
+
+	p.DepsErrors = make([]*load.PackageError, 0, len(depsErrors))
+	for deperr := range depsErrors {
+		p.DepsErrors = append(p.DepsErrors, deperr)
+	}
+	// Sort packages by the package on the top of the stack, which should be
+	// the package the error was produced for. Each package can have at most
+	// one error set on it.
+	sort.Slice(p.DepsErrors, func(i, j int) bool {
+		stki, stkj := p.DepsErrors[i].ImportStack, p.DepsErrors[j].ImportStack
+		pathi, pathj := stki[len(stki)-1], stkj[len(stkj)-1]
+		return pathi < pathj
+	})
 }
 
 // TrackingWriter tracks the last byte written on every write so
