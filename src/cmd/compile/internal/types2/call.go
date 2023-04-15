@@ -23,8 +23,14 @@ import (
 func (check *Checker) funcInst(tsig *Signature, pos syntax.Pos, x *operand, inst *syntax.IndexExpr) {
 	assert(tsig != nil || inst != nil)
 
-	if !check.allowVersion(check.pkg, 1, 18) {
-		check.versionErrorf(inst.Pos(), "go1.18", "function instantiation")
+	if !check.allowVersion(check.pkg, pos, 1, 18) {
+		var posn poser
+		if inst != nil {
+			posn = inst.Pos()
+		} else {
+			posn = pos
+		}
+		check.versionErrorf(posn, "go1.18", "function instantiation")
 	}
 
 	// targs and xlist are the type arguments and corresponding type expressions, or nil.
@@ -278,7 +284,7 @@ func (check *Checker) callExpr(x *operand, call *syntax.CallExpr) exprKind {
 		// is an error checking its arguments (for example, if an incorrect number
 		// of arguments is supplied).
 		if got == want && want > 0 {
-			if !check.allowVersion(check.pkg, 1, 18) {
+			if !check.allowVersion(check.pkg, x.Pos(), 1, 18) {
 				check.versionErrorf(inst.Pos(), "go1.18", "function instantiation")
 			}
 
@@ -444,7 +450,7 @@ func (check *Checker) arguments(call *syntax.CallExpr, sig *Signature, targs []T
 
 	// infer type arguments and instantiate signature if necessary
 	if sig.TypeParams().Len() > 0 {
-		if !check.allowVersion(check.pkg, 1, 18) {
+		if !check.allowVersion(check.pkg, call.Pos(), 1, 18) {
 			if iexpr, _ := call.Fun.(*syntax.IndexExpr); iexpr != nil {
 				check.versionErrorf(iexpr.Pos(), "go1.18", "function instantiation")
 			} else {

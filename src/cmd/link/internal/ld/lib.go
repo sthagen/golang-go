@@ -119,6 +119,10 @@ type ArchSyms struct {
 	DynStr  loader.Sym
 
 	unreachableMethod loader.Sym
+
+	// Symbol containing a list of all the inittasks that need
+	// to be run at startup.
+	mainInittasks loader.Sym
 }
 
 // mkArchSym is a helper for setArchSyms, to set up a special symbol.
@@ -1403,6 +1407,12 @@ func (ctxt *Link) hostlink() {
 	case objabi.Hopenbsd:
 		argv = append(argv, "-Wl,-nopie")
 		argv = append(argv, "-pthread")
+		if ctxt.Arch.InFamily(sys.ARM64) {
+			// Disable execute-only on openbsd/arm64 - the Go arm64 assembler
+			// currently stores constants in the text section rather than in rodata.
+			// See issue #59615.
+			argv = append(argv, "-Wl,--no-execute-only")
+		}
 	case objabi.Hwindows:
 		if windowsgui {
 			argv = append(argv, "-mwindows")

@@ -45,6 +45,7 @@ var depsRules = `
 	  internal/cpu, internal/goarch,
 	  internal/goexperiment, internal/goos,
 	  internal/goversion, internal/nettrace, internal/platform,
+	  log/internal,
 	  maps, slices, unicode/utf8, unicode/utf16, unicode,
 	  unsafe;
 
@@ -262,24 +263,31 @@ var depsRules = `
 	< go/token
 	< go/scanner
 	< go/ast
-	< go/internal/typeparams
-	< go/parser;
+	< go/internal/typeparams;
 
 	FMT
 	< go/build/constraint, go/doc/comment;
 
-	go/build/constraint, go/doc/comment, go/parser, text/tabwriter
+	go/internal/typeparams, go/build/constraint
+	< go/parser;
+
+	go/doc/comment, go/parser, text/tabwriter
 	< go/printer
 	< go/format;
-
-	go/doc/comment, go/parser, internal/lazyregexp, text/template
-	< go/doc;
 
 	math/big, go/token
 	< go/constant;
 
-	container/heap, go/constant, go/parser, internal/types/errors, internal/lazyregexp
+	container/heap, go/constant, go/parser, internal/types/errors
 	< go/types;
+
+	# The vast majority of standard library packages should not be resorting to regexp.
+	# go/types is a good chokepoint. It shouldn't use regexp, nor should anything
+	# that is low-enough level to be used by go/types.
+	regexp !< go/types;
+
+	go/doc/comment, go/parser, internal/lazyregexp, text/template
+	< go/doc;
 
 	FMT, internal/goexperiment
 	< internal/buildcfg;
@@ -369,7 +377,7 @@ var depsRules = `
 	< NET;
 
 	# logging - most packages should not import; http and up is allowed
-	FMT
+	FMT, log/internal
 	< log;
 
 	log, log/slog !< crypto/tls, database/sql, go/importer, testing;
@@ -382,7 +390,7 @@ var depsRules = `
 
 	FMT,
 	encoding, encoding/json,
-	log,
+	log, log/internal,
 	log/slog/internal, log/slog/internal/buffer,
 	slices
 	< log/slog
