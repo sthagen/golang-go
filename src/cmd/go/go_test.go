@@ -899,6 +899,7 @@ func TestNewReleaseRebuildsStalePackagesInGOPATH(t *testing.T) {
 		"src/internal/coverage/rtcov",
 		"src/internal/cpu",
 		"src/internal/goarch",
+		"src/internal/godebugs",
 		"src/internal/goexperiment",
 		"src/internal/goos",
 		"src/internal/coverage/rtcov",
@@ -2338,7 +2339,7 @@ func TestUpxCompression(t *testing.T) {
 	}
 }
 
-var gocacheverify = godebug.New("gocacheverify")
+var gocacheverify = godebug.New("#gocacheverify")
 
 func TestCacheListStale(t *testing.T) {
 	tooSlow(t, "links a binary")
