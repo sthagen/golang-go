@@ -1069,6 +1069,12 @@ func gcMarkTermination() {
 	injectglist(&work.sweepWaiters.list)
 	unlock(&work.sweepWaiters.lock)
 
+	// Increment the scavenge generation now.
+	//
+	// This moment represents peak heap in use because we're
+	// about to start sweeping.
+	mheap_.pages.scav.index.nextGen()
+
 	// Release the CPU limiter.
 	gcCPULimiter.finishGCTransition(now)
 
@@ -1180,6 +1186,11 @@ func gcMarkTermination() {
 	unlock(&userArenaState.lock)
 	for _, lc := range faultList {
 		lc.mspan.setUserArenaChunkToFault()
+	}
+
+	// Enable huge pages on some metadata if we cross a heap threshold.
+	if gcController.heapGoal() > minHeapForMetadataHugePages {
+		mheap_.enableMetadataHugePages()
 	}
 
 	semrelease(&worldsema)
