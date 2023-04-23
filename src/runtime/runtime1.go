@@ -286,7 +286,7 @@ func check() {
 
 	testAtomic64()
 
-	if _FixedStack != round2(_FixedStack) {
+	if fixedStack != round2(fixedStack) {
 		throw("FixedStack is not power-of-2")
 	}
 
@@ -369,6 +369,7 @@ func parsedebugvars() {
 	debug.cgocheck = 1
 	debug.invalidptr = 1
 	debug.adaptivestackstart = 1 // set this to 0 to turn larger initial goroutine stacks off
+	debug.tracefpunwindoff = 1   // Frame pointer unwinding sometimes crashes on amd64. See issue 59692.
 	if GOOS == "linux" {
 		// On Linux, MADV_FREE is faster than MADV_DONTNEED,
 		// but doesn't affect many of the statistics that

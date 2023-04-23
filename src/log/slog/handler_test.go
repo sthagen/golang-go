@@ -12,7 +12,9 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog/internal/buffer"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -115,13 +117,14 @@ func TestJSONAndTextHandlers(t *testing.T) {
 	preAttrs := []Attr{Int("pre", 3), String("x", "y")}
 
 	for _, test := range []struct {
-		name     string
-		replace  func([]string, Attr) Attr
-		with     func(Handler) Handler
-		preAttrs []Attr
-		attrs    []Attr
-		wantText string
-		wantJSON string
+		name      string
+		replace   func([]string, Attr) Attr
+		addSource bool
+		with      func(Handler) Handler
+		preAttrs  []Attr
+		attrs     []Attr
+		wantText  string
+		wantJSON  string
 	}{
 		{
 			name:     "basic",
@@ -235,6 +238,16 @@ func TestJSONAndTextHandlers(t *testing.T) {
 			wantJSON: `{"msg":"message","a":1,"name":{"first":"Ren","last":"Hoek"},"b":2}`,
 		},
 		{
+			// Test resolution when there is no ReplaceAttr function.
+			name: "resolve",
+			attrs: []Attr{
+				Any("", &replace{Value{}}), // should be elided
+				Any("name", logValueName{"Ren", "Hoek"}),
+			},
+			wantText: "time=2000-01-02T03:04:05.000Z level=INFO msg=message name.first=Ren name.last=Hoek",
+			wantJSON: `{"time":"2000-01-02T03:04:05Z","level":"INFO","msg":"message","name":{"first":"Ren","last":"Hoek"}}`,
+		},
+		{
 			name:     "with-group",
 			replace:  removeKeys(TimeKey, LevelKey),
 			with:     func(h Handler) Handler { return h.WithAttrs(preAttrs).WithGroup("s") },
@@ -299,11 +312,26 @@ func TestJSONAndTextHandlers(t *testing.T) {
 			wantText: `msg=message a=1 b=2 c=3 d=4`,
 			wantJSON: `{"msg":"message","a":1,"b":2,"c":3,"d":4}`,
 		},
+		{
+			name: "Source",
+			replace: func(gs []string, a Attr) Attr {
+				if a.Key == SourceKey {
+					s := a.Value.Any().(*Source)
+					s.File = filepath.Base(s.File)
+					return Any(a.Key, s)
+				}
+				return removeKeys(TimeKey, LevelKey)(gs, a)
+			},
+			addSource: true,
+			wantText:  `source=handler_test.go:$LINE msg=message`,
+			wantJSON:  `{"source":{"function":"log/slog.TestJSONAndTextHandlers","file":"handler_test.go","line":$LINE},"msg":"message"}`,
+		},
 	} {
-		r := NewRecord(testTime, LevelInfo, "message", 0)
+		r := NewRecord(testTime, LevelInfo, "message", callerPC(2))
+		line := strconv.Itoa(r.source().Line)
 		r.AddAttrs(test.attrs...)
 		var buf bytes.Buffer
-		opts := HandlerOptions{ReplaceAttr: test.replace}
+		opts := HandlerOptions{ReplaceAttr: test.replace, AddSource: test.addSource}
 		t.Run(test.name, func(t *testing.T) {
 			for _, handler := range []struct {
 				name string
@@ -322,9 +350,10 @@ func TestJSONAndTextHandlers(t *testing.T) {
 					if err := h.Handle(ctx, r); err != nil {
 						t.Fatal(err)
 					}
+					want := strings.ReplaceAll(handler.want, "$LINE", line)
 					got := strings.TrimSuffix(buf.String(), "\n")
-					if got != handler.want {
-						t.Errorf("\ngot  %s\nwant %s\n", got, handler.want)
+					if got != want {
+						t.Errorf("\ngot  %s\nwant %s\n", got, want)
 					}
 				})
 			}
@@ -383,33 +412,6 @@ func TestHandlerEnabled(t *testing.T) {
 		if got != test.want {
 			t.Errorf("%v: got %t, want %t", test.leveler, got, test.want)
 		}
-	}
-}
-
-func TestAppendSource(t *testing.T) {
-	for _, test := range []struct {
-		file               string
-		wantText, wantJSON string
-	}{
-		{"a/b.go", "a/b.go:1", `"a/b.go:1"`},
-		{"a b.go", `"a b.go:1"`, `"a b.go:1"`},
-		{`C:\windows\b.go`, `C:\windows\b.go:1`, `"C:\\windows\\b.go:1"`},
-	} {
-		check := func(json bool, want string) {
-			t.Helper()
-			var buf []byte
-			state := handleState{
-				h:   &commonHandler{json: json},
-				buf: (*buffer.Buffer)(&buf),
-			}
-			state.appendSource(test.file, 1)
-			got := string(buf)
-			if got != want {
-				t.Errorf("%s, json=%t:\ngot  %s\nwant %s", test.file, json, got, want)
-			}
-		}
-		check(false, test.wantText)
-		check(true, test.wantJSON)
 	}
 }
 

@@ -4,9 +4,11 @@
 
 package runtime
 
+import "internal/abi"
+
 // inlinedCall is the encoding of entries in the FUNCDATA_InlTree table.
 type inlinedCall struct {
-	funcID    funcID // type of the called function
+	funcID    abi.FuncID // type of the called function
 	_         [3]byte
 	nameOff   int32 // offset into pclntab for name of called function
 	parentPc  int32 // position of an instruction whose source position is the call site (offset from entry)
@@ -51,7 +53,7 @@ type inlineFrame struct {
 // only ever used for symbolic debugging. If things go really wrong, it'll just
 // fall back to the outermost frame.
 func newInlineUnwinder(f funcInfo, pc uintptr, cache *pcvalueCache) (inlineUnwinder, inlineFrame) {
-	inldata := funcdata(f, _FUNCDATA_InlTree)
+	inldata := funcdata(f, abi.FUNCDATA_InlTree)
 	if inldata == nil {
 		return inlineUnwinder{f: f}, inlineFrame{pc: pc, index: -1}
 	}
@@ -65,7 +67,7 @@ func (u *inlineUnwinder) resolveInternal(pc uintptr) inlineFrame {
 		pc: pc,
 		// Conveniently, this returns -1 if there's an error, which is the same
 		// value we use for the outermost frame.
-		index: pcdatavalue1(u.f, _PCDATA_InlTreeIndex, pc, u.cache, false),
+		index: pcdatavalue1(u.f, abi.PCDATA_InlTreeIndex, pc, u.cache, false),
 	}
 }
 

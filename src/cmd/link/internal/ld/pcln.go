@@ -11,6 +11,7 @@ import (
 	"cmd/link/internal/loader"
 	"cmd/link/internal/sym"
 	"fmt"
+	"internal/abi"
 	"internal/buildcfg"
 	"os"
 	"path/filepath"
@@ -168,7 +169,7 @@ func genInlTreeSym(ctxt *Link, cu *sym.CompilationUnit, fi loader.FuncInfo, arch
 		}
 
 		inlFunc := ldr.FuncInfo(call.Func)
-		var funcID objabi.FuncID
+		var funcID abi.FuncID
 		startLine := int32(0)
 		if inlFunc.Valid() {
 			funcID = inlFunc.FuncID()
@@ -527,8 +528,8 @@ func numPCData(ldr *loader.Loader, s loader.Sym, fi loader.FuncInfo) uint32 {
 	}
 	numPCData := uint32(ldr.NumPcdata(s))
 	if fi.NumInlTree() > 0 {
-		if numPCData < objabi.PCDATA_InlTreeIndex+1 {
-			numPCData = objabi.PCDATA_InlTreeIndex + 1
+		if numPCData < abi.PCDATA_InlTreeIndex+1 {
+			numPCData = abi.PCDATA_InlTreeIndex + 1
 		}
 	}
 	return numPCData
@@ -565,10 +566,10 @@ func funcData(ldr *loader.Loader, s loader.Sym, fi loader.FuncInfo, inlSym loade
 	if fi.Valid() {
 		fdSyms = ldr.Funcdata(s, fdSyms)
 		if fi.NumInlTree() > 0 {
-			if len(fdSyms) < objabi.FUNCDATA_InlTree+1 {
-				fdSyms = append(fdSyms, make([]loader.Sym, objabi.FUNCDATA_InlTree+1-len(fdSyms))...)
+			if len(fdSyms) < abi.FUNCDATA_InlTree+1 {
+				fdSyms = append(fdSyms, make([]loader.Sym, abi.FUNCDATA_InlTree+1-len(fdSyms))...)
 			}
-			fdSyms[objabi.FUNCDATA_InlTree] = inlSym
+			fdSyms[abi.FUNCDATA_InlTree] = inlSym
 		}
 	}
 	return fdSyms
@@ -596,8 +597,8 @@ func (state pclntab) calculateFunctabSize(ctxt *Link, funcs []loader.Sym) (int64
 			fi.Preload()
 			numFuncData := ldr.NumFuncdata(s)
 			if fi.NumInlTree() > 0 {
-				if numFuncData < objabi.FUNCDATA_InlTree+1 {
-					numFuncData = objabi.FUNCDATA_InlTree + 1
+				if numFuncData < abi.FUNCDATA_InlTree+1 {
+					numFuncData = abi.FUNCDATA_InlTree + 1
 				}
 			}
 			size += int64(numPCData(ldr, s, fi) * 4)
@@ -698,14 +699,14 @@ func writeFuncs(ctxt *Link, sb *loader.SymbolBuilder, funcs []loader.Sym, inlSym
 		off = sb.SetUint32(ctxt.Arch, off, uint32(startLine))
 
 		// funcID uint8
-		var funcID objabi.FuncID
+		var funcID abi.FuncID
 		if fi.Valid() {
 			funcID = fi.FuncID()
 		}
 		off = sb.SetUint8(ctxt.Arch, off, uint8(funcID))
 
 		// flag uint8
-		var flag objabi.FuncFlag
+		var flag abi.FuncFlag
 		if fi.Valid() {
 			flag = fi.FuncFlag()
 		}
@@ -723,7 +724,7 @@ func writeFuncs(ctxt *Link, sb *loader.SymbolBuilder, funcs []loader.Sym, inlSym
 				sb.SetUint32(ctxt.Arch, off+int64(j*4), uint32(ldr.SymValue(pcSym)))
 			}
 			if fi.NumInlTree() > 0 {
-				sb.SetUint32(ctxt.Arch, off+objabi.PCDATA_InlTreeIndex*4, uint32(ldr.SymValue(pcinline)))
+				sb.SetUint32(ctxt.Arch, off+abi.PCDATA_InlTreeIndex*4, uint32(ldr.SymValue(pcinline)))
 			}
 		}
 

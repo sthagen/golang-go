@@ -59,7 +59,7 @@ nocgo:
 	BL	runtime·save_g(SB)
 	// update stackguard after _cgo_init
 	MOVD	(g_stack+stack_lo)(g), R0
-	ADD	$const__StackGuard, R0
+	ADD	$const_stackGuard, R0
 	MOVD	R0, g_stackguard0(g)
 	MOVD	R0, g_stackguard1(g)
 
@@ -611,6 +611,7 @@ done:
 	AESE	V0.B16, V2.B16
 	AESMC	V2.B16, V2.B16
 	AESE	V0.B16, V2.B16
+	AESMC	V2.B16, V2.B16
 
 	VMOV	V2.D[0], R0
 	RET

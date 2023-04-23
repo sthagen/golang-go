@@ -321,9 +321,11 @@ func (p *pageAlloc) init(mheapLock *mutex, sysStat *sysMemStat, test bool) {
 	// Set the mheapLock.
 	p.mheapLock = mheapLock
 
+	// Initialize the scavenge index.
+	p.summaryMappedReady += p.scav.index.init(test, sysStat)
+
 	// Set if we're in a test.
 	p.test = test
-	p.scav.index.test = test
 }
 
 // tryChunkOf returns the bitmap data for the given chunk.
@@ -359,6 +361,9 @@ func (p *pageAlloc) grow(base, size uintptr) {
 	// Grow the summary levels in a system-dependent manner.
 	// We just update a bunch of additional metadata here.
 	p.sysGrow(base, limit)
+
+	// Grow the scavenge index.
+	p.summaryMappedReady += p.scav.index.grow(base, limit, p.sysStat)
 
 	// Update p.start and p.end.
 	// If no growth happened yet, start == 0. This is generally

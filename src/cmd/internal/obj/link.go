@@ -39,6 +39,7 @@ import (
 	"cmd/internal/sys"
 	"encoding/binary"
 	"fmt"
+	"internal/abi"
 	"sync"
 	"sync/atomic"
 )
@@ -476,8 +477,8 @@ type FuncInfo struct {
 	Args      int32
 	Locals    int32
 	Align     int32
-	FuncID    objabi.FuncID
-	FuncFlag  objabi.FuncFlag
+	FuncID    abi.FuncID
+	FuncFlag  abi.FuncFlag
 	StartLine int32
 	Text      *Prog
 	Autot     map[*LSym]struct{}
@@ -911,7 +912,7 @@ func (a Attribute) String() string {
 // TextAttrString formats the symbol attributes for printing in as part of a TEXT prog.
 func (s *LSym) TextAttrString() string {
 	attr := s.Attribute.String()
-	if s.Func().FuncFlag&objabi.FuncFlag_TOPFRAME != 0 {
+	if s.Func().FuncFlag&abi.FuncFlagTopFrame != 0 {
 		if attr != "" {
 			attr += "|"
 		}

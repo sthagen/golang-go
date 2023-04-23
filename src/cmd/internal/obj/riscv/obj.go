@@ -25,6 +25,7 @@ import (
 	"cmd/internal/objabi"
 	"cmd/internal/sys"
 	"fmt"
+	"internal/abi"
 	"log"
 	"math/bits"
 )
@@ -592,8 +593,8 @@ func preprocess(ctxt *obj.Link, cursym *obj.LSym, newprog obj.ProgAlloc) {
 
 		if p.To.Type == obj.TYPE_REG && p.To.Reg == REGSP && p.Spadj == 0 {
 			f := cursym.Func()
-			if f.FuncFlag&objabi.FuncFlag_SPWRITE == 0 {
-				f.FuncFlag |= objabi.FuncFlag_SPWRITE
+			if f.FuncFlag&abi.FuncFlagSPWrite == 0 {
+				f.FuncFlag |= abi.FuncFlagSPWrite
 				if ctxt.Debugvlog || !ctxt.IsAsm {
 					ctxt.Logf("auto-SPWRITE: %s %v\n", cursym.Name, p)
 					if !ctxt.IsAsm {
@@ -828,7 +829,7 @@ func stacksplit(ctxt *obj.Link, p *obj.Prog, cursym *obj.LSym, newprog obj.ProgA
 
 	var to_done, to_more *obj.Prog
 
-	if framesize <= objabi.StackSmall {
+	if framesize <= abi.StackSmall {
 		// small stack
 		//	// if SP > stackguard { goto done }
 		//	BLTU	stackguard, SP, done
@@ -841,8 +842,8 @@ func stacksplit(ctxt *obj.Link, p *obj.Prog, cursym *obj.LSym, newprog obj.ProgA
 		to_done = p
 	} else {
 		// large stack: SP-framesize < stackguard-StackSmall
-		offset := int64(framesize) - objabi.StackSmall
-		if framesize > objabi.StackBig {
+		offset := int64(framesize) - abi.StackSmall
+		if framesize > abi.StackBig {
 			// Such a large stack we need to protect against underflow.
 			// The runtime guarantees SP > objabi.StackBig, but
 			// framesize is large enough that SP-framesize may

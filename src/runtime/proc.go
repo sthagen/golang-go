@@ -832,7 +832,7 @@ func mcommoninit(mp *m, id int64) {
 
 	mpreinit(mp)
 	if mp.gsignal != nil {
-		mp.gsignal.stackguard1 = mp.gsignal.stack.lo + _StackGuard
+		mp.gsignal.stackguard1 = mp.gsignal.stack.lo + stackGuard
 	}
 
 	// Add to allm so garbage collector doesn't free g->m
@@ -1446,7 +1446,7 @@ func mstart0() {
 	}
 	// Initialize stack guard so that we can start calling regular
 	// Go code.
-	gp.stackguard0 = gp.stack.lo + _StackGuard
+	gp.stackguard0 = gp.stack.lo + stackGuard
 	// This is the g0, so we can also call go:systemstack
 	// functions, which check stackguard1.
 	gp.stackguard1 = gp.stackguard0
@@ -1940,7 +1940,7 @@ func needm() {
 	gp := getg()
 	gp.stack.hi = getcallersp() + 1024
 	gp.stack.lo = getcallersp() - 32*1024
-	gp.stackguard0 = gp.stack.lo + _StackGuard
+	gp.stackguard0 = gp.stack.lo + stackGuard
 
 	// Initialize this thread to use the m.
 	asminit()
@@ -2640,7 +2640,7 @@ func execute(gp *g, inheritTime bool) {
 	casgstatus(gp, _Grunnable, _Grunning)
 	gp.waitsince = 0
 	gp.preempt = false
-	gp.stackguard0 = gp.stack.lo + _StackGuard
+	gp.stackguard0 = gp.stack.lo + stackGuard
 	if !inheritTime {
 		mp.p.ptr().schedtick++
 	}
@@ -3573,7 +3573,7 @@ func preemptPark(gp *g) {
 		if !f.valid() {
 			throw("preempt at unknown pc")
 		}
-		if f.flag&funcFlag_SPWRITE != 0 {
+		if f.flag&abi.FuncFlagSPWrite != 0 {
 			println("runtime: unexpected SPWRITE function", funcname(f), "in async preempt")
 			throw("preempt SPWRITE")
 		}
@@ -3955,8 +3955,8 @@ func exitsyscall() {
 			// restore the preemption request in case we've cleared it in newstack
 			gp.stackguard0 = stackPreempt
 		} else {
-			// otherwise restore the real _StackGuard, we've spoiled it in entersyscall/entersyscallblock
-			gp.stackguard0 = gp.stack.lo + _StackGuard
+			// otherwise restore the real stackGuard, we've spoiled it in entersyscall/entersyscallblock
+			gp.stackguard0 = gp.stack.lo + stackGuard
 		}
 		gp.throwsplit = false
 
@@ -4137,7 +4137,7 @@ func syscall_runtime_BeforeFork() {
 
 	// This function is called before fork in syscall package.
 	// Code between fork and exec must not allocate memory nor even try to grow stack.
-	// Here we spoil g->_StackGuard to reliably detect any attempts to grow stack.
+	// Here we spoil g.stackguard0 to reliably detect any attempts to grow stack.
 	// runtime_AfterFork will undo this in parent process, but not in child.
 	gp.stackguard0 = stackFork
 }
@@ -4150,7 +4150,7 @@ func syscall_runtime_AfterFork() {
 	gp := getg().m.curg
 
 	// See the comments in beforefork.
-	gp.stackguard0 = gp.stack.lo + _StackGuard
+	gp.stackguard0 = gp.stack.lo + stackGuard
 
 	msigrestore(gp.m.sigmask)
 
@@ -4220,11 +4220,11 @@ func syscall_runtime_AfterExec() {
 func malg(stacksize int32) *g {
 	newg := new(g)
 	if stacksize >= 0 {
-		stacksize = round2(_StackSystem + stacksize)
+		stacksize = round2(stackSystem + stacksize)
 		systemstack(func() {
 			newg.stack = stackalloc(uint32(stacksize))
 		})
-		newg.stackguard0 = newg.stack.lo + _StackGuard
+		newg.stackguard0 = newg.stack.lo + stackGuard
 		newg.stackguard1 = ^uintptr(0)
 		// Clear the bottom word of the stack. We record g
 		// there on gsignal stack during VDSO on ARM and ARM64.
@@ -4263,7 +4263,7 @@ func newproc1(fn *funcval, callergp *g, callerpc uintptr) *g {
 	pp := mp.p.ptr()
 	newg := gfget(pp)
 	if newg == nil {
-		newg = malg(_StackMin)
+		newg = malg(stackMin)
 		casgstatus(newg, _Gidle, _Gdead)
 		allgadd(newg) // publishes with a g->status of Gdead so GC scanner doesn't look at uninitialized stack.
 	}
@@ -4467,7 +4467,7 @@ retry:
 		systemstack(func() {
 			gp.stack = stackalloc(startingStackSize)
 		})
-		gp.stackguard0 = gp.stack.lo + _StackGuard
+		gp.stackguard0 = gp.stack.lo + stackGuard
 	} else {
 		if raceenabled {
 			racemalloc(unsafe.Pointer(gp.stack.lo), gp.stack.hi-gp.stack.lo)
@@ -5194,6 +5194,7 @@ func checkdead() {
 	}
 	if run < 0 {
 		print("runtime: checkdead: nmidle=", sched.nmidle, " nmidlelocked=", sched.nmidlelocked, " mcount=", mcount(), " nmsys=", sched.nmsys, "\n")
+		unlock(&sched.lock)
 		throw("checkdead: inconsistent counts")
 	}
 
@@ -5211,6 +5212,7 @@ func checkdead() {
 			_Grunning,
 			_Gsyscall:
 			print("runtime: checkdead: find g ", gp.goid, " in status ", s, "\n")
+			unlock(&sched.lock)
 			throw("checkdead: runnable g")
 		}
 	})
@@ -5229,12 +5231,14 @@ func checkdead() {
 			if pp == nil {
 				// There should always be a free P since
 				// nothing is running.
+				unlock(&sched.lock)
 				throw("checkdead: no p for timer")
 			}
 			mp := mget()
 			if mp == nil {
 				// There should always be a free M since
 				// nothing is running.
+				unlock(&sched.lock)
 				throw("checkdead: no m for timer")
 			}
 			// M must be spinning to steal. We set this to be
