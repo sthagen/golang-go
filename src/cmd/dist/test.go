@@ -317,9 +317,7 @@ func (opts *goTest) bgCommand(t *tester) *exec.Cmd {
 	// Combine the flags.
 	args := append([]string{"test"}, build...)
 	if t.compileOnly {
-		// We can't pass -c with multiple packages, so run the tests but
-		// tell them not to do anything.
-		args = append(args, "-run=^$")
+		args = append(args, "-c", "-o", os.DevNull)
 	} else {
 		args = append(args, run...)
 	}
@@ -1696,7 +1694,7 @@ func buildModeSupported(compiler, buildmode, goos, goarch string) bool {
 			return true
 		case "linux":
 			switch goarch {
-			case "386", "amd64", "arm", "armbe", "arm64", "arm64be", "ppc64le", "riscv64", "s390x":
+			case "386", "amd64", "arm", "armbe", "arm64", "arm64be", "loong64", "ppc64le", "riscv64", "s390x":
 				// linux/ppc64 not supported because it does
 				// not support external linking mode yet.
 				return true

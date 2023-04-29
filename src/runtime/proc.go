@@ -209,6 +209,10 @@ func main() {
 
 	main_init_done = make(chan bool)
 	if iscgo {
+		if _cgo_pthread_key_created == nil {
+			throw("_cgo_pthread_key_created missing")
+		}
+
 		if _cgo_thread_start == nil {
 			throw("_cgo_thread_start missing")
 		}
@@ -223,6 +227,13 @@ func main() {
 		if _cgo_notify_runtime_init_done == nil {
 			throw("_cgo_notify_runtime_init_done missing")
 		}
+
+		// Set the x_crosscall2_ptr C function pointer variable point to crosscall2.
+		if set_crosscall2 == nil {
+			throw("set_crosscall2 missing")
+		}
+		set_crosscall2()
+
 		// Start the template thread in case we enter Go from
 		// a C-created thread and need to create a new thread.
 		startTemplateThread()
@@ -857,8 +868,8 @@ func (mp *m) becomeSpinning() {
 	sched.needspinning.Store(0)
 }
 
-func (mp *m) incgocallback() bool {
-	return (!mp.incgo && mp.ncgo > 0) || mp.isextra
+func (mp *m) hasCgoOnStack() bool {
+	return mp.ncgo > 0 || mp.isextra
 }
 
 var fastrandseed uintptr
@@ -1880,11 +1891,15 @@ func allocm(pp *p, fn func(), id int64) *m {
 // pressed into service as the scheduling stack and current
 // goroutine for the duration of the cgo callback.
 //
-// When the callback is done with the m, it calls dropm to
-// put the m back on the list.
+// It calls dropm to put the m back on the list,
+// 1. when the callback is done with the m in non-pthread platforms,
+// 2. or when the C thread exiting on pthread platforms.
+//
+// The signal argument indicates whether we're called from a signal
+// handler.
 //
 //go:nosplit
-func needm() {
+func needm(signal bool) {
 	if (iscgo || GOOS == "windows") && !cgoHasExtraM {
 		// Can happen if C/C++ code calls Go from a global ctor.
 		// Can also happen on Windows if a global ctor uses a
@@ -1933,15 +1948,35 @@ func needm() {
 	osSetupTLS(mp)
 
 	// Install g (= m->g0) and set the stack bounds
-	// to match the current stack. We don't actually know
+	// to match the current stack. If we don't actually know
 	// how big the stack is, like we don't know how big any
-	// scheduling stack is, but we assume there's at least 32 kB,
-	// which is more than enough for us.
+	// scheduling stack is, but we assume there's at least 32 kB.
+	// If we can get a more accurate stack bound from pthread,
+	// use that.
 	setg(mp.g0)
 	gp := getg()
 	gp.stack.hi = getcallersp() + 1024
 	gp.stack.lo = getcallersp() - 32*1024
+	if !signal && _cgo_getstackbound != nil {
+		// Don't adjust if called from the signal handler.
+		// We are on the signal stack, not the pthread stack.
+		// (We could get the stack bounds from sigaltstack, but
+		// we're getting out of the signal handler very soon
+		// anyway. Not worth it.)
+		var low uintptr
+		asmcgocall(_cgo_getstackbound, unsafe.Pointer(&low))
+		// getstackbound is an unsupported no-op on Windows.
+		if low != 0 {
+			gp.stack.lo = low
+			// TODO: Also get gp.stack.hi from getstackbound.
+		}
+	}
 	gp.stackguard0 = gp.stack.lo + stackGuard
+
+	// Should mark we are already in Go now.
+	// Otherwise, we may call needm again when we get a signal, before cgocallbackg1,
+	// which means the extram list may be empty, that will cause a deadlock.
+	mp.isExtraInC = false
 
 	// Initialize this thread to use the m.
 	asminit()
@@ -1950,6 +1985,17 @@ func needm() {
 	// mp.curg is now a real goroutine.
 	casgstatus(mp.curg, _Gdead, _Gsyscall)
 	sched.ngsys.Add(-1)
+}
+
+// Acquire an extra m and bind it to the C thread when a pthread key has been created.
+//
+//go:nosplit
+func needAndBindM() {
+	needm(false)
+
+	if _cgo_pthread_key_created != nil && *(*uintptr)(_cgo_pthread_key_created) != 0 {
+		cgoBindM()
+	}
 }
 
 // newextram allocates m's and puts them on the extra list.
@@ -1996,6 +2042,8 @@ func oneNewExtraM() {
 	gp.m = mp
 	mp.curg = gp
 	mp.isextra = true
+	// mark we are in C by default.
+	mp.isExtraInC = true
 	mp.lockedInt++
 	mp.lockedg.set(gp)
 	gp.lockedm.set(mp)
@@ -2028,9 +2076,11 @@ func oneNewExtraM() {
 	unlockextra(mp)
 }
 
+// dropm puts the current m back onto the extra list.
+//
+// 1. On systems without pthreads, like Windows
 // dropm is called when a cgo callback has called needm but is now
 // done with the callback and returning back into the non-Go thread.
-// It puts the current m back onto the extra list.
 //
 // The main expense here is the call to signalstack to release the
 // m's signal stack, and then the call to needm on the next callback
@@ -2042,15 +2092,18 @@ func oneNewExtraM() {
 // call. These should typically not be scheduling operations, just a few
 // atomics, so the cost should be small.
 //
-// TODO(rsc): An alternative would be to allocate a dummy pthread per-thread
-// variable using pthread_key_create. Unlike the pthread keys we already use
-// on OS X, this dummy key would never be read by Go code. It would exist
-// only so that we could register at thread-exit-time destructor.
-// That destructor would put the m back onto the extra list.
-// This is purely a performance optimization. The current version,
-// in which dropm happens on each cgo call, is still correct too.
-// We may have to keep the current version on systems with cgo
-// but without pthreads, like Windows.
+// 2. On systems with pthreads
+// dropm is called while a non-Go thread is exiting.
+// We allocate a pthread per-thread variable using pthread_key_create,
+// to register a thread-exit-time destructor.
+// And store the g into a thread-specific value associated with the pthread key,
+// when first return back to C.
+// So that the destructor would invoke dropm while the non-Go thread is exiting.
+// This is much faster since it avoids expensive signal-related syscalls.
+//
+// NOTE: this always runs without a P, so, nowritebarrierrec required.
+//
+//go:nowritebarrierrec
 func dropm() {
 	// Clear m and g, and return m to the extra list.
 	// After the call to setg we can only call nosplit functions
@@ -2080,6 +2133,39 @@ func dropm() {
 	unlockextra(mp)
 
 	msigrestore(sigmask)
+}
+
+// bindm store the g0 of the current m into a thread-specific value.
+//
+// We allocate a pthread per-thread variable using pthread_key_create,
+// to register a thread-exit-time destructor.
+// We are here setting the thread-specific value of the pthread key, to enable the destructor.
+// So that the pthread_key_destructor would dropm while the C thread is exiting.
+//
+// And the saved g will be used in pthread_key_destructor,
+// since the g stored in the TLS by Go might be cleared in some platforms,
+// before the destructor invoked, so, we restore g by the stored g, before dropm.
+//
+// We store g0 instead of m, to make the assembly code simpler,
+// since we need to restore g0 in runtime.cgocallback.
+//
+// On systems without pthreads, like Windows, bindm shouldn't be used.
+//
+// NOTE: this always runs without a P, so, nowritebarrierrec required.
+//
+//go:nosplit
+//go:nowritebarrierrec
+func cgoBindM() {
+	if GOOS == "windows" || GOOS == "plan9" {
+		fatal("bindm in unexpected GOOS")
+	}
+	g := getg()
+	if g.m.g0 != g {
+		fatal("the current g is not g0")
+	}
+	if _cgo_bindm != nil {
+		asmcgocall(_cgo_bindm, unsafe.Pointer(g))
+	}
 }
 
 // A helper function for EnsureDropM.
@@ -2349,10 +2435,15 @@ func mspinning() {
 // Callers passing a non-nil P must call from a non-preemptible context. See
 // comment on acquirem below.
 //
+// Argument lockheld indicates whether the caller already acquired the
+// scheduler lock. Callers holding the lock when making the call must pass
+// true. The lock might be temporarily dropped, but will be reacquired before
+// returning.
+//
 // Must not have write barriers because this may be called without a P.
 //
 //go:nowritebarrierrec
-func startm(pp *p, spinning bool) {
+func startm(pp *p, spinning, lockheld bool) {
 	// Disable preemption.
 	//
 	// Every owned P must have an owner that will eventually stop it in the
@@ -2370,7 +2461,9 @@ func startm(pp *p, spinning bool) {
 	// startm. Callers passing a nil P may be preemptible, so we must
 	// disable preemption before acquiring a P from pidleget below.
 	mp := acquirem()
-	lock(&sched.lock)
+	if !lockheld {
+		lock(&sched.lock)
+	}
 	if pp == nil {
 		if spinning {
 			// TODO(prattmic): All remaining calls to this function
@@ -2380,7 +2473,9 @@ func startm(pp *p, spinning bool) {
 		}
 		pp, _ = pidleget(0)
 		if pp == nil {
-			unlock(&sched.lock)
+			if !lockheld {
+				unlock(&sched.lock)
+			}
 			releasem(mp)
 			return
 		}
@@ -2394,6 +2489,8 @@ func startm(pp *p, spinning bool) {
 		// could find no idle P while checkdead finds a runnable G but
 		// no running M's because this new M hasn't started yet, thus
 		// throwing in an apparent deadlock.
+		// This apparent deadlock is possible when startm is called
+		// from sysmon, which doesn't count as a running M.
 		//
 		// Avoid this situation by pre-allocating the ID for the new M,
 		// thus marking it as 'running' before we drop sched.lock. This
@@ -2408,12 +2505,18 @@ func startm(pp *p, spinning bool) {
 			fn = mspinning
 		}
 		newm(fn, pp, id)
+
+		if lockheld {
+			lock(&sched.lock)
+		}
 		// Ownership transfer of pp committed by start in newm.
 		// Preemption is now safe.
 		releasem(mp)
 		return
 	}
-	unlock(&sched.lock)
+	if !lockheld {
+		unlock(&sched.lock)
+	}
 	if nmp.spinning {
 		throw("startm: m is spinning")
 	}
@@ -2442,24 +2545,24 @@ func handoffp(pp *p) {
 
 	// if it has local work, start it straight away
 	if !runqempty(pp) || sched.runqsize != 0 {
-		startm(pp, false)
+		startm(pp, false, false)
 		return
 	}
 	// if there's trace work to do, start it straight away
 	if (trace.enabled || trace.shutdown) && traceReaderAvailable() != nil {
-		startm(pp, false)
+		startm(pp, false, false)
 		return
 	}
 	// if it has GC work, start it straight away
 	if gcBlackenEnabled != 0 && gcMarkWorkAvailable(pp) {
-		startm(pp, false)
+		startm(pp, false, false)
 		return
 	}
 	// no local work, check that there are no spinning/idle M's,
 	// otherwise our help is not required
 	if sched.nmspinning.Load()+sched.npidle.Load() == 0 && sched.nmspinning.CompareAndSwap(0, 1) { // TODO: fast atomic
 		sched.needspinning.Store(0)
-		startm(pp, true)
+		startm(pp, true, false)
 		return
 	}
 	lock(&sched.lock)
@@ -2481,14 +2584,14 @@ func handoffp(pp *p) {
 	}
 	if sched.runqsize != 0 {
 		unlock(&sched.lock)
-		startm(pp, false)
+		startm(pp, false, false)
 		return
 	}
 	// If this is the last running P and nobody is polling network,
 	// need to wakeup another M to poll network.
 	if sched.npidle.Load() == gomaxprocs-1 && sched.lastpoll.Load() != 0 {
 		unlock(&sched.lock)
-		startm(pp, false)
+		startm(pp, false, false)
 		return
 	}
 
@@ -2537,7 +2640,7 @@ func wakep() {
 	// see at least one running M (ours).
 	unlock(&sched.lock)
 
-	startm(pp, true)
+	startm(pp, true, false)
 
 	releasem(mp)
 }
@@ -3290,8 +3393,8 @@ func injectglist(glist *gList) {
 				break
 			}
 
+			startm(pp, false, true)
 			unlock(&sched.lock)
-			startm(pp, false)
 			releasem(mp)
 		}
 	}
@@ -5398,7 +5501,7 @@ func sysmon() {
 			// See issue 42515 and
 			// https://gnats.netbsd.org/cgi-bin/query-pr-single.pl?number=50094.
 			if next := timeSleepUntil(); next < now {
-				startm(nil, false)
+				startm(nil, false, false)
 			}
 		}
 		if scavenger.sysmonWake.Load() != 0 {
@@ -5670,7 +5773,7 @@ func schedEnableUser(enable bool) {
 		globrunqputbatch(&sched.disable.runnable, n)
 		unlock(&sched.lock)
 		for ; n != 0 && sched.npidle.Load() != 0; n-- {
-			startm(nil, false)
+			startm(nil, false, false)
 		}
 	} else {
 		unlock(&sched.lock)
