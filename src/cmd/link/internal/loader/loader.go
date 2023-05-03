@@ -1247,6 +1247,16 @@ func (l *Loader) Data(i Sym) []byte {
 	return r.Data(li)
 }
 
+// Returns the symbol content of the i-th symbol as a string. i is global index.
+func (l *Loader) DataString(i Sym) string {
+	if l.IsExternal(i) {
+		pp := l.getPayload(i)
+		return string(pp.data)
+	}
+	r, li := l.toLocal(i)
+	return r.DataString(li)
+}
+
 // FreeData clears the symbol data of an external symbol, allowing the memory
 // to be freed earlier. No-op for non-external symbols.
 // i is global index.
@@ -1646,6 +1656,16 @@ func (l *Loader) WasmImportSym(fnSymIdx Sym) (Sym, bool) {
 	return 0, false
 }
 
+// SEHUnwindSym returns the auxiliary SEH unwind symbol associated with
+// a given function symbol.
+func (l *Loader) SEHUnwindSym(fnSymIdx Sym) Sym {
+	if l.SymType(fnSymIdx) != sym.STEXT {
+		log.Fatalf("error: non-function sym %d/%s t=%s passed to SEHUnwindSym", fnSymIdx, l.SymName(fnSymIdx), l.SymType(fnSymIdx).String())
+	}
+
+	return l.aux1(fnSymIdx, goobj.AuxSehUnwindInfo)
+}
+
 // GetFuncDwarfAuxSyms collects and returns the auxiliary DWARF
 // symbols associated with a given function symbol.  Prior to the
 // introduction of the loader, this was done purely using name
@@ -1683,6 +1703,15 @@ func (l *Loader) GetFuncDwarfAuxSyms(fnSymIdx Sym) (auxDwarfInfo, auxDwarfLoc, a
 		}
 	}
 	return
+}
+
+func (l *Loader) GetVarDwarfAuxSym(i Sym) Sym {
+	aux := l.aux1(i, goobj.AuxDwarfInfo)
+	if aux != 0 && l.SymType(aux) != sym.SDWARFVAR {
+		fmt.Println(l.SymName(i), l.SymType(i), l.SymType(aux), sym.SDWARFVAR)
+		panic("aux dwarf info sym with wrong type")
+	}
+	return aux
 }
 
 // AddInteriorSym sets up 'interior' as an interior symbol of

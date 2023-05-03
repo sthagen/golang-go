@@ -1154,6 +1154,14 @@ func dwarfblk(ctxt *Link, out *OutBuf, addr int64, size int64) {
 	writeBlocks(ctxt, out, ctxt.outSem, ctxt.loader, syms, addr, size, zeros[:])
 }
 
+func pdatablk(ctxt *Link, out *OutBuf, addr int64, size int64) {
+	writeBlocks(ctxt, out, ctxt.outSem, ctxt.loader, []loader.Sym{sehp.pdata}, addr, size, zeros[:])
+}
+
+func xdatablk(ctxt *Link, out *OutBuf, addr int64, size int64) {
+	writeBlocks(ctxt, out, ctxt.outSem, ctxt.loader, []loader.Sym{sehp.xdata}, addr, size, zeros[:])
+}
+
 var covCounterDataStartOff, covCounterDataLen uint64
 
 var zeros [512]byte
@@ -1649,6 +1657,8 @@ func (ctxt *Link) dodata(symGroupType []sym.SymKind) {
 	// data/rodata (and related) symbols.
 	state.allocateDataSections(ctxt)
 
+	state.allocateSEHSections(ctxt)
+
 	// Create *sym.Section objects and assign symbols to sections for
 	// DWARF symbols.
 	state.allocateDwarfSections(ctxt)
@@ -1673,6 +1683,14 @@ func (ctxt *Link) dodata(symGroupType []sym.SymKind) {
 		n++
 	}
 	for _, sect := range Segdwarf.Sections {
+		sect.Extnum = n
+		n++
+	}
+	for _, sect := range Segpdata.Sections {
+		sect.Extnum = n
+		n++
+	}
+	for _, sect := range Segxdata.Sections {
 		sect.Extnum = n
 		n++
 	}
@@ -2145,6 +2163,21 @@ func (state *dodataState) allocateDwarfSections(ctxt *Link) {
 		}
 		sect.Length = uint64(state.datsize) - sect.Vaddr
 		state.checkdatsize(curType)
+	}
+}
+
+// allocateSEHSections allocate a sym.Section object for SEH
+// symbols, and assigns symbols to sections.
+func (state *dodataState) allocateSEHSections(ctxt *Link) {
+	if sehp.pdata > 0 {
+		sect := state.allocateDataSectionForSym(&Segpdata, sehp.pdata, 04)
+		state.assignDsymsToSection(sect, []loader.Sym{sehp.pdata}, sym.SRODATA, aligndatsize)
+		state.checkdatsize(sym.SSEHSECT)
+	}
+	if sehp.xdata > 0 {
+		sect := state.allocateNamedDataSection(&Segxdata, ".xdata", []sym.SymKind{}, 04)
+		state.assignDsymsToSection(sect, []loader.Sym{sehp.xdata}, sym.SRODATA, aligndatsize)
+		state.checkdatsize(sym.SSEHSECT)
 	}
 }
 
@@ -2684,6 +2717,36 @@ func (ctxt *Link) address() []*sym.Segment {
 	// simply because right now we know where the BSS starts.
 	Segdata.Filelen = bss.Vaddr - Segdata.Vaddr
 
+	if len(Segpdata.Sections) > 0 {
+		va = uint64(Rnd(int64(va), int64(*FlagRound)))
+		order = append(order, &Segpdata)
+		Segpdata.Rwx = 04
+		Segpdata.Vaddr = va
+		// Segpdata.Sections is intended to contain just one section.
+		// Loop through the slice anyway for consistency.
+		for _, s := range Segpdata.Sections {
+			va = uint64(Rnd(int64(va), int64(s.Align)))
+			s.Vaddr = va
+			va += s.Length
+		}
+		Segpdata.Length = va - Segpdata.Vaddr
+	}
+
+	if len(Segxdata.Sections) > 0 {
+		va = uint64(Rnd(int64(va), int64(*FlagRound)))
+		order = append(order, &Segxdata)
+		Segxdata.Rwx = 04
+		Segxdata.Vaddr = va
+		// Segxdata.Sections is intended to contain just one section.
+		// Loop through the slice anyway for consistency.
+		for _, s := range Segxdata.Sections {
+			va = uint64(Rnd(int64(va), int64(s.Align)))
+			s.Vaddr = va
+			va += s.Length
+		}
+		Segxdata.Length = va - Segxdata.Vaddr
+	}
+
 	va = uint64(Rnd(int64(va), int64(*FlagRound)))
 	order = append(order, &Segdwarf)
 	Segdwarf.Rwx = 06
@@ -2732,6 +2795,12 @@ func (ctxt *Link) address() []*sym.Segment {
 			for ; sub != 0; sub = ldr.SubSym(sub) {
 				ldr.AddToSymValue(s, v)
 			}
+		}
+	}
+
+	for _, s := range []loader.Sym{sehp.pdata, sehp.xdata} {
+		if sect := ldr.SymSect(s); sect != nil {
+			ldr.AddToSymValue(s, int64(sect.Vaddr))
 		}
 	}
 
