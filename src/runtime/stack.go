@@ -108,11 +108,14 @@ const (
 	stackDebug       = 0
 	stackFromSystem  = 0 // allocate stacks from system memory instead of the heap
 	stackFaultOnFree = 0 // old stacks are mapped noaccess to detect use after free
-	stackPoisonCopy  = 0 // fill stack that should not be accessed with garbage, to detect bad dereferences during copy
 	stackNoCache     = 0 // disable per-P small stack caches
 
 	// check the BP links during traceback.
 	debugCheckBP = false
+)
+
+var (
+	stackPoisonCopy = 0 // fill stack that should not be accessed with garbage, to detect bad dereferences during copy
 )
 
 const (
@@ -671,13 +674,6 @@ func adjustframe(frame *stkframe, adjinfo *adjustinfo) {
 		// On ARM64, this is the frame pointer of the caller's caller saved
 		// by the caller in its frame (one word below its SP).
 		adjustpointer(adjinfo, unsafe.Pointer(frame.varp))
-	}
-
-	if f.funcID == abi.FuncID_systemstack_switch {
-		// A special routine at the bottom of stack of a goroutine that does a systemstack call.
-		// We will allow it to be copied even though we don't
-		// have full GC info for it (because it is written in asm).
-		return
 	}
 
 	locals, args, objs := frame.getStackMap(&adjinfo.cache, true)

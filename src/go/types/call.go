@@ -25,15 +25,13 @@ import (
 func (check *Checker) funcInst(tsig *Signature, pos token.Pos, x *operand, ix *typeparams.IndexExpr) {
 	assert(tsig != nil || ix != nil)
 
-	if !check.allowVersion(check.pkg, pos, 1, 18) {
-		var posn positioner
-		if ix != nil {
-			posn = inNode(ix.Orig, ix.Lbrack)
-		} else {
-			posn = atPos(pos)
-		}
-		check.softErrorf(posn, UnsupportedFeature, "function instantiation requires go1.18 or later")
+	var instErrPos positioner
+	if ix != nil {
+		instErrPos = inNode(ix.Orig, ix.Lbrack)
+	} else {
+		instErrPos = atPos(pos)
 	}
+	versionErr := !check.verifyVersionf(check.pkg, instErrPos, go1_18, "function instantiation")
 
 	// targs and xlist are the type arguments and corresponding type expressions, or nil.
 	var targs []Type
@@ -74,6 +72,13 @@ func (check *Checker) funcInst(tsig *Signature, pos token.Pos, x *operand, ix *t
 			// of a synthetic function f where f's parameters are the parameters and results
 			// of x and where the arguments to the call of f are values of the parameter and
 			// result types of x.
+			if !versionErr && !check.allowVersion(check.pkg, instErrPos, go1_21) {
+				if ix != nil {
+					check.versionErrorf(instErrPos, go1_21, "partially instantiated function in assignment")
+				} else {
+					check.versionErrorf(instErrPos, go1_21, "implicitly instantiated function in assignment")
+				}
+			}
 			n := tsig.params.Len()
 			m := tsig.results.Len()
 			args = make([]*operand, n+m)
@@ -95,10 +100,10 @@ func (check *Checker) funcInst(tsig *Signature, pos token.Pos, x *operand, ix *t
 		}
 
 		// Rename type parameters to avoid problems with recursive instantiations.
-		// Note that NewTuple(params...) below is nil if len(params) == 0, as desired.
+		// Note that NewTuple(params...) below is (*Tuple)(nil) if len(params) == 0, as desired.
 		tparams, params2 := check.renameTParams(pos, sig.TypeParams().list(), NewTuple(params...))
 
-		targs = check.infer(atPos(pos), tparams, targs, params2, args)
+		targs = check.infer(atPos(pos), tparams, targs, params2.(*Tuple), args)
 		if targs == nil {
 			// error was already reported
 			x.mode = invalid
@@ -292,9 +297,7 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 		// is an error checking its arguments (for example, if an incorrect number
 		// of arguments is supplied).
 		if got == want && want > 0 {
-			if !check.allowVersion(check.pkg, ix.Pos(), 1, 18) {
-				check.softErrorf(inNode(call.Fun, ix.Lbrack), UnsupportedFeature, "function instantiation requires go1.18 or later")
-			}
+			check.verifyVersionf(check.pkg, atPos(ix.Lbrack), go1_18, "function instantiation")
 
 			sig = check.instantiateSignature(ix.Pos(), sig, targs, xlist)
 			assert(sig.TypeParams().Len() == 0) // signature is not generic anymore
@@ -308,7 +311,7 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 	}
 
 	// evaluate arguments
-	args := check.exprList(call.Args)
+	args := check.genericExprList(call.Args)
 	sig = check.arguments(call, sig, targs, args, xlist)
 
 	if wasGeneric && sig.TypeParams().Len() == 0 {
@@ -343,6 +346,8 @@ func (check *Checker) callExpr(x *operand, call *ast.CallExpr) exprKind {
 	return statement
 }
 
+// exprList evaluates a list of expressions and returns the corresponding operands.
+// A single-element expression list may evaluate to multiple operands.
 func (check *Checker) exprList(elist []ast.Expr) (xlist []*operand) {
 	switch len(elist) {
 	case 0:
@@ -355,6 +360,25 @@ func (check *Checker) exprList(elist []ast.Expr) (xlist []*operand) {
 		for i, e := range elist {
 			var x operand
 			check.expr(nil, &x, e)
+			xlist[i] = &x
+		}
+	}
+	return
+}
+
+// genericExprList is like exprList but result operands may be generic (not fully instantiated).
+func (check *Checker) genericExprList(elist []ast.Expr) (xlist []*operand) {
+	switch len(elist) {
+	case 0:
+		// nothing to do
+	case 1:
+		xlist = check.genericMultiExpr(elist[0])
+	default:
+		// multiple (possibly invalid) values
+		xlist = make([]*operand, len(elist))
+		for i, e := range elist {
+			var x operand
+			check.genericExpr(&x, e)
 			xlist[i] = &x
 		}
 	}
@@ -391,7 +415,7 @@ func (check *Checker) arguments(call *ast.CallExpr, sig *Signature, targs []Type
 
 	// set up parameters
 	sigParams := sig.params // adjusted for variadic functions (may be nil for empty parameter lists!)
-	adjusted := false       // indicates if sigParams is different from t.params
+	adjusted := false       // indicates if sigParams is different from sig.params
 	if sig.variadic {
 		if ddd {
 			// variadic_func(a, b, c...)
@@ -452,39 +476,93 @@ func (check *Checker) arguments(call *ast.CallExpr, sig *Signature, targs []Type
 		return
 	}
 
-	// infer type arguments and instantiate signature if necessary
-	if sig.TypeParams().Len() > 0 {
-		if !check.allowVersion(check.pkg, call.Pos(), 1, 18) {
+	// collect type parameters of callee and generic function arguments
+	var tparams []*TypeParam
+
+	// collect type parameters of callee
+	n := sig.TypeParams().Len()
+	if n > 0 {
+		if !check.allowVersion(check.pkg, call, go1_18) {
 			switch call.Fun.(type) {
 			case *ast.IndexExpr, *ast.IndexListExpr:
 				ix := typeparams.UnpackIndexExpr(call.Fun)
-				check.softErrorf(inNode(call.Fun, ix.Lbrack), UnsupportedFeature, "function instantiation requires go1.18 or later")
+				check.versionErrorf(inNode(call.Fun, ix.Lbrack), go1_18, "function instantiation")
 			default:
-				check.softErrorf(inNode(call, call.Lparen), UnsupportedFeature, "implicit function instantiation requires go1.18 or later")
+				check.versionErrorf(inNode(call, call.Lparen), go1_18, "implicit function instantiation")
 			}
 		}
+		// rename type parameters to avoid problems with recursive calls
+		var tmp Type
+		tparams, tmp = check.renameTParams(call.Pos(), sig.TypeParams().list(), sigParams)
+		sigParams = tmp.(*Tuple)
+	}
 
-		// Rename type parameters to avoid problems with recursive calls.
-		var tparams []*TypeParam
-		tparams, sigParams = check.renameTParams(call.Pos(), sig.TypeParams().list(), sigParams)
+	// collect type parameters from generic function arguments
+	var genericArgs []int // indices of generic function arguments
+	if enableReverseTypeInference {
+		for i, arg := range args {
+			// generic arguments cannot have a defined (*Named) type - no need for underlying type below
+			if asig, _ := arg.typ.(*Signature); asig != nil && asig.TypeParams().Len() > 0 {
+				// Rename type parameters for cases like f(g, g); this gives each
+				// generic function argument a unique type identity (go.dev/issues/59956).
+				// TODO(gri) Consider only doing this if a function argument appears
+				//           multiple times, which is rare (possible optimization).
+				atparams, tmp := check.renameTParams(call.Pos(), asig.TypeParams().list(), asig)
+				asig = tmp.(*Signature)
+				asig.tparams = &TypeParamList{atparams} // renameTParams doesn't touch associated type parameters
+				arg.typ = asig                          // new type identity for the function argument
+				tparams = append(tparams, atparams...)
+				genericArgs = append(genericArgs, i)
+			}
+		}
+	}
+	// at the moment we only support implicit instantiations of argument functions
+	_ = len(genericArgs) > 0 && check.verifyVersionf(check.pkg, args[genericArgs[0]], go1_21, "implicitly instantiated function as argument")
 
-		targs := check.infer(call, tparams, targs, sigParams, args)
+	// tparams holds the type parameters of the callee and generic function arguments, if any:
+	// the first n type parameters belong to the callee, followed by mi type parameters for each
+	// of the generic function arguments, where mi = args[i].typ.(*Signature).TypeParams().Len().
+
+	// infer missing type arguments of callee and function arguments
+	if len(tparams) > 0 {
+		targs = check.infer(call, tparams, targs, sigParams, args)
 		if targs == nil {
+			// TODO(gri) If infer inferred the first targs[:n], consider instantiating
+			//           the call signature for better error messages/gopls behavior.
+			//           Perhaps instantiate as much as we can, also for arguments.
+			//           This will require changes to how infer returns its results.
 			return // error already reported
 		}
 
-		// compute result signature
-		rsig = check.instantiateSignature(call.Pos(), sig, targs, xlist)
-		assert(rsig.TypeParams().Len() == 0) // signature is not generic anymore
-		check.recordInstance(call.Fun, targs, rsig)
+		// compute result signature: instantiate if needed
+		rsig = sig
+		if n > 0 {
+			rsig = check.instantiateSignature(call.Pos(), sig, targs[:n], xlist)
+			assert(rsig.TypeParams().Len() == 0) // signature is not generic anymore
+			check.recordInstance(call.Fun, targs[:n], rsig)
+		}
 
-		// Optimization: Only if the parameter list was adjusted do we
-		// need to compute it from the adjusted list; otherwise we can
-		// simply use the result signature's parameter list.
-		if adjusted {
-			sigParams = check.subst(call.Pos(), sigParams, makeSubstMap(tparams, targs), nil, check.context()).(*Tuple)
+		// Optimization: Only if the callee's parameter list was adjusted do we need to
+		// compute it from the adjusted list; otherwise we can simply use the result
+		// signature's parameter list. We only need the n type parameters and arguments
+		// of the callee.
+		if n > 0 && adjusted {
+			sigParams = check.subst(call.Pos(), sigParams, makeSubstMap(tparams[:n], targs[:n]), nil, check.context()).(*Tuple)
 		} else {
 			sigParams = rsig.params
+		}
+
+		// compute argument signatures: instantiate if needed
+		j := n
+		for _, i := range genericArgs {
+			asig := args[i].typ.(*Signature)
+			k := j + asig.TypeParams().Len()
+			// targs[j:k] are the inferred type arguments for asig
+			asig = check.instantiateSignature(call.Pos(), asig, targs[j:k], nil) // TODO(gri) provide xlist if possible (partial instantiations)
+			assert(asig.TypeParams().Len() == 0)                                 // signature is not generic anymore
+			args[i].typ = asig
+			check.recordInstance(args[i].expr, targs[j:k], asig)
+			j = k
 		}
 	}
 

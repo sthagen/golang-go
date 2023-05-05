@@ -955,8 +955,7 @@ func (check *Checker) shift(x, y *operand, e ast.Expr, op token.Token) {
 		// Check that RHS is otherwise at least of integer type.
 		switch {
 		case allInteger(y.typ):
-			if !allUnsigned(y.typ) && !check.allowVersion(check.pkg, x.Pos(), 1, 13) {
-				check.errorf(y, UnsupportedFeature, invalidOp+"signed shift count %s requires go1.13 or later", y)
+			if !allUnsigned(y.typ) && !check.verifyVersionf(check.pkg, y, go1_13, invalidOp+"signed shift count %s", y) {
 				x.mode = invalid
 				return
 			}
@@ -1277,7 +1276,7 @@ func (check *Checker) nonGeneric(T Type, x *operand) {
 		}
 	case *Signature:
 		if t.tparams != nil {
-			if check.conf._EnableReverseTypeInference && T != nil {
+			if enableReverseTypeInference && T != nil {
 				if tsig, _ := under(T).(*Signature); tsig != nil {
 					check.funcInst(tsig, x.Pos(), x, nil)
 					return
@@ -1601,7 +1600,7 @@ func (check *Checker) exprInternal(T Type, x *operand, e ast.Expr, hint Type) ex
 		ix := typeparams.UnpackIndexExpr(e)
 		if check.indexExpr(x, ix) {
 			var tsig *Signature
-			if check.conf._EnableReverseTypeInference && T != nil {
+			if enableReverseTypeInference && T != nil {
 				tsig, _ = under(T).(*Signature)
 			}
 			check.funcInst(tsig, e.Pos(), x, ix)
@@ -1826,6 +1825,27 @@ func (check *Checker) multiExpr(e ast.Expr, allowCommaOk bool) (list []*operand,
 		commaOk = true
 	}
 
+	return
+}
+
+// genericMultiExpr is like multiExpr but a one-element result may also be generic
+// and potential comma-ok expressions are returned as single values.
+func (check *Checker) genericMultiExpr(e ast.Expr) (list []*operand) {
+	var x operand
+	check.rawExpr(nil, &x, e, nil, true)
+	check.exclude(&x, 1<<novalue|1<<builtin|1<<typexpr)
+
+	if t, ok := x.typ.(*Tuple); ok && x.mode != invalid {
+		// multiple values - cannot be generic
+		list = make([]*operand, t.Len())
+		for i, v := range t.vars {
+			list[i] = &operand{mode: value, expr: e, typ: v.typ}
+		}
+		return
+	}
+
+	// exactly one (possible invalid or generic) value
+	list = []*operand{&x}
 	return
 }
 

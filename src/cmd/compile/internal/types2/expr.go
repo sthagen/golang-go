@@ -538,7 +538,7 @@ func (check *Checker) updateExprType0(parent, x syntax.Expr, typ Type, final boo
 		// The respective sub-expressions got their final types
 		// upon assignment or use.
 		if debug {
-			check.dump("%v: found old type(%s): %s (new: %s)", posFor(x), x, old.typ, typ)
+			check.dump("%v: found old type(%s): %s (new: %s)", atPos(x), x, old.typ, typ)
 			unreachable()
 		}
 		return
@@ -977,8 +977,7 @@ func (check *Checker) shift(x, y *operand, e syntax.Expr, op syntax.Operator) {
 		// Check that RHS is otherwise at least of integer type.
 		switch {
 		case allInteger(y.typ):
-			if !allUnsigned(y.typ) && !check.allowVersion(check.pkg, x.Pos(), 1, 13) {
-				check.versionErrorf(y, "go1.13", invalidOp+"signed shift count %s", y)
+			if !allUnsigned(y.typ) && !check.verifyVersionf(check.pkg, y, go1_13, invalidOp+"signed shift count %s", y) {
 				x.mode = invalid
 				return
 			}
@@ -1292,7 +1291,7 @@ func (check *Checker) nonGeneric(T Type, x *operand) {
 		}
 	case *Signature:
 		if t.tparams != nil {
-			if check.conf.EnableReverseTypeInference && T != nil {
+			if enableReverseTypeInference && T != nil {
 				if tsig, _ := under(T).(*Signature); tsig != nil {
 					check.funcInst(tsig, x.Pos(), x, nil)
 					return
@@ -1618,7 +1617,7 @@ func (check *Checker) exprInternal(T Type, x *operand, e syntax.Expr, hint Type)
 	case *syntax.IndexExpr:
 		if check.indexExpr(x, e) {
 			var tsig *Signature
-			if check.conf.EnableReverseTypeInference && T != nil {
+			if enableReverseTypeInference && T != nil {
 				tsig, _ = under(T).(*Signature)
 			}
 			check.funcInst(tsig, e.Pos(), x, e)
@@ -1761,7 +1760,7 @@ func (check *Checker) exprInternal(T Type, x *operand, e syntax.Expr, hint Type)
 		// types, which are comparatively rare.
 
 	default:
-		panic(fmt.Sprintf("%s: unknown expression type %T", posFor(e), e))
+		panic(fmt.Sprintf("%s: unknown expression type %T", atPos(e), e))
 	}
 
 	// everything went well
@@ -1879,6 +1878,27 @@ func (check *Checker) multiExpr(e syntax.Expr, allowCommaOk bool) (list []*opera
 		commaOk = true
 	}
 
+	return
+}
+
+// genericMultiExpr is like multiExpr but a one-element result may also be generic
+// and potential comma-ok expressions are returned as single values.
+func (check *Checker) genericMultiExpr(e syntax.Expr) (list []*operand) {
+	var x operand
+	check.rawExpr(nil, &x, e, nil, true)
+	check.exclude(&x, 1<<novalue|1<<builtin|1<<typexpr)
+
+	if t, ok := x.typ.(*Tuple); ok && x.mode != invalid {
+		// multiple values - cannot be generic
+		list = make([]*operand, t.Len())
+		for i, v := range t.vars {
+			list[i] = &operand{mode: value, expr: e, typ: v.typ}
+		}
+		return
+	}
+
+	// exactly one (possible invalid or generic) value
+	list = []*operand{&x}
 	return
 }
 
