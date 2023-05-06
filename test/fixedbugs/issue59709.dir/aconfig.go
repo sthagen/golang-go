@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-#include "libcgo.h"
+package aconfig
 
-void x_cgo_getstackbound(uintptr *low) {} // no-op for now
+type Config struct {
+	name string
+	blah int
+}
