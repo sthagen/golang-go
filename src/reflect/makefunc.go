@@ -104,7 +104,7 @@ func makeMethodValue(op string, v Value) Value {
 	rcvr := Value{v.typ, v.ptr, fl}
 
 	// v.Type returns the actual type of the method value.
-	ftyp := (*funcType)(unsafe.Pointer(v.Type().(*rtype)))
+	ftyp := (*funcType)(unsafe.Pointer(v.Type().common()))
 
 	code := methodValueCallCodePtr()
 
@@ -126,7 +126,7 @@ func makeMethodValue(op string, v Value) Value {
 	// but we want Interface() and other operations to fail early.
 	methodReceiver(op, fv.rcvr, fv.method)
 
-	return Value{&ftyp.rtype, unsafe.Pointer(fv), v.flag&flagRO | flag(Func)}
+	return Value{ftyp.Common(), unsafe.Pointer(fv), v.flag&flagRO | flag(Func)}
 }
 
 func methodValueCallCodePtr() uintptr {

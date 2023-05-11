@@ -185,8 +185,8 @@ func (p *abiDesc) tryRegAssignArg(t *_type, offset uintptr) bool {
 		}
 	case kindArray:
 		at := (*arraytype)(unsafe.Pointer(t))
-		if at.len == 1 {
-			return p.tryRegAssignArg(at.elem, offset)
+		if at.Len == 1 {
+			return p.tryRegAssignArg((*_type)(unsafe.Pointer(at.Elem)), offset) // TODO fix when runtime is fully commoned up w/ abi.Type
 		}
 	case kindStruct:
 		st := (*structtype)(unsafe.Pointer(t))
@@ -200,7 +200,7 @@ func (p *abiDesc) tryRegAssignArg(t *_type, offset uintptr) bool {
 	}
 	// Pointer-sized types such as maps and channels are currently
 	// not supported.
-	panic("compileCallabck: type " + t.string() + " is currently not supported for use in system callbacks")
+	panic("compileCallback: type " + toRType(t).string() + " is currently not supported for use in system callbacks")
 }
 
 // assignReg attempts to assign a single register for an

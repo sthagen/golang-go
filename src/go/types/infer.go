@@ -31,10 +31,7 @@ const enableReverseTypeInference = true // disable for debugging
 func (check *Checker) infer(posn positioner, tparams []*TypeParam, targs []Type, params *Tuple, args []*operand) (inferred []Type) {
 	if debug {
 		defer func() {
-			assert(inferred == nil || len(inferred) == len(tparams))
-			for _, targ := range inferred {
-				assert(targ != nil)
-			}
+			assert(inferred == nil || len(inferred) == len(tparams) && !containsNil(inferred))
 		}()
 	}
 
@@ -49,14 +46,13 @@ func (check *Checker) infer(posn positioner, tparams []*TypeParam, targs []Type,
 	n := len(tparams)
 	assert(n > 0 && len(targs) <= n)
 
-	// Function parameters and arguments must match in number.
+	// Parameters and arguments must match in number.
 	assert(params.Len() == len(args))
 
 	// If we already have all type arguments, we're done.
-	if len(targs) == n {
+	if len(targs) == n && !containsNil(targs) {
 		return targs
 	}
-	// len(targs) < n
 
 	// Make sure we have a "full" list of type arguments, some of which may
 	// be nil (unknown). Make a copy so as to not clobber the incoming slice.
@@ -442,6 +438,16 @@ func (check *Checker) infer(posn positioner, tparams []*TypeParam, targs []Type,
 	return
 }
 
+// containsNil reports whether list contains a nil entry.
+func containsNil(list []Type) bool {
+	for _, t := range list {
+		if t == nil {
+			return true
+		}
+	}
+	return false
+}
+
 // renameTParams renames the type parameters in the given type such that each type
 // parameter is given a new identity. renameTParams returns the new type parameters
 // and updated type. If the result type is unchanged from the argument type, none
@@ -578,7 +584,7 @@ func (w *tpWalker) isParameterized(typ Type) (res bool) {
 		// of a generic function type (or an interface method) that is
 		// part of the type we're testing. We don't care about these type
 		// parameters.
-		// Similarly, the receiver of a method may declare (rather then
+		// Similarly, the receiver of a method may declare (rather than
 		// use) type parameters, we don't care about those either.
 		// Thus, we only need to look at the input and result parameters.
 		return t.params != nil && w.varList(t.params.vars) || t.results != nil && w.varList(t.results.vars)

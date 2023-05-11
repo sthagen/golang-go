@@ -247,7 +247,7 @@ func BenchmarkPtrTo(b *testing.B) {
 	// Construct a type with a zero ptrToThis.
 	type T struct{ int }
 	t := SliceOf(TypeOf(T{}))
-	ptrToThis := ValueOf(t).Elem().FieldByName("PtrToThis")
+	ptrToThis := ValueOf(t).Field(0).Elem().FieldByName("PtrToThis")
 	if !ptrToThis.IsValid() {
 		b.Fatalf("%v has no ptrToThis field; was it removed from rtype?", t)
 	}

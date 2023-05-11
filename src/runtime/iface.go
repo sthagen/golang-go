@@ -41,7 +41,7 @@ func getitab(inter *interfacetype, typ *_type, canfail bool) *itab {
 		if canfail {
 			return nil
 		}
-		name := inter.typ.nameOff(inter.mhdr[0].name)
+		name := toRType(&inter.typ).nameOff(inter.mhdr[0].Name)
 		panic(&TypeAssertionError{nil, typ, &inter.typ, name.name()})
 	}
 
@@ -192,23 +192,23 @@ func (t *itabTableType) add(m *itab) {
 func (m *itab) init() string {
 	inter := m.inter
 	typ := m._type
-	x := typ.uncommon()
+	x := typ.Uncommon()
 
 	// both inter and typ have method sorted by name,
 	// and interface names are unique,
 	// so can iterate over both in lock step;
 	// the loop is O(ni+nt) not O(ni*nt).
 	ni := len(inter.mhdr)
-	nt := int(x.mcount)
-	xmhdr := (*[1 << 16]method)(add(unsafe.Pointer(x), uintptr(x.moff)))[:nt:nt]
+	nt := int(x.Mcount)
+	xmhdr := (*[1 << 16]abi.Method)(add(unsafe.Pointer(x), uintptr(x.Moff)))[:nt:nt]
 	j := 0
 	methods := (*[1 << 16]unsafe.Pointer)(unsafe.Pointer(&m.fun[0]))[:ni:ni]
 	var fun0 unsafe.Pointer
 imethods:
 	for k := 0; k < ni; k++ {
 		i := &inter.mhdr[k]
-		itype := inter.typ.typeOff(i.ityp)
-		name := inter.typ.nameOff(i.name)
+		itype := toRType(&inter.typ).typeOff(i.Typ)
+		name := toRType(&inter.typ).nameOff(i.Name)
 		iname := name.name()
 		ipkg := name.pkgPath()
 		if ipkg == "" {
@@ -216,15 +216,16 @@ imethods:
 		}
 		for ; j < nt; j++ {
 			t := &xmhdr[j]
-			tname := typ.nameOff(t.name)
-			if typ.typeOff(t.mtyp) == itype && tname.name() == iname {
+			rtyp := toRType(typ)
+			tname := rtyp.nameOff(t.Name)
+			if rtyp.typeOff(t.Mtyp) == itype && tname.name() == iname {
 				pkgPath := tname.pkgPath()
 				if pkgPath == "" {
-					pkgPath = typ.nameOff(x.pkgpath).name()
+					pkgPath = rtyp.nameOff(x.PkgPath).name()
 				}
 				if tname.isExported() || pkgPath == ipkg {
 					if m != nil {
-						ifn := typ.textOff(t.ifn)
+						ifn := rtyp.textOff(t.Ifn)
 						if k == 0 {
 							fun0 = ifn // we'll set m.fun[0] at the end
 						} else {

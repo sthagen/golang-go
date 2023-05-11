@@ -70,7 +70,7 @@ func makechan64(t *chantype, size int64) *hchan {
 }
 
 func makechan(t *chantype, size int) *hchan {
-	elem := t.elem
+	elem := t.Elem
 
 	// compiler checks this but be safe.
 	if elem.Size_ >= 1<<16 {
