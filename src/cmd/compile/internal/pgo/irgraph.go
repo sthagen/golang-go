@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// WORK IN PROGRESS
-
 // A note on line numbers: when working with line numbers, we always use the
 // binary-visible relative line number. i.e., the line number as adjusted by
 // //line directives (ctxt.InnermostPos(ir.Node.Pos()).RelLine()). Use
@@ -45,6 +43,7 @@ package pgo
 import (
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
+	"cmd/compile/internal/pgo/internal/graph"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
 	"fmt"
@@ -157,8 +156,7 @@ func New(profileFile string) (*Profile, error) {
 		return nil, fmt.Errorf(`profile does not contain a sample index with value/type "samples/count" or cpu/nanoseconds"`)
 	}
 
-	g := newGraph(profile, &Options{
-		CallTree:    false,
+	g := graph.NewGraph(profile, &graph.Options{
 		SampleValue: func(v []int64) int64 { return v[valueIndex] },
 	})
 
@@ -191,7 +189,7 @@ func New(profileFile string) (*Profile, error) {
 // create edges for WeightedCG.
 //
 // Caller should ignore the profile if p.TotalNodeWeight == 0 || p.TotalEdgeWeight == 0.
-func (p *Profile) processprofileGraph(g *Graph) error {
+func (p *Profile) processprofileGraph(g *graph.Graph) error {
 	nFlat := make(map[string]int64)
 	nCum := make(map[string]int64)
 	seenStartLine := false
