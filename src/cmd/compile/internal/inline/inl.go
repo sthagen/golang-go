@@ -63,10 +63,6 @@ var (
 	// TODO(prattmic): Make this non-global.
 	candHotEdgeMap = make(map[pgo.CallSiteInfo]struct{})
 
-	// List of inlined call sites. CallSiteInfo.Callee is always nil.
-	// TODO(prattmic): Make this non-global.
-	inlinedCallSites = make(map[pgo.CallSiteInfo]struct{})
-
 	// Threshold in percentage for hot callsite inlining.
 	inlineHotCallSiteThresholdPercent float64
 
@@ -158,23 +154,6 @@ func hotNodesFromCDF(p *pgo.Profile) (float64, []pgo.NodeMapKey) {
 	return 0, nodes
 }
 
-// pgoInlineEpilogue updates IRGraph after inlining.
-func pgoInlineEpilogue(p *pgo.Profile, decls []ir.Node) {
-	if base.Debug.PGOInline >= 2 {
-		ir.VisitFuncsBottomUp(decls, func(list []*ir.Func, recursive bool) {
-			for _, f := range list {
-				name := ir.LinkFuncName(f)
-				if n, ok := p.WeightedCG.IRNodes[name]; ok {
-					p.RedirectEdges(n, inlinedCallSites)
-				}
-			}
-		})
-		// Print the call-graph after inlining. This is a debugging feature.
-		fmt.Printf("hot-cg after inline in dot:")
-		p.PrintWeightedCallGraphDOT(inlineHotCallSiteThresholdPercent)
-	}
-}
-
 // InlinePackage finds functions that can be inlined and clones them before walk expands them.
 func InlinePackage(p *pgo.Profile) {
 	InlineDecls(p, typecheck.Target.Decls, true)
@@ -223,10 +202,6 @@ func InlineDecls(p *pgo.Profile, decls []ir.Node, doInline bool) {
 			}
 		}
 	})
-
-	if p != nil {
-		pgoInlineEpilogue(p, decls)
-	}
 }
 
 // garbageCollectUnreferencedHiddenClosures makes a pass over all the
@@ -508,6 +483,7 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 		// because getcaller{pc,sp} expect a pointer to the caller's first argument.
 		//
 		// runtime.throw is a "cheap call" like panic in normal code.
+		var cheap bool
 		if n.X.Op() == ir.ONAME {
 			name := n.X.(*ir.Name)
 			if name.Class == ir.PFUNC && types.IsRuntimePkg(name.Sym().Pkg) {
@@ -519,6 +495,14 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 				if fn == "throw" {
 					v.budget -= inlineExtraThrowCost
 					break
+				}
+			}
+			// Special case for reflect.noescpae. It does just type
+			// conversions to appease the escape analysis, and doesn't
+			// generate code.
+			if name.Class == ir.PFUNC && types.IsReflectPkg(name.Sym().Pkg) {
+				if name.Sym().Name == "noescape" {
+					cheap = true
 				}
 			}
 			// Special case for coverage counter updates; although
@@ -539,7 +523,6 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 			if meth := ir.MethodExprName(n.X); meth != nil {
 				if fn := meth.Func; fn != nil {
 					s := fn.Sym()
-					var cheap bool
 					if types.IsRuntimePkg(s.Pkg) && s.Name == "heapBits.nextArena" {
 						// Special case: explicitly allow mid-stack inlining of
 						// runtime.heapBits.next even though it calls slow-path
@@ -561,11 +544,11 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 							cheap = true
 						}
 					}
-					if cheap {
-						break // treat like any other node, that is, cost of 1
-					}
 				}
 			}
+		}
+		if cheap {
+			break // treat like any other node, that is, cost of 1
 		}
 
 		// Determine if the callee edge is for an inlinable hot callee or not.
@@ -667,7 +650,7 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 		// This doesn't produce code, but the children might.
 		v.budget++ // undo default cost
 
-	case ir.ODCLCONST, ir.OFALL:
+	case ir.ODCLCONST, ir.OFALL, ir.OTYPE:
 		// These nodes don't produce code; omit from inlining budget.
 		return false
 
@@ -1145,13 +1128,6 @@ func mkinlcall(n *ir.CallExpr, fn *ir.Func, bigCaller bool, inlCalls *[]*ir.Inli
 	}
 	if base.Flag.LowerM > 2 {
 		fmt.Printf("%v: Before inlining: %+v\n", ir.Line(n), n)
-	}
-
-	if base.Debug.PGOInline > 0 {
-		csi := pgo.CallSiteInfo{LineOffset: pgo.NodeLineOffset(n, fn), Caller: ir.CurFunc}
-		if _, ok := inlinedCallSites[csi]; !ok {
-			inlinedCallSites[csi] = struct{}{}
-		}
 	}
 
 	res := InlineCall(n, fn, inlIndex)

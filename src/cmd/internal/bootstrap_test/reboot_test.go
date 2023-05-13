@@ -2,12 +2,13 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package reboot_test verifies that the current GOROOT can be used to bootstrap
+// Package bootstrap_test verifies that the current GOROOT can be used to bootstrap
 // itself.
-package reboot_test
+package bootstrap_test
 
 import (
 	"fmt"
+	"internal/testenv"
 	"io"
 	"os"
 	"os/exec"
@@ -20,13 +21,14 @@ import (
 
 func TestRepeatBootstrap(t *testing.T) {
 	if testing.Short() {
-		t.Skipf("skipping test that rebuilds the entire toolchain")
+		t.Skip("skipping test that rebuilds the entire toolchain")
+	}
+	switch runtime.GOOS {
+	case "android", "ios", "js", "wasip1":
+		t.Skipf("skipping because the toolchain does not have to bootstrap on GOOS=%s", runtime.GOOS)
 	}
 
-	realGoroot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
+	realGoroot := testenv.GOROOT(t)
 
 	// To ensure that bootstrapping doesn't unexpectedly depend
 	// on the Go repo's git metadata, add a fake (unreadable) git
