@@ -70,8 +70,11 @@ type tester struct {
 	cgoEnabled bool
 	partial    bool
 
-	tests        []distTest
+	tests        []distTest // use addTest to extend
+	testNames    map[string]bool
 	timeoutScale int
+
+	variantNames map[string]bool // check that pkg[:variant] names are unique
 
 	worklist []*work
 }
@@ -193,7 +196,7 @@ func (t *tester) run() {
 	}
 
 	for _, name := range t.runNames {
-		if !t.isRegisteredTestName(name) {
+		if !t.testNames[name] {
 			fatalf("unknown test %q", name)
 		}
 	}
@@ -296,6 +299,13 @@ type goTest struct {
 	env []string // Environment variables to add, as KEY=VAL. KEY= unsets a variable
 
 	runOnHost bool // When cross-compiling, run this test on the host instead of guest
+
+	// variant, if non-empty, is a name used to distinguish different
+	// configurations of the same test package(s).
+	variant string
+	// sharded indicates that variant is used solely for sharding and that
+	// the set of test names run by each variant of a package is non-overlapping.
+	sharded bool
 
 	// We have both pkg and pkgs as a convenience. Both may be set, in which
 	// case they will be combined. At least one must be set.
@@ -404,13 +414,7 @@ func (opts *goTest) buildArgs(t *tester) (goCmd string, build, run, pkgs, testFl
 		build = append(build, "-buildmode="+opts.buildmode)
 	}
 
-	pkgs = opts.pkgs
-	if opts.pkg != "" {
-		pkgs = append(pkgs[:len(pkgs):len(pkgs)], opts.pkg)
-	}
-	if len(pkgs) == 0 {
-		panic("no packages")
-	}
+	pkgs = opts.packages()
 
 	runOnHost := opts.runOnHost && (goarch != gohostarch || goos != gohostos)
 	needTestFlags := len(opts.testFlags) > 0 || runOnHost
@@ -447,6 +451,19 @@ func (opts *goTest) buildArgs(t *tester) (goCmd string, build, run, pkgs, testFl
 	return
 }
 
+// packages returns the full list of packages to be run by this goTest. This
+// will always include at least one package.
+func (opts *goTest) packages() []string {
+	pkgs := opts.pkgs
+	if opts.pkg != "" {
+		pkgs = append(pkgs[:len(pkgs):len(pkgs)], opts.pkg)
+	}
+	if len(pkgs) == 0 {
+		panic("no packages")
+	}
+	return pkgs
+}
+
 // ranGoTest and stdMatches are state closed over by the stdlib
 // testing func in registerStdTest below. The tests are run
 // sequentially, so there's no need for locks.
@@ -471,31 +488,27 @@ func (t *tester) registerStdTest(pkg string) {
 		stdMatches = append(stdMatches, pkg)
 	}
 
-	t.tests = append(t.tests, distTest{
-		name:    testName,
-		heading: heading,
-		fn: func(dt *distTest) error {
-			if ranGoTest {
-				return nil
-			}
-			t.runPending(dt)
-			timelog("start", dt.name)
-			defer timelog("end", dt.name)
-			ranGoTest = true
+	t.addTest(testName, heading, func(dt *distTest) error {
+		if ranGoTest {
+			return nil
+		}
+		t.runPending(dt)
+		timelog("start", dt.name)
+		defer timelog("end", dt.name)
+		ranGoTest = true
 
-			timeoutSec := 180 * time.Second
-			for _, pkg := range stdMatches {
-				if pkg == "cmd/go" {
-					timeoutSec *= 3
-					break
-				}
+		timeoutSec := 180 * time.Second
+		for _, pkg := range stdMatches {
+			if pkg == "cmd/go" {
+				timeoutSec *= 3
+				break
 			}
-			return (&goTest{
-				timeout: timeoutSec,
-				gcflags: gcflags,
-				pkgs:    stdMatches,
-			}).run(t)
-		},
+		}
+		return (&goTest{
+			timeout: timeoutSec,
+			gcflags: gcflags,
+			pkgs:    stdMatches,
+		}).run(t)
 	})
 }
 
@@ -504,25 +517,21 @@ func (t *tester) registerRaceBenchTest(pkg string) {
 	if t.runRx == nil || t.runRx.MatchString(testName) == t.runRxWant {
 		benchMatches = append(benchMatches, pkg)
 	}
-	t.tests = append(t.tests, distTest{
-		name:    testName,
-		heading: "Running benchmarks briefly.",
-		fn: func(dt *distTest) error {
-			if ranGoBench {
-				return nil
-			}
-			t.runPending(dt)
-			timelog("start", dt.name)
-			defer timelog("end", dt.name)
-			ranGoBench = true
-			return (&goTest{
-				timeout: 1200 * time.Second, // longer timeout for race with benchmarks
-				race:    true,
-				bench:   true,
-				cpu:     "4",
-				pkgs:    benchMatches,
-			}).run(t)
-		},
+	t.addTest(testName, "Running benchmarks briefly.", func(dt *distTest) error {
+		if ranGoBench {
+			return nil
+		}
+		t.runPending(dt)
+		timelog("start", dt.name)
+		defer timelog("end", dt.name)
+		ranGoBench = true
+		return (&goTest{
+			timeout: 1200 * time.Second, // longer timeout for race with benchmarks
+			race:    true,
+			bench:   true,
+			cpu:     "4",
+			pkgs:    benchMatches,
+		}).run(t)
 	})
 }
 
@@ -599,12 +608,14 @@ func (t *tester) registerTests() {
 	if !t.compileOnly {
 		t.registerTest("osusergo", "os/user with tag osusergo",
 			&goTest{
+				variant: "osusergo",
 				timeout: 300 * time.Second,
 				tags:    []string{"osusergo"},
 				pkg:     "os/user",
 			})
 		t.registerTest("purego:hash/maphash", "hash/maphash purego implementation",
 			&goTest{
+				variant: "purego",
 				timeout: 300 * time.Second,
 				tags:    []string{"purego"},
 				pkg:     "hash/maphash",
@@ -615,6 +626,7 @@ func (t *tester) registerTests() {
 	if goos == "darwin" && goarch == "amd64" && t.cgoEnabled {
 		t.registerTest("amd64ios", "GOOS=ios on darwin/amd64",
 			&goTest{
+				variant:  "amd64ios",
 				timeout:  300 * time.Second,
 				runTests: "SystemRoots",
 				env:      []string{"GOOS=ios", "CGO_ENABLED=1"},
@@ -626,6 +638,7 @@ func (t *tester) registerTests() {
 	if !t.compileOnly && t.hasParallelism() {
 		t.registerTest("runtime:cpu124", "GOMAXPROCS=2 runtime -cpu=1,2,4 -quick",
 			&goTest{
+				variant:   "cpu124",
 				timeout:   300 * time.Second,
 				cpu:       "1,2,4",
 				short:     true,
@@ -673,6 +686,7 @@ func (t *tester) registerTests() {
 			for _, pkg := range pkgs {
 				t.registerTest(hook+":"+pkg, "maymorestack="+hook,
 					&goTest{
+						variant: hook,
 						timeout: 600 * time.Second,
 						short:   true,
 						env:     []string{"GOFLAGS=" + goFlags},
@@ -688,43 +702,40 @@ func (t *tester) registerTests() {
 	// Fails on Android, js/wasm and wasip1/wasm with an exec format error.
 	// Fails on plan9 with "cannot find GOROOT" (issue #21016).
 	if os.Getenv("GO_BUILDER_NAME") != "" && goos != "android" && !t.iOS() && goos != "plan9" && goos != "js" && goos != "wasip1" {
-		t.tests = append(t.tests, distTest{
-			name:    "moved_goroot",
-			heading: "moved GOROOT",
-			fn: func(dt *distTest) error {
-				t.runPending(dt)
-				timelog("start", dt.name)
-				defer timelog("end", dt.name)
-				moved := goroot + "-moved"
-				if err := os.Rename(goroot, moved); err != nil {
-					if goos == "windows" {
-						// Fails on Windows (with "Access is denied") if a process
-						// or binary is in this directory. For instance, using all.bat
-						// when run from c:\workdir\go\src fails here
-						// if GO_BUILDER_NAME is set. Our builders invoke tests
-						// a different way which happens to work when sharding
-						// tests, but we should be tolerant of the non-sharded
-						// all.bat case.
-						log.Printf("skipping test on Windows")
-						return nil
-					}
-					return err
-				}
-
-				// Run `go test fmt` in the moved GOROOT, without explicitly setting
-				// GOROOT in the environment. The 'go' command should find itself.
-				cmd := (&goTest{
-					goroot: moved,
-					pkg:    "fmt",
-				}).command(t)
-				unsetEnv(cmd, "GOROOT")
-				err := cmd.Run()
-
-				if rerr := os.Rename(moved, goroot); rerr != nil {
-					fatalf("failed to restore GOROOT: %v", rerr)
+		t.addTest("moved_goroot", "moved GOROOT", func(dt *distTest) error {
+			t.runPending(dt)
+			timelog("start", dt.name)
+			defer timelog("end", dt.name)
+			moved := goroot + "-moved"
+			if err := os.Rename(goroot, moved); err != nil {
+				if goos == "windows" {
+					// Fails on Windows (with "Access is denied") if a process
+					// or binary is in this directory. For instance, using all.bat
+					// when run from c:\workdir\go\src fails here
+					// if GO_BUILDER_NAME is set. Our builders invoke tests
+					// a different way which happens to work when sharding
+					// tests, but we should be tolerant of the non-sharded
+					// all.bat case.
+					log.Printf("skipping test on Windows")
+					return nil
 				}
 				return err
-			},
+			}
+
+			// Run `go test fmt` in the moved GOROOT, without explicitly setting
+			// GOROOT in the environment. The 'go' command should find itself.
+			cmd := (&goTest{
+				variant: "moved_goroot",
+				goroot:  moved,
+				pkg:     "fmt",
+			}).command(t)
+			unsetEnv(cmd, "GOROOT")
+			err := cmd.Run()
+
+			if rerr := os.Rename(moved, goroot); rerr != nil {
+				fatalf("failed to restore GOROOT: %v", rerr)
+			}
+			return err
 		})
 	}
 
@@ -750,6 +761,7 @@ func (t *tester) registerTests() {
 		}
 		t.registerTest("nolibgcc:"+pkg, "Testing without libgcc.",
 			&goTest{
+				variant:  "nolibgcc",
 				ldflags:  "-linkmode=internal -libgcc=none",
 				runTests: run,
 				pkg:      pkg,
@@ -764,6 +776,7 @@ func (t *tester) registerTests() {
 	if t.internalLinkPIE() && !disablePIE {
 		t.registerTest("pie_internal", "internal linking of -buildmode=pie",
 			&goTest{
+				variant:   "pie_internal",
 				timeout:   60 * time.Second,
 				buildmode: "pie",
 				ldflags:   "-linkmode=internal",
@@ -774,6 +787,7 @@ func (t *tester) registerTests() {
 		if t.cgoEnabled && t.internalLink() && !disablePIE {
 			t.registerTest("pie_internal_cgo", "internal linking of -buildmode=pie",
 				&goTest{
+					variant:   "pie_internal",
 					timeout:   60 * time.Second,
 					buildmode: "pie",
 					ldflags:   "-linkmode=internal",
@@ -786,6 +800,7 @@ func (t *tester) registerTests() {
 	if t.hasParallelism() {
 		t.registerTest("sync_cpu", "sync -cpu=10",
 			&goTest{
+				variant: "cpu10",
 				timeout: 120 * time.Second,
 				cpu:     "10",
 				pkg:     "sync",
@@ -796,16 +811,17 @@ func (t *tester) registerTests() {
 		t.registerRaceTests()
 	}
 
+	const cgoHeading = "Testing cgo"
 	if t.cgoEnabled && !t.iOS() {
 		// Disabled on iOS. golang.org/issue/15919
-		t.registerTest("cgo_teststdio", "", &goTest{pkg: "cmd/cgo/internal/teststdio", timeout: 5 * time.Minute})
-		t.registerTest("cgo_testlife", "", &goTest{pkg: "cmd/cgo/internal/testlife", timeout: 5 * time.Minute})
+		t.registerTest("cgo_teststdio", cgoHeading, &goTest{pkg: "cmd/cgo/internal/teststdio", timeout: 5 * time.Minute})
+		t.registerTest("cgo_testlife", cgoHeading, &goTest{pkg: "cmd/cgo/internal/testlife", timeout: 5 * time.Minute})
 		if goos != "android" {
-			t.registerTest("cgo_testfortran", "", &goTest{pkg: "cmd/cgo/internal/testfortran", timeout: 5 * time.Minute})
+			t.registerTest("cgo_testfortran", cgoHeading, &goTest{pkg: "cmd/cgo/internal/testfortran", timeout: 5 * time.Minute})
 		}
 	}
 	if t.cgoEnabled {
-		t.registerCgoTests()
+		t.registerCgoTests(cgoHeading)
 	}
 
 	// Don't run these tests with $GO_GCFLAGS because most of them
@@ -813,25 +829,25 @@ func (t *tester) registerTests() {
 	// recompile the entire standard library. If make.bash ran with
 	// special -gcflags, that's not true.
 	if t.cgoEnabled && gogcflags == "" {
-		t.registerTest("cgo_testgodefs", "", &goTest{pkg: "cmd/cgo/internal/testgodefs", timeout: 5 * time.Minute})
+		t.registerTest("cgo_testgodefs", cgoHeading, &goTest{pkg: "cmd/cgo/internal/testgodefs", timeout: 5 * time.Minute})
 
-		t.registerTest("cgo_testso", "", &goTest{pkg: "cmd/cgo/internal/testso", timeout: 600 * time.Second})
-		t.registerTest("cgo_testsovar", "", &goTest{pkg: "cmd/cgo/internal/testsovar", timeout: 600 * time.Second})
+		t.registerTest("cgo_testso", cgoHeading, &goTest{pkg: "cmd/cgo/internal/testso", timeout: 600 * time.Second})
+		t.registerTest("cgo_testsovar", cgoHeading, &goTest{pkg: "cmd/cgo/internal/testsovar", timeout: 600 * time.Second})
 		if t.supportedBuildmode("c-archive") {
-			t.registerTest("cgo_testcarchive", "", &goTest{pkg: "cmd/cgo/internal/testcarchive", timeout: 5 * time.Minute})
+			t.registerTest("cgo_testcarchive", cgoHeading, &goTest{pkg: "cmd/cgo/internal/testcarchive", timeout: 5 * time.Minute})
 		}
 		if t.supportedBuildmode("c-shared") {
-			t.registerTest("cgo_testcshared", "", &goTest{pkg: "cmd/cgo/internal/testcshared", timeout: 5 * time.Minute})
+			t.registerTest("cgo_testcshared", cgoHeading, &goTest{pkg: "cmd/cgo/internal/testcshared", timeout: 5 * time.Minute})
 		}
 		if t.supportedBuildmode("shared") {
-			t.registerTest("cgo_testshared", "", &goTest{pkg: "cmd/cgo/internal/testshared", timeout: 600 * time.Second})
+			t.registerTest("cgo_testshared", cgoHeading, &goTest{pkg: "cmd/cgo/internal/testshared", timeout: 600 * time.Second})
 		}
 		if t.supportedBuildmode("plugin") {
-			t.registerTest("cgo_testplugin", "", &goTest{pkg: "cmd/cgo/internal/testplugin", timeout: 600 * time.Second})
+			t.registerTest("cgo_testplugin", cgoHeading, &goTest{pkg: "cmd/cgo/internal/testplugin", timeout: 600 * time.Second})
 		}
-		t.registerTest("cgo_testsanitizers", "", &goTest{pkg: "cmd/cgo/internal/testsanitizers", timeout: 5 * time.Minute})
+		t.registerTest("cgo_testsanitizers", cgoHeading, &goTest{pkg: "cmd/cgo/internal/testsanitizers", timeout: 5 * time.Minute})
 		if t.hasBash() && goos != "android" && !t.iOS() && gohostos != "windows" {
-			t.registerTest("cgo_errors", "", &goTest{pkg: "cmd/cgo/internal/testerrors", timeout: 5 * time.Minute})
+			t.registerTest("cgo_errors", cgoHeading, &goTest{pkg: "cmd/cgo/internal/testerrors", timeout: 5 * time.Minute})
 		}
 	}
 
@@ -847,10 +863,13 @@ func (t *tester) registerTests() {
 			nShards = n
 		}
 		for shard := 0; shard < nShards; shard++ {
+			id := fmt.Sprintf("%d_%d", shard, nShards)
 			t.registerTest(
-				fmt.Sprintf("test:%d_%d", shard, nShards),
+				"test:"+id,
 				"../test",
 				&goTest{
+					variant:   id,
+					sharded:   true,
 					pkg:       "cmd/internal/testdir",
 					testFlags: []string{fmt.Sprintf("-shard=%d", shard), fmt.Sprintf("-shards=%d", nShards)},
 					runOnHost: true,
@@ -864,19 +883,29 @@ func (t *tester) registerTests() {
 	// To help developers avoid trybot-only failures, we try to run on typical developer machines
 	// which is darwin,linux,windows/amd64 and darwin/arm64.
 	if goos == "darwin" || ((goos == "linux" || goos == "windows") && goarch == "amd64") {
-		t.registerTest("api", "", &goTest{pkg: "cmd/api", timeout: 5 * time.Minute, testFlags: []string{"-check"}})
+		t.registerTest("api", "API check", &goTest{variant: "check", pkg: "cmd/api", timeout: 5 * time.Minute, testFlags: []string{"-check"}})
 	}
 }
 
-// isRegisteredTestName reports whether a test named testName has already
-// been registered.
-func (t *tester) isRegisteredTestName(testName string) bool {
-	for _, tt := range t.tests {
-		if tt.name == testName {
-			return true
-		}
+// addTest adds an arbitrary test callback to the test list.
+//
+// name must uniquely identify the test and heading must be non-empty.
+func (t *tester) addTest(name, heading string, fn func(*distTest) error) {
+	if t.testNames[name] {
+		panic("duplicate registered test name " + name)
 	}
-	return false
+	if heading == "" {
+		panic("empty heading")
+	}
+	if t.testNames == nil {
+		t.testNames = make(map[string]bool)
+	}
+	t.testNames[name] = true
+	t.tests = append(t.tests, distTest{
+		name:    name,
+		heading: heading,
+		fn:      fn,
+	})
 }
 
 type registerTestOpt interface {
@@ -893,8 +922,21 @@ func (rtPreFunc) isRegisterTestOpt() {}
 
 // registerTest registers a test that runs the given goTest.
 //
-// If heading is "", it uses test.pkg as the heading.
+// name must uniquely identify the test and heading must be non-empty.
 func (t *tester) registerTest(name, heading string, test *goTest, opts ...registerTestOpt) {
+	if t.variantNames == nil {
+		t.variantNames = make(map[string]bool)
+	}
+	for _, pkg := range test.packages() {
+		variantName := pkg
+		if test.variant != "" {
+			variantName += ":" + test.variant
+		}
+		if t.variantNames[variantName] {
+			panic("duplicate variant name " + variantName)
+		}
+		t.variantNames[variantName] = true
+	}
 	var preFunc func(*distTest) bool
 	for _, opt := range opts {
 		switch opt := opt.(type) {
@@ -902,29 +944,16 @@ func (t *tester) registerTest(name, heading string, test *goTest, opts ...regist
 			preFunc = opt.pre
 		}
 	}
-	if t.isRegisteredTestName(name) {
-		panic("duplicate registered test name " + name)
-	}
-	if heading == "" {
-		if test.pkg == "" {
-			panic("either heading or test.pkg must be set")
-		}
-		heading = test.pkg
-	}
-	t.tests = append(t.tests, distTest{
-		name:    name,
-		heading: heading,
-		fn: func(dt *distTest) error {
-			if preFunc != nil && !preFunc(dt) {
-				return nil
-			}
-			w := &work{
-				dt:  dt,
-				cmd: test.bgCommand(t),
-			}
-			t.worklist = append(t.worklist, w)
+	t.addTest(name, heading, func(dt *distTest) error {
+		if preFunc != nil && !preFunc(dt) {
 			return nil
-		},
+		}
+		w := &work{
+			dt:  dt,
+			cmd: test.bgCommand(t),
+		}
+		t.worklist = append(t.worklist, w)
+		return nil
 	})
 }
 
@@ -1061,9 +1090,10 @@ func (t *tester) supportedBuildmode(mode string) bool {
 	return buildModeSupported("gc", mode, goos, goarch)
 }
 
-func (t *tester) registerCgoTests() {
-	cgoTest := func(name string, subdir, linkmode, buildmode string, opts ...registerTestOpt) *goTest {
+func (t *tester) registerCgoTests(heading string) {
+	cgoTest := func(variant string, subdir, linkmode, buildmode string, opts ...registerTestOpt) *goTest {
 		gt := &goTest{
+			variant:   variant,
 			pkg:       "cmd/cgo/internal/" + subdir,
 			buildmode: buildmode,
 			ldflags:   "-linkmode=" + linkmode,
@@ -1089,18 +1119,18 @@ func (t *tester) registerCgoTests() {
 			gt.tags = append(gt.tags, "static")
 		}
 
-		t.registerTest("cgo:"+name, "cmd/cgo/internal/test", gt, opts...)
+		t.registerTest("cgo:"+subdir+":"+variant, heading, gt, opts...)
 		return gt
 	}
 
-	cgoTest("test-auto", "test", "auto", "")
+	cgoTest("auto", "test", "auto", "")
 
 	// Stub out various buildmode=pie tests  on alpine until 54354 resolved.
 	builderName := os.Getenv("GO_BUILDER_NAME")
 	disablePIE := strings.HasSuffix(builderName, "-alpine")
 
 	if t.internalLink() {
-		cgoTest("test-internal", "test", "internal", "")
+		cgoTest("internal", "test", "internal", "")
 	}
 
 	os := gohostos
@@ -1111,24 +1141,24 @@ func (t *tester) registerCgoTests() {
 			break
 		}
 		// test linkmode=external, but __thread not supported, so skip testtls.
-		cgoTest("test-external", "test", "external", "")
+		cgoTest("external", "test", "external", "")
 
-		gt := cgoTest("test-external-s", "test", "external", "")
+		gt := cgoTest("external-s", "test", "external", "")
 		gt.ldflags += " -s"
 
 		if t.supportedBuildmode("pie") && !disablePIE {
-			cgoTest("test-auto-pie", "test", "auto", "pie")
+			cgoTest("auto-pie", "test", "auto", "pie")
 			if t.internalLink() && t.internalLinkPIE() {
-				cgoTest("test-internal-pie", "test", "internal", "pie")
+				cgoTest("internal-pie", "test", "internal", "pie")
 			}
 		}
 
 	case os == "aix", os == "android", os == "dragonfly", os == "freebsd", os == "linux", os == "netbsd", os == "openbsd":
-		gt := cgoTest("test-external-g0", "test", "external", "")
+		gt := cgoTest("external-g0", "test", "external", "")
 		gt.env = append(gt.env, "CGO_CFLAGS=-g0 -fdiagnostics-color")
 
-		cgoTest("testtls-auto", "testtls", "auto", "")
-		cgoTest("testtls-external", "testtls", "external", "")
+		cgoTest("auto", "testtls", "auto", "")
+		cgoTest("external", "testtls", "external", "")
 		switch {
 		case os == "aix":
 			// no static linking
@@ -1175,30 +1205,30 @@ func (t *tester) registerCgoTests() {
 			// Static linking tests
 			if goos != "android" && p != "netbsd/arm" {
 				// TODO(#56629): Why does this fail on netbsd-arm?
-				cgoTest("testtls-static", "testtls", "external", "static", staticCheck)
+				cgoTest("static", "testtls", "external", "static", staticCheck)
 			}
-			cgoTest("nocgo-auto", "testnocgo", "auto", "", staticCheck)
-			cgoTest("nocgo-external", "testnocgo", "external", "", staticCheck)
+			cgoTest("auto", "testnocgo", "auto", "", staticCheck)
+			cgoTest("external", "testnocgo", "external", "", staticCheck)
 			if goos != "android" {
-				cgoTest("nocgo-static", "testnocgo", "external", "static", staticCheck)
-				cgoTest("test-static", "test", "external", "static", staticCheck)
+				cgoTest("static", "testnocgo", "external", "static", staticCheck)
+				cgoTest("static", "test", "external", "static", staticCheck)
 				// -static in CGO_LDFLAGS triggers a different code path
 				// than -static in -extldflags, so test both.
 				// See issue #16651.
 				if goarch != "loong64" {
 					// TODO(#56623): Why does this fail on loong64?
-					cgoTest("test-static-env", "test", "auto", "static", staticCheck)
+					cgoTest("auto-static", "test", "auto", "static", staticCheck)
 				}
 			}
 
 			// PIE linking tests
 			if t.supportedBuildmode("pie") && !disablePIE {
-				cgoTest("test-pie", "test", "auto", "pie")
+				cgoTest("auto-pie", "test", "auto", "pie")
 				if t.internalLink() && t.internalLinkPIE() {
-					cgoTest("test-pie-internal", "test", "internal", "pie")
+					cgoTest("internal-pie", "test", "internal", "pie")
 				}
-				cgoTest("testtls-pie", "testtls", "auto", "pie")
-				cgoTest("nocgo-pie", "testnocgo", "auto", "pie")
+				cgoTest("auto-pie", "testtls", "auto", "pie")
+				cgoTest("auto-pie", "testnocgo", "auto", "pie")
 			}
 		}
 	}
@@ -1247,7 +1277,7 @@ func (t *tester) runPending(nextTest *distTest) {
 		}
 		w := worklist[ended]
 		dt := w.dt
-		if dt.heading != "" && t.lastHeading != dt.heading {
+		if t.lastHeading != dt.heading {
 			t.lastHeading = dt.heading
 			t.out(dt.heading)
 		}
@@ -1274,7 +1304,7 @@ func (t *tester) runPending(nextTest *distTest) {
 	}
 
 	if dt := nextTest; dt != nil {
-		if dt.heading != "" && t.lastHeading != dt.heading {
+		if t.lastHeading != dt.heading {
 			t.lastHeading = dt.heading
 			t.out(dt.heading)
 		}
@@ -1338,12 +1368,14 @@ func (t *tester) registerRaceTests() {
 	hdr := "Testing race detector"
 	t.registerTest("race:runtime/race", hdr,
 		&goTest{
+			variant:  "race",
 			race:     true,
 			runTests: "Output",
 			pkg:      "runtime/race",
 		})
 	t.registerTest("race", hdr,
 		&goTest{
+			variant:  "race",
 			race:     true,
 			runTests: "TestParse|TestEcho|TestStdinCloseRace|TestClosedPipeRace|TestTypeRace|TestFdRace|TestFdReadRace|TestFileCloseRace",
 			pkgs:     []string{"flag", "net", "os", "os/exec", "encoding/gob"},
@@ -1358,12 +1390,13 @@ func (t *tester) registerRaceTests() {
 		// There are already cgo-enabled packages being tested with the race detector.
 		// We shouldn't need to redo all of cmd/cgo/internal/test too.
 		// The race buildler will take care of this.
-		// t.registerTest("race:cmd/cgo/internal/test", hdr, &goTest{dir: "cmd/cgo/internal/test", race: true, env: []string{"GOTRACEBACK=2"}})
+		// t.registerTest("race:cmd/cgo/internal/test", hdr, &goTest{variant:"race", dir: "cmd/cgo/internal/test", race: true, env: []string{"GOTRACEBACK=2"}})
 	}
 	if t.extLink() {
 		// Test with external linking; see issue 9133.
 		t.registerTest("race:external", hdr,
 			&goTest{
+				variant:  "race-external",
 				race:     true,
 				ldflags:  "-linkmode=external",
 				runTests: "TestParse|TestEcho|TestStdinCloseRace",
