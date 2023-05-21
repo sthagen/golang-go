@@ -10,9 +10,11 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"internal/testenv"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -159,6 +161,17 @@ var ptrTests = []ptrTest{
 		    void f14b(char **p) {}`,
 		body:      `p := C.f14a(); *p = new(C.char); C.f14b(p)`,
 		fail:      true,
+		expensive: true,
+	},
+	{
+		// Storing a pinned Go pointer into C memory should succeed.
+		name: "barrierpinnedok",
+		c: `#include <stdlib.h>
+		    char **f14a2() { return malloc(sizeof(char*)); }
+		    void f14b2(char **p) {}`,
+		imports:   []string{"runtime"},
+		body:      `var pinr runtime.Pinner; p := C.f14a2(); x := new(C.char); pinr.Pin(x); *p = x; C.f14b2(p); pinr.Unpin()`,
+		fail:      false,
 		expensive: true,
 	},
 	{
@@ -434,6 +447,13 @@ var ptrTests = []ptrTest{
 }
 
 func TestPointerChecks(t *testing.T) {
+	testenv.MustHaveGoBuild(t)
+	testenv.MustHaveCGO(t)
+	if runtime.GOOS == "windows" {
+		// TODO: Skip just the cases that fail?
+		t.Skipf("some tests fail to build on %s", runtime.GOOS)
+	}
+
 	var gopath string
 	var dir string
 	if *tmp != "" {

@@ -14,8 +14,6 @@
 
 #define CLOCK_REALTIME		0
 #define CLOCK_MONOTONIC		4
-#define FD_CLOEXEC		1
-#define F_SETFD			2
 #define F_GETFL			3
 #define F_SETFL			4
 #define O_NONBLOCK		4
@@ -439,26 +437,21 @@ ok:
 	MOVW	R0, ret+48(FP)
 	RET
 
-// func fcntl(fd, cmd, arg int32) int32
+// func fcntl(fd, cmd, arg int32) (int32, int32)
 TEXT runtime·fcntl(SB),NOSPLIT,$0
 	MOVW	fd+0(FP), R0
 	MOVW	cmd+4(FP), R1
 	MOVW	arg+8(FP), R2
 	MOVD	$SYS_fcntl, R8
 	SVC
-	BCC	ok
-	NEG	R0, R0		// caller expects negative errno
-ok:
-	MOVW	R0, ret+16(FP)
+	BCC	noerr
+	MOVW	$-1, R1
+	MOVW	R1, ret+16(FP)
+	MOVW	R0, errno+20(FP)
 	RET
-
-// func closeonexec(fd int32)
-TEXT runtime·closeonexec(SB),NOSPLIT|NOFRAME,$0
-	MOVW	fd+0(FP), R0
-	MOVD	$F_SETFD, R1
-	MOVD	$FD_CLOEXEC, R2
-	MOVD	$SYS_fcntl, R8
-	SVC
+noerr:
+	MOVW	R0, ret+16(FP)
+	MOVW	$0, errno+20(FP)
 	RET
 
 // func getCntxct(physical bool) uint32

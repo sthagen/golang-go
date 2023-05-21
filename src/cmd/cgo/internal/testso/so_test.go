@@ -2,11 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build cgo
-
 package so_test
 
 import (
+	"internal/testenv"
 	"log"
 	"os"
 	"os/exec"
@@ -16,25 +15,21 @@ import (
 	"testing"
 )
 
-func requireTestSOSupported(t *testing.T) {
-	t.Helper()
-	switch runtime.GOARCH {
-	case "arm64":
-		if runtime.GOOS == "darwin" || runtime.GOOS == "ios" {
-			t.Skip("No exec facility on iOS.")
-		}
-	case "ppc64":
-		if runtime.GOOS == "linux" {
-			t.Skip("External linking not implemented on linux/ppc64 (issue #8912).")
-		}
-	}
-	if runtime.GOOS == "android" {
-		t.Skip("No exec facility on Android.")
-	}
+func TestSO(t *testing.T) {
+	testSO(t, "so")
 }
 
-func TestSO(t *testing.T) {
-	requireTestSOSupported(t)
+func TestSOVar(t *testing.T) {
+	testSO(t, "sovar")
+}
+
+func testSO(t *testing.T, dir string) {
+	if runtime.GOOS == "ios" {
+		t.Skip("iOS disallows dynamic loading of user libraries")
+	}
+	testenv.MustHaveGoBuild(t)
+	testenv.MustHaveExec(t)
+	testenv.MustHaveCGO(t)
 
 	GOPATH, err := os.MkdirTemp("", "cgosotest")
 	if err != nil {
@@ -43,7 +38,7 @@ func TestSO(t *testing.T) {
 	defer os.RemoveAll(GOPATH)
 
 	modRoot := filepath.Join(GOPATH, "src", "cgosotest")
-	if err := overlayDir(modRoot, "testdata"); err != nil {
+	if err := overlayDir(modRoot, filepath.Join("testdata", dir)); err != nil {
 		log.Panic(err)
 	}
 	if err := os.WriteFile(filepath.Join(modRoot, "go.mod"), []byte("module cgosotest\n"), 0666); err != nil {

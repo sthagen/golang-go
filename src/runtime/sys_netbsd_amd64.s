@@ -13,8 +13,6 @@
 
 #define CLOCK_REALTIME		0
 #define CLOCK_MONOTONIC		3
-#define FD_CLOEXEC		1
-#define F_SETFD			2
 
 #define SYS_exit			1
 #define SYS_read			3
@@ -432,23 +430,18 @@ TEXT runtime·kevent(SB),NOSPLIT,$0
 	MOVL	AX, ret+48(FP)
 	RET
 
-// func fcntl(fd, cmd, arg int32) int2
+// func fcntl(fd, cmd, arg int32) (int32, int32)
 TEXT runtime·fcntl(SB),NOSPLIT,$0
 	MOVL	fd+0(FP), DI	// fd
 	MOVL	cmd+4(FP), SI	// cmd
 	MOVL	arg+8(FP), DX	// arg
 	MOVL	$SYS_fcntl, AX
 	SYSCALL
-	JCC	2(PC)
-	NEGQ	AX		// caller expects negative errno
-	MOVL	AX, ret+16(FP)
+	JCC	noerr
+	MOVL	$-1, ret+16(FP)
+	MOVL	AX, errno+20(FP)
 	RET
-
-// void runtime·closeonexec(int32 fd)
-TEXT runtime·closeonexec(SB),NOSPLIT,$0
-	MOVL	fd+0(FP), DI	// fd
-	MOVQ	$F_SETFD, SI
-	MOVQ	$FD_CLOEXEC, DX
-	MOVL	$SYS_fcntl, AX
-	SYSCALL
+noerr:
+	MOVL	AX, ret+16(FP)
+	MOVL	$0, errno+20(FP)
 	RET

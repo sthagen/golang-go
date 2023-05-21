@@ -275,7 +275,19 @@ func (check *Checker) infer(posn positioner, tparams []*TypeParam, targs []Type,
 		u.tracef("== untyped arguments: %v", untyped)
 	}
 
-	if check.conf._InferMaxDefaultType {
+	// We need a poser/positioner for check.allowVersion below.
+	// We should really use pos (argument to infer) but currently
+	// the generator that generates go/types/infer.go has trouble
+	// with that. For now, do a little dance to get a position if
+	// we need one. (If we don't have untyped arguments left, it
+	// doesn't matter which branch we take below.)
+	// TODO(gri) adjust infer signature or adjust the rewriter.
+	var at token.Pos
+	if len(untyped) > 0 {
+		at = params.At(untyped[0]).pos
+	}
+
+	if check.allowVersion(check.pkg, atPos(at), go1_21) {
 		// Some generic parameters with untyped arguments may have been given a type by now.
 		// Collect all remaining parameters that don't have a type yet and determine the
 		// maximum untyped type for each of those parameters, if possible.
@@ -401,7 +413,7 @@ func (check *Checker) infer(posn positioner, tparams []*TypeParam, targs []Type,
 			t0 := inferred[index]
 			if t1 := check.subst(nopos, t0, smap, nil, check.context()); t1 != t0 {
 				// t0 was simplified to t1.
-				// If t0 was a generic function, but the simplifed signature t1 does
+				// If t0 was a generic function, but the simplified signature t1 does
 				// not contain any type parameters anymore, the function is not generic
 				// anymore. Remove it's type parameters. (go.dev/issue/59953)
 				// Note that if t0 was a signature, t1 must be a signature, and t1

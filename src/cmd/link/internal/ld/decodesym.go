@@ -59,7 +59,7 @@ func decodetypePtrdata(arch *sys.Arch, p []byte) int64 {
 
 // Type.commonType.tflag
 func decodetypeHasUncommon(arch *sys.Arch, p []byte) bool {
-	return abi.TFlag(p[2*arch.PtrSize+4])&abi.TFlagUncommon != 0
+	return abi.TFlag(p[abi.TFlagOff(arch.PtrSize)])&abi.TFlagUncommon != 0
 }
 
 // Type.FuncType.dotdotdot
@@ -222,7 +222,7 @@ func decodetypeStr(ldr *loader.Loader, arch *sys.Arch, symIdx loader.Sym) string
 	relocs := ldr.Relocs(symIdx)
 	str := decodetypeName(ldr, symIdx, &relocs, 4*arch.PtrSize+8)
 	data := ldr.Data(symIdx)
-	if data[2*arch.PtrSize+4]&byte(abi.TFlagExtraStar) != 0 {
+	if data[abi.TFlagOff(arch.PtrSize)]&byte(abi.TFlagExtraStar) != 0 {
 		return str[1:]
 	}
 	return str
@@ -299,4 +299,10 @@ func findShlibSection(ctxt *Link, path string, addr uint64) *elf.Section {
 
 func decodetypeGcprogShlib(ctxt *Link, data []byte) uint64 {
 	return decodeInuxi(ctxt.Arch, data[2*int32(ctxt.Arch.PtrSize)+8+1*int32(ctxt.Arch.PtrSize):], ctxt.Arch.PtrSize)
+}
+
+// decodeItabType returns the itab._type field from an itab.
+func decodeItabType(ldr *loader.Loader, arch *sys.Arch, symIdx loader.Sym) loader.Sym {
+	relocs := ldr.Relocs(symIdx)
+	return decodeRelocSym(ldr, symIdx, &relocs, int32(arch.PtrSize))
 }

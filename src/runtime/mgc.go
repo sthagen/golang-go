@@ -500,7 +500,7 @@ func gcWaitOnMark(n uint32) {
 		// Wait until sweep termination, mark, and mark
 		// termination of cycle N complete.
 		work.sweepWaiters.list.push(getg())
-		goparkunlock(&work.sweepWaiters.lock, waitReasonWaitForGCCycle, traceEvGoBlock, 1)
+		goparkunlock(&work.sweepWaiters.lock, waitReasonWaitForGCCycle, traceBlockUntilGCEnds, 1)
 	}
 }
 
@@ -658,10 +658,7 @@ func gcStart(trigger gcTrigger) {
 	now := nanotime()
 	work.tSweepTerm = now
 	work.pauseStart = now
-	if traceEnabled() {
-		traceGCSTWStart(1)
-	}
-	systemstack(stopTheWorldWithSema)
+	systemstack(func() { stopTheWorldWithSema(stwGCSweepTerm) })
 	// Finish sweep before we start concurrent scan.
 	systemstack(func() {
 		finishsweep_m()
@@ -726,7 +723,7 @@ func gcStart(trigger gcTrigger) {
 
 	// Concurrent mark.
 	systemstack(func() {
-		now = startTheWorldWithSema(traceEnabled())
+		now = startTheWorldWithSema()
 		work.pauseNS += now - work.pauseStart
 		work.tMark = now
 		memstats.gcPauseDist.record(now - work.pauseStart)
@@ -848,10 +845,7 @@ top:
 	work.tMarkTerm = now
 	work.pauseStart = now
 	getg().m.preemptoff = "gcing"
-	if traceEnabled() {
-		traceGCSTWStart(0)
-	}
-	systemstack(stopTheWorldWithSema)
+	systemstack(func() { stopTheWorldWithSema(stwGCMarkTerm) })
 	// The gcphase is _GCmark, it will transition to _GCmarktermination
 	// below. The important thing is that the wb remains active until
 	// all marking is complete. This includes writes made by the GC.
@@ -878,7 +872,7 @@ top:
 	if restart {
 		getg().m.preemptoff = ""
 		systemstack(func() {
-			now := startTheWorldWithSema(traceEnabled())
+			now := startTheWorldWithSema()
 			work.pauseNS += now - work.pauseStart
 			memstats.gcPauseDist.record(now - work.pauseStart)
 		})
@@ -1092,7 +1086,7 @@ func gcMarkTermination() {
 		throw("failed to set sweep barrier")
 	}
 
-	systemstack(func() { startTheWorldWithSema(traceEnabled()) })
+	systemstack(func() { startTheWorldWithSema() })
 
 	// Flush the heap profile so we can start a new cycle next GC.
 	// This is relatively expensive, so we don't do it with the
@@ -1321,7 +1315,7 @@ func gcBgMarkWorker() {
 			// Note that at this point, the G may immediately be
 			// rescheduled and may be running.
 			return true
-		}, unsafe.Pointer(node), waitReasonGCWorkerIdle, traceEvGoBlock, 0)
+		}, unsafe.Pointer(node), waitReasonGCWorkerIdle, traceBlockSystemGoroutine, 0)
 
 		// Preemption must not occur here, or another G might see
 		// p.gcMarkWorkerMode.

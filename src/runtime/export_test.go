@@ -47,6 +47,8 @@ var NetpollGenericInit = netpollGenericInit
 var Memmove = memmove
 var MemclrNoHeapPointers = memclrNoHeapPointers
 
+var CgoCheckPointer = cgoCheckPointer
+
 const TracebackInnerFrames = tracebackInnerFrames
 const TracebackOuterFrames = tracebackOuterFrames
 
@@ -274,7 +276,7 @@ var ReadUnaligned32 = readUnaligned32
 var ReadUnaligned64 = readUnaligned64
 
 func CountPagesInUse() (pagesInUse, counted uintptr) {
-	stopTheWorld("CountPagesInUse")
+	stopTheWorld(stwForTestCountPagesInUse)
 
 	pagesInUse = uintptr(mheap_.pagesInUse.Load())
 
@@ -317,7 +319,7 @@ func (p *ProfBuf) Close() {
 }
 
 func ReadMetricsSlow(memStats *MemStats, samplesp unsafe.Pointer, len, cap int) {
-	stopTheWorld("ReadMetricsSlow")
+	stopTheWorld(stwForTestReadMetricsSlow)
 
 	// Initialize the metrics beforehand because this could
 	// allocate and skew the stats.
@@ -345,7 +347,7 @@ func ReadMetricsSlow(memStats *MemStats, samplesp unsafe.Pointer, len, cap int) 
 // ReadMemStatsSlow returns both the runtime-computed MemStats and
 // MemStats accumulated by scanning the heap.
 func ReadMemStatsSlow() (base, slow MemStats) {
-	stopTheWorld("ReadMemStatsSlow")
+	stopTheWorld(stwForTestReadMemStatsSlow)
 
 	// Run on the system stack to avoid stack growth allocation.
 	systemstack(func() {
@@ -1191,7 +1193,7 @@ func CheckScavengedBitsCleared(mismatches []BitsMismatch) (n int, ok bool) {
 }
 
 func PageCachePagesLeaked() (leaked uintptr) {
-	stopTheWorld("PageCachePagesLeaked")
+	stopTheWorld(stwForTestPageCachePagesLeaked)
 
 	// Walk over destroyed Ps and look for unflushed caches.
 	deadp := allp[len(allp):cap(allp)]
@@ -1345,10 +1347,11 @@ func GCTestPointerClass(p unsafe.Pointer) string {
 const Raceenabled = raceenabled
 
 const (
-	GCBackgroundUtilization     = gcBackgroundUtilization
-	GCGoalUtilization           = gcGoalUtilization
-	DefaultHeapMinimum          = defaultHeapMinimum
-	MemoryLimitHeapGoalHeadroom = memoryLimitHeapGoalHeadroom
+	GCBackgroundUtilization            = gcBackgroundUtilization
+	GCGoalUtilization                  = gcGoalUtilization
+	DefaultHeapMinimum                 = defaultHeapMinimum
+	MemoryLimitHeapGoalHeadroomPercent = memoryLimitHeapGoalHeadroomPercent
+	MemoryLimitMinHeapGoalHeadroom     = memoryLimitMinHeapGoalHeadroom
 )
 
 type GCController struct {
@@ -1824,4 +1827,16 @@ func PersistentAlloc(n uintptr) unsafe.Pointer {
 // pcBuf with the return addresses of the physical frames on the stack.
 func FPCallers(pcBuf []uintptr) int {
 	return fpTracebackPCs(unsafe.Pointer(getcallerfp()), pcBuf)
+}
+
+var (
+	IsPinned      = isPinned
+	GetPinCounter = pinnerGetPinCounter
+)
+
+func SetPinnerLeakPanic(f func()) {
+	pinnerLeakPanic = f
+}
+func GetPinnerLeakPanic() func() {
+	return pinnerLeakPanic
 }

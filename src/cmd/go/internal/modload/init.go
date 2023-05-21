@@ -292,21 +292,29 @@ func BinDir() string {
 // operate in workspace mode. It should not be called by other commands,
 // for example 'go mod tidy', that don't operate in workspace mode.
 func InitWorkfile() {
+	workFilePath = FindGoWork(base.Cwd())
+}
+
+// FindGoWork returns the name of the go.work file for this command,
+// or the empty string if there isn't one.
+// Most code should use Init and Enabled rather than use this directly.
+// It is exported mainly for Go toolchain switching, which must process
+// the go.work very early at startup.
+func FindGoWork(wd string) string {
 	if RootMode == NoRoot {
-		workFilePath = ""
-		return
+		return ""
 	}
 
 	switch gowork := cfg.Getenv("GOWORK"); gowork {
 	case "off":
-		workFilePath = ""
+		return ""
 	case "", "auto":
-		workFilePath = findWorkspaceFile(base.Cwd())
+		return findWorkspaceFile(wd)
 	default:
 		if !filepath.IsAbs(gowork) {
-			base.Fatalf("the path provided to GOWORK must be an absolute path")
+			base.Fatalf("go: invalid GOWORK: not an absolute path")
 		}
-		workFilePath = gowork
+		return gowork
 	}
 }
 
@@ -467,19 +475,30 @@ func WillBeEnabled() bool {
 		return false
 	}
 
-	if modRoot := findModuleRoot(base.Cwd()); modRoot == "" {
+	return FindGoMod(base.Cwd()) != ""
+}
+
+// FindGoMod returns the name of the go.mod file for this command,
+// or the empty string if there isn't one.
+// Most code should use Init and Enabled rather than use this directly.
+// It is exported mainly for Go toolchain switching, which must process
+// the go.mod very early at startup.
+func FindGoMod(wd string) string {
+	modRoot := findModuleRoot(wd)
+	if modRoot == "" {
 		// GO111MODULE is 'auto', and we can't find a module root.
 		// Stay in GOPATH mode.
-		return false
-	} else if search.InDir(modRoot, os.TempDir()) == "." {
+		return ""
+	}
+	if search.InDir(modRoot, os.TempDir()) == "." {
 		// If you create /tmp/go.mod for experimenting,
 		// then any tests that create work directories under /tmp
 		// will find it and get modules when they're not expecting them.
 		// It's a bit of a peculiar thing to disallow but quite mysterious
 		// when it happens. See golang.org/issue/26708.
-		return false
+		return ""
 	}
-	return true
+	return filepath.Join(modRoot, "go.mod")
 }
 
 // Enabled reports whether modules are (or must be) enabled.
@@ -1482,7 +1501,7 @@ func commitRequirements(ctx context.Context) (err error) {
 	if inWorkspaceMode() {
 		// go.mod files aren't updated in workspace mode, but we still want to
 		// update the go.work.sum file.
-		return modfetch.WriteGoSum(keepSums(ctx, loaded, requirements, addBuildListZipSums), mustHaveCompleteRequirements())
+		return modfetch.WriteGoSum(ctx, keepSums(ctx, loaded, requirements, addBuildListZipSums), mustHaveCompleteRequirements())
 	}
 	if MainModules.Len() != 1 || MainModules.ModRoot(MainModules.Versions()[0]) == "" {
 		// We aren't in a module, so we don't have anywhere to write a go.mod file.
@@ -1527,7 +1546,7 @@ func commitRequirements(ctx context.Context) (err error) {
 		// Don't write go.mod, but write go.sum in case we added or trimmed sums.
 		// 'go mod init' shouldn't write go.sum, since it will be incomplete.
 		if cfg.CmdName != "mod init" {
-			if err := modfetch.WriteGoSum(keepSums(ctx, loaded, requirements, addBuildListZipSums), mustHaveCompleteRequirements()); err != nil {
+			if err := modfetch.WriteGoSum(ctx, keepSums(ctx, loaded, requirements, addBuildListZipSums), mustHaveCompleteRequirements()); err != nil {
 				return err
 			}
 		}
@@ -1552,14 +1571,14 @@ func commitRequirements(ctx context.Context) (err error) {
 		// 'go mod init' shouldn't write go.sum, since it will be incomplete.
 		if cfg.CmdName != "mod init" {
 			if err == nil {
-				err = modfetch.WriteGoSum(keepSums(ctx, loaded, requirements, addBuildListZipSums), mustHaveCompleteRequirements())
+				err = modfetch.WriteGoSum(ctx, keepSums(ctx, loaded, requirements, addBuildListZipSums), mustHaveCompleteRequirements())
 			}
 		}
 	}()
 
 	// Make a best-effort attempt to acquire the side lock, only to exclude
 	// previous versions of the 'go' command from making simultaneous edits.
-	if unlock, err := modfetch.SideLock(); err == nil {
+	if unlock, err := modfetch.SideLock(ctx); err == nil {
 		defer unlock()
 	}
 

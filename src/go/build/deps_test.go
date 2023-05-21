@@ -39,14 +39,14 @@ import (
 var depsRules = `
 	# No dependencies allowed for any of these packages.
 	NONE
-	< constraints, container/list, container/ring,
+	< cmp, container/list, container/ring,
 	  internal/cfg, internal/coverage, internal/coverage/rtcov,
 	  internal/coverage/uleb128, internal/coverage/calloc,
 	  internal/cpu, internal/goarch, internal/godebugs,
 	  internal/goexperiment, internal/goos,
 	  internal/goversion, internal/nettrace, internal/platform,
 	  log/internal,
-	  maps, unicode/utf8, unicode/utf16, unicode,
+	  unicode/utf8, unicode/utf16, unicode,
 	  unsafe;
 
 	# slices depends on unsafe for overlapping check.
@@ -56,6 +56,8 @@ var depsRules = `
 	# These packages depend only on internal/goarch and unsafe.
 	internal/goarch, unsafe
 	< internal/abi;
+
+	unsafe < maps;
 
 	# RUNTIME is the core runtime group of packages, all of them very light-weight.
 	internal/abi, internal/cpu, internal/goarch,
