@@ -34,6 +34,7 @@ import (
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/fsys"
+	"cmd/go/internal/gover"
 	"cmd/go/internal/imports"
 	"cmd/go/internal/modfetch"
 	"cmd/go/internal/modindex"
@@ -2321,7 +2322,7 @@ func (p *Package) setBuildInfo(ctx context.Context, autoVCS bool) {
 	for mod := range mdeps {
 		sortedMods = append(sortedMods, mod)
 	}
-	module.Sort(sortedMods)
+	gover.ModSort(sortedMods)
 	deps := make([]*debug.Module, len(sortedMods))
 	for i, mod := range sortedMods {
 		deps[i] = mdeps[mod]
@@ -3230,9 +3231,10 @@ func PackagesAndErrorsOutsideModule(ctx context.Context, opts PackageOpts, args 
 
 	// Check that the arguments satisfy syntactic constraints.
 	var version string
+	var firstPath string
 	for _, arg := range args {
 		if i := strings.Index(arg, "@"); i >= 0 {
-			version = arg[i+1:]
+			firstPath, version = arg[:i], arg[i+1:]
 			if version == "" {
 				return nil, fmt.Errorf("%s: version must not be empty", arg)
 			}
@@ -3270,7 +3272,7 @@ func PackagesAndErrorsOutsideModule(ctx context.Context, opts PackageOpts, args 
 	// later arguments, and other modules would. Let's not try to be too
 	// magical though.
 	allowed := modload.CheckAllowed
-	if modload.IsRevisionQuery(version) {
+	if modload.IsRevisionQuery(firstPath, version) {
 		// Don't check for retractions if a specific revision is requested.
 		allowed = nil
 	}

@@ -7,6 +7,7 @@ package runtime_test
 import (
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"runtime/metrics"
 	"sort"
 	"strings"
@@ -28,6 +29,19 @@ func prepareAllMetricsSamples() (map[string]metrics.Description, []metrics.Sampl
 }
 
 func TestReadMetrics(t *testing.T) {
+	// Run a GC cycle to get some of the stats to be non-zero.
+	runtime.GC()
+
+	// Set an arbitrary memory limit to check the metric for it
+	limit := int64(512 * 1024 * 1024)
+	oldLimit := debug.SetMemoryLimit(limit)
+	defer debug.SetMemoryLimit(oldLimit)
+
+	// Set an GC percent to check the metric for it
+	gcPercent := 99
+	oldGCPercent := debug.SetGCPercent(gcPercent)
+	defer debug.SetGCPercent(oldGCPercent)
+
 	// Tests whether readMetrics produces values aligning
 	// with ReadMemStats while the world is stopped.
 	var mstats runtime.MemStats
@@ -128,10 +142,21 @@ func TestReadMetrics(t *testing.T) {
 			mallocs = samples[i].Value.Uint64()
 		case "/gc/heap/frees:objects":
 			frees = samples[i].Value.Uint64()
+		case "/gc/heap/live:bytes":
+			if live := samples[i].Value.Uint64(); live > mstats.HeapAlloc {
+				t.Errorf("live bytes: %d > heap alloc: %d", live, mstats.HeapAlloc)
+			} else if live == 0 {
+				// Might happen if we don't call runtime.GC() above.
+				t.Error("live bytes is 0")
+			}
+		case "/gc/gomemlimit:bytes":
+			checkUint64(t, name, samples[i].Value.Uint64(), uint64(limit))
 		case "/gc/heap/objects:objects":
 			checkUint64(t, name, samples[i].Value.Uint64(), mstats.HeapObjects)
 		case "/gc/heap/goal:bytes":
 			checkUint64(t, name, samples[i].Value.Uint64(), mstats.NextGC)
+		case "/gc/gogc:percent":
+			checkUint64(t, name, samples[i].Value.Uint64(), uint64(gcPercent))
 		case "/gc/cycles/automatic:gc-cycles":
 			checkUint64(t, name, samples[i].Value.Uint64(), uint64(mstats.NumGC-mstats.NumForcedGC))
 		case "/gc/cycles/forced:gc-cycles":
@@ -610,4 +635,63 @@ func generateMutexWaitTime(mu locker2) time.Duration {
 	// Reset flag.
 	*runtime.CasGStatusAlwaysTrack = false
 	return blockTime
+}
+
+// See issue #60276.
+func TestCPUMetricsSleep(t *testing.T) {
+	if runtime.GOOS == "wasip1" {
+		// Since wasip1 busy-waits in the scheduler, there's no meaningful idle
+		// time. This is accurately reflected in the metrics, but it means this
+		// test is basically meaningless on this platform.
+		t.Skip("wasip1 currently busy-waits in idle time; test not applicable")
+	}
+	names := []string{
+		"/cpu/classes/idle:cpu-seconds",
+
+		"/cpu/classes/gc/mark/assist:cpu-seconds",
+		"/cpu/classes/gc/mark/dedicated:cpu-seconds",
+		"/cpu/classes/gc/mark/idle:cpu-seconds",
+		"/cpu/classes/gc/pause:cpu-seconds",
+		"/cpu/classes/gc/total:cpu-seconds",
+		"/cpu/classes/scavenge/assist:cpu-seconds",
+		"/cpu/classes/scavenge/background:cpu-seconds",
+		"/cpu/classes/scavenge/total:cpu-seconds",
+		"/cpu/classes/total:cpu-seconds",
+		"/cpu/classes/user:cpu-seconds",
+	}
+	prep := func() []metrics.Sample {
+		mm := make([]metrics.Sample, len(names))
+		for i := range names {
+			mm[i].Name = names[i]
+		}
+		return mm
+	}
+	m1, m2 := prep(), prep()
+
+	// Read 1.
+	runtime.GC() // Update /cpu/classes metrics.
+	metrics.Read(m1)
+
+	// Sleep.
+	const dur = 100 * time.Millisecond
+	time.Sleep(dur)
+
+	// Read 2.
+	runtime.GC() // Update /cpu/classes metrics.
+	metrics.Read(m2)
+
+	// If the bug we expect is happening, then the Sleep CPU time will be accounted for
+	// as user time rather than idle time. Because we're doing this on one core, the
+	// maximum amount of time that can be attributed to user time is the time spent asleep.
+	minIdleCPUSeconds := dur.Seconds() * float64(runtime.GOMAXPROCS(-1))
+
+	if dt := m2[0].Value.Float64() - m1[0].Value.Float64(); dt < minIdleCPUSeconds {
+		for i := range names {
+			if m1[i].Value.Kind() == metrics.KindBad {
+				continue
+			}
+			t.Logf("%s %0.3f\n", names[i], m2[i].Value.Float64()-m1[i].Value.Float64())
+		}
+		t.Errorf(`time.Sleep did not contribute enough to "idle" class: %.5fs < %.5fs`, dt, minIdleCPUSeconds)
+	}
 }

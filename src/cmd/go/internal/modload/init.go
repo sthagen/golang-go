@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go/build"
 	"internal/lazyregexp"
 	"os"
 	"path"
@@ -22,6 +21,7 @@ import (
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/fsys"
+	"cmd/go/internal/gover"
 	"cmd/go/internal/lockedfile"
 	"cmd/go/internal/modconv"
 	"cmd/go/internal/modfetch"
@@ -30,7 +30,6 @@ import (
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
-	"golang.org/x/mod/semver"
 )
 
 // Variables set by other packages.
@@ -698,6 +697,9 @@ func LoadModFile(ctx context.Context) *Requirements {
 		if err != nil {
 			base.Fatalf("reading go.work: %v", err)
 		}
+		if gover.Compare(workFileGoVersion, gover.Local()) > 0 {
+			base.Fatalf("go: %s requires go %v (running go %v)", base.ShortPath(workFilePath), workFileGoVersion, gover.Local())
+		}
 		for _, modRoot := range modRoots {
 			sumFile := strings.TrimSuffix(modFilePath(modRoot), ".mod") + ".sum"
 			modfetch.WorkspaceGoSumFiles = append(modfetch.WorkspaceGoSumFiles, sumFile)
@@ -730,7 +732,7 @@ func LoadModFile(ctx context.Context) *Requirements {
 		// any module.
 		mainModule := module.Version{Path: "command-line-arguments"}
 		MainModules = makeMainModules([]module.Version{mainModule}, []string{""}, []*modfile.File{nil}, []*modFileIndex{nil}, "", nil)
-		goVersion := LatestGoVersion()
+		goVersion := gover.Local()
 		rawGoVersion.Store(mainModule, goVersion)
 		pruning := pruningForGoVersion(goVersion)
 		if inWorkspaceMode() {
@@ -759,6 +761,9 @@ func LoadModFile(ctx context.Context) *Requirements {
 			} else {
 				base.Fatalf("go: %v", err)
 			}
+		}
+		if f.Go != nil && gover.Compare(f.Go.Version, gover.Local()) > 0 {
+			base.Fatalf("go: %s requires go %v (running go %v)", base.ShortPath(gomod), f.Go.Version, gover.Local())
 		}
 
 		modFiles = append(modFiles, f)
@@ -806,11 +811,11 @@ func LoadModFile(ctx context.Context) *Requirements {
 		}
 	}
 
-	if MainModules.Index(mainModule).goVersionV == "" && rs.pruning != workspace {
+	if MainModules.Index(mainModule).goVersion == "" && rs.pruning != workspace {
 		// TODO(#45551): Do something more principled instead of checking
 		// cfg.CmdName directly here.
 		if cfg.BuildMod == "mod" && cfg.CmdName != "mod graph" && cfg.CmdName != "mod why" {
-			addGoStmt(MainModules.ModFile(mainModule), mainModule, LatestGoVersion())
+			addGoStmt(MainModules.ModFile(mainModule), mainModule, gover.Local())
 
 			// We need to add a 'go' version to the go.mod file, but we must assume
 			// that its existing contents match something between Go 1.11 and 1.16.
@@ -878,7 +883,7 @@ func CreateModFile(ctx context.Context, modPath string) {
 	modFile := new(modfile.File)
 	modFile.AddModuleStmt(modPath)
 	MainModules = makeMainModules([]module.Version{modFile.Module.Mod}, []string{modRoot}, []*modfile.File{modFile}, []*modFileIndex{nil}, "", nil)
-	addGoStmt(modFile, modFile.Module.Mod, LatestGoVersion()) // Add the go directive before converted module requirements.
+	addGoStmt(modFile, modFile.Module.Mod, gover.Local()) // Add the go directive before converted module requirements.
 
 	convertedFrom, err := convertLegacyConfig(modFile, modRoot)
 	if convertedFrom != "" {
@@ -928,7 +933,7 @@ func CreateWorkFile(ctx context.Context, workFile string, modDirs []string) {
 		base.Fatalf("go: %s already exists", workFile)
 	}
 
-	goV := LatestGoVersion() // Use current Go version by default
+	goV := gover.Local() // Use current Go version by default
 	workF := new(modfile.WorkFile)
 	workF.Syntax = new(modfile.FileSyntax)
 	workF.AddGoStmt(goV)
@@ -1045,7 +1050,7 @@ func makeMainModules(ms []module.Version, rootDirs []string, modFiles []*modfile
 		}
 		replacedByWorkFile[r.Old.Path] = true
 		v, ok := mainModules.highestReplaced[r.Old.Path]
-		if !ok || semver.Compare(r.Old.Version, v) > 0 {
+		if !ok || gover.ModCompare(r.Old.Path, r.Old.Version, v) > 0 {
 			mainModules.highestReplaced[r.Old.Path] = r.Old.Version
 		}
 		replacements[r.Old] = r.New
@@ -1101,7 +1106,7 @@ func makeMainModules(ms []module.Version, rootDirs []string, modFiles []*modfile
 				replacements[r.Old] = newV
 
 				v, ok := mainModules.highestReplaced[r.Old.Path]
-				if !ok || semver.Compare(r.Old.Version, v) > 0 {
+				if !ok || gover.ModCompare(r.Old.Path, r.Old.Version, v) > 0 {
 					mainModules.highestReplaced[r.Old.Path] = r.Old.Version
 				}
 			}
@@ -1144,7 +1149,7 @@ func requirementsFromModFiles(ctx context.Context, modFiles []*modfile.File) *Re
 			}
 		}
 	}
-	module.Sort(roots)
+	gover.ModSort(roots)
 	rs := newRequirements(pruning, roots, direct)
 	return rs
 }
@@ -1194,15 +1199,15 @@ func setDefaultBuildMod() {
 		index := MainModules.GetSingleIndexOrNil()
 		if fi, err := fsys.Stat(filepath.Join(modRoots[0], "vendor")); err == nil && fi.IsDir() {
 			modGo := "unspecified"
-			if index != nil && index.goVersionV != "" {
-				if semver.Compare(index.goVersionV, "v1.14") >= 0 {
+			if index != nil && index.goVersion != "" {
+				if gover.Compare(index.goVersion, "1.14") >= 0 {
 					// The Go version is at least 1.14, and a vendor directory exists.
 					// Set -mod=vendor by default.
 					cfg.BuildMod = "vendor"
 					cfg.BuildModReason = "Go version in go.mod is at least 1.14 and vendor directory exists."
 					return
 				} else {
-					modGo = index.goVersionV[1:]
+					modGo = index.goVersion
 				}
 			}
 
@@ -1260,39 +1265,6 @@ func addGoStmt(modFile *modfile.File, mod module.Version, v string) {
 		base.Fatalf("go: internal error: %v", err)
 	}
 	rawGoVersion.Store(mod, v)
-}
-
-// LatestGoVersion returns the latest version of the Go language supported by
-// this toolchain, like "1.17".
-func LatestGoVersion() string {
-	tags := build.Default.ReleaseTags
-	version := tags[len(tags)-1]
-	if !strings.HasPrefix(version, "go") || !modfile.GoVersionRE.MatchString(version[2:]) {
-		base.Fatalf("go: internal error: unrecognized default version %q", version)
-	}
-	return version[2:]
-}
-
-// priorGoVersion returns the Go major release immediately preceding v,
-// or v itself if v is the first Go major release (1.0) or not a supported
-// Go version.
-func priorGoVersion(v string) string {
-	vTag := "go" + v
-	tags := build.Default.ReleaseTags
-	for i, tag := range tags {
-		if tag == vTag {
-			if i == 0 {
-				return v
-			}
-
-			version := tags[i-1]
-			if !strings.HasPrefix(version, "go") || !modfile.GoVersionRE.MatchString(version[2:]) {
-				base.Fatalf("go: internal error: unrecognized version %q", version)
-			}
-			return version[2:]
-		}
-	}
-	return v
 }
 
 var altConfigs = []string{
@@ -1525,7 +1497,7 @@ func commitRequirements(ctx context.Context) (err error) {
 	if modFile.Go == nil || modFile.Go.Version == "" {
 		modFile.AddGoStmt(modFileGoVersion(modFile))
 	}
-	if semver.Compare("v"+modFileGoVersion(modFile), separateIndirectVersionV) < 0 {
+	if gover.Compare(modFileGoVersion(modFile), separateIndirectVersion) < 0 {
 		modFile.SetRequire(list)
 	} else {
 		modFile.SetRequireSeparateIndirect(list)
@@ -1641,7 +1613,7 @@ func keepSums(ctx context.Context, ld *loader, rs *Requirements, which whichSums
 			// However, we didn't do so before Go 1.21, and the bug is relatively
 			// minor, so we maintain the previous (buggy) behavior in 'go mod tidy' to
 			// avoid introducing unnecessary churn.
-			if !ld.Tidy || semver.Compare("v"+ld.GoVersion, tidyGoModSumVersionV) >= 0 {
+			if !ld.Tidy || gover.Compare(ld.GoVersion, tidyGoModSumVersion) >= 0 {
 				r := resolveReplacement(pkg.mod)
 				keep[modkey(r)] = true
 			}

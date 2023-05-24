@@ -7,10 +7,12 @@ package modload
 import (
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
+	"cmd/go/internal/gover"
 	"cmd/go/internal/mvs"
 	"cmd/go/internal/par"
 	"cmd/go/internal/slices"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -21,7 +23,6 @@ import (
 	"sync/atomic"
 
 	"golang.org/x/mod/module"
-	"golang.org/x/mod/semver"
 )
 
 // A Requirements represents a logically-immutable set of root module requirements.
@@ -94,7 +95,7 @@ var requirements *Requirements
 // The dependencies of the roots will be loaded lazily at the first call to the
 // Graph method.
 //
-// The rootModules slice must be sorted according to module.Sort.
+// The rootModules slice must be sorted according to gover.ModSort.
 // The caller must not modify the rootModules slice or direct map after passing
 // them to newRequirements.
 //
@@ -123,7 +124,7 @@ func newRequirements(pruning modPruning, rootModules []module.Version, direct ma
 		}
 		if i > 0 {
 			prev := rootModules[i-1]
-			if prev.Path > m.Path || (prev.Path == m.Path && semver.Compare(prev.Version, m.Version) > 0) {
+			if prev.Path > m.Path || (prev.Path == m.Path && gover.ModCompare(m.Path, prev.Version, m.Version) > 0) {
 				panic(fmt.Sprintf("newRequirements called with unsorted roots: %v", rootModules))
 			}
 		}
@@ -137,7 +138,7 @@ func newRequirements(pruning modPruning, rootModules []module.Version, direct ma
 	}
 
 	for _, m := range rootModules {
-		if v, ok := rs.maxRootVersion[m.Path]; ok && cmpVersion(v, m.Version) >= 0 {
+		if v, ok := rs.maxRootVersion[m.Path]; ok && gover.ModCompare(m.Path, v, m.Version) >= 0 {
 			continue
 		}
 		rs.maxRootVersion[m.Path] = m.Version
@@ -408,7 +409,7 @@ func readModGraph(ctx context.Context, pruning modPruning, roots []module.Versio
 				reqs, _ := mg.g.RequiredBy(m)
 				for _, r := range reqs {
 					s := module.Version{Path: r.Path, Version: mg.g.Selected(r.Path)}
-					if cmpVersion(s.Version, r.Version) > 0 && !seen[s] {
+					if gover.ModCompare(r.Path, s.Version, r.Version) > 0 && !seen[s] {
 						needsEnqueueing[s] = true
 					}
 				}
@@ -758,8 +759,8 @@ func updateWorkspaceRoots(ctx context.Context, rs *Requirements, add []module.Ve
 // roots) until the set of roots has converged.
 func tidyPrunedRoots(ctx context.Context, mainModule module.Version, direct map[string]bool, pkgs []*loadPkg) (*Requirements, error) {
 	var (
-		roots        []module.Version
-		pathIncluded = map[string]bool{mainModule.Path: true}
+		roots      []module.Version
+		pathIsRoot = map[string]bool{mainModule.Path: true}
 	)
 	// We start by adding roots for every package in "all".
 	//
@@ -779,14 +780,14 @@ func tidyPrunedRoots(ctx context.Context, mainModule module.Version, direct map[
 		if !pkg.flags.has(pkgInAll) {
 			continue
 		}
-		if pkg.fromExternalModule() && !pathIncluded[pkg.mod.Path] {
+		if pkg.fromExternalModule() && !pathIsRoot[pkg.mod.Path] {
 			roots = append(roots, pkg.mod)
-			pathIncluded[pkg.mod.Path] = true
+			pathIsRoot[pkg.mod.Path] = true
 		}
 		queue = append(queue, pkg)
 		queued[pkg] = true
 	}
-	module.Sort(roots)
+	gover.ModSort(roots)
 	tidy := newRequirements(pruned, roots, direct)
 
 	for len(queue) > 0 {
@@ -813,24 +814,77 @@ func tidyPrunedRoots(ctx context.Context, mainModule module.Version, direct map[
 				queue = append(queue, pkg.test)
 				queued[pkg.test] = true
 			}
-			if !pathIncluded[m.Path] {
-				if s := mg.Selected(m.Path); cmpVersion(s, m.Version) < 0 {
+
+			if !pathIsRoot[m.Path] {
+				if s := mg.Selected(m.Path); gover.ModCompare(m.Path, s, m.Version) < 0 {
 					roots = append(roots, m)
+					pathIsRoot[m.Path] = true
 				}
-				pathIncluded[m.Path] = true
 			}
 		}
 
 		if len(roots) > len(tidy.rootModules) {
-			module.Sort(roots)
+			gover.ModSort(roots)
 			tidy = newRequirements(pruned, roots, tidy.direct)
 		}
 	}
 
+	roots = tidy.rootModules
 	_, err := tidy.Graph(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	// We try to avoid adding explicit requirements for test-only dependencies of
+	// packages in external modules. However, if we drop the explicit
+	// requirements, that may change an import from unambiguous (due to lazy
+	// module loading) to ambiguous (because lazy module loading no longer
+	// disambiguates it). For any package that has become ambiguous, we try
+	// to fix it by promoting its module to an explicit root.
+	// (See https://go.dev/issue/60313.)
+	q := par.NewQueue(runtime.GOMAXPROCS(0))
+	for {
+		var disambiguateRoot sync.Map
+		for _, pkg := range pkgs {
+			if pkg.mod.Path == "" || pathIsRoot[pkg.mod.Path] {
+				// Lazy module loading will cause m to be checked before any other modules
+				// that are only indirectly required. It is as unambiguous as possible.
+				continue
+			}
+			pkg := pkg
+			q.Add(func() {
+				skipModFile := true
+				_, _, _, _, err := importFromModules(ctx, pkg.path, tidy, nil, skipModFile)
+				if aie := (*AmbiguousImportError)(nil); errors.As(err, &aie) {
+					disambiguateRoot.Store(pkg.mod, true)
+				}
+			})
+		}
+		<-q.Idle()
+
+		disambiguateRoot.Range(func(k, _ any) bool {
+			m := k.(module.Version)
+			roots = append(roots, m)
+			pathIsRoot[m.Path] = true
+			return true
+		})
+
+		if len(roots) > len(tidy.rootModules) {
+			module.Sort(roots)
+			tidy = newRequirements(pruned, roots, tidy.direct)
+			_, err = tidy.Graph(ctx)
+			if err != nil {
+				return nil, err
+			}
+			// Adding these roots may have pulled additional modules into the module
+			// graph, causing additional packages to become ambiguous. Keep iterating
+			// until we reach a fixed point.
+			continue
+		}
+
+		break
+	}
+
 	return tidy, nil
 }
 
@@ -973,14 +1027,14 @@ func updatePrunedRoots(ctx context.Context, direct map[string]bool, rs *Requirem
 	}
 
 	for _, m := range add {
-		if v, ok := rs.rootSelected(m.Path); !ok || cmpVersion(v, m.Version) < 0 {
+		if v, ok := rs.rootSelected(m.Path); !ok || gover.ModCompare(m.Path, v, m.Version) < 0 {
 			roots = append(roots, m)
 			rootsUpgraded = true
 			needSort = true
 		}
 	}
 	if needSort {
-		module.Sort(roots)
+		gover.ModSort(roots)
 	}
 
 	// "Each root appears only once, at the selected version of its path ….”
@@ -1121,7 +1175,7 @@ func spotCheckRoots(ctx context.Context, rs *Requirements, mods map[module.Versi
 			}
 
 			for _, r := range summary.require {
-				if v, ok := rs.rootSelected(r.Path); ok && cmpVersion(v, r.Version) < 0 {
+				if v, ok := rs.rootSelected(r.Path); ok && gover.ModCompare(r.Path, v, r.Version) < 0 {
 					cancel()
 					return
 				}
@@ -1205,7 +1259,7 @@ func tidyUnprunedRoots(ctx context.Context, mainModule module.Version, direct ma
 	// in go.mod. See comment on altMods above.
 	keptAltMod := false
 	for _, m := range buildList {
-		if v, ok := altMods[m.Path]; ok && semver.Compare(m.Version, v) < 0 {
+		if v, ok := altMods[m.Path]; ok && gover.ModCompare(m.Path, m.Version, v) < 0 {
 			keep = append(keep, module.Version{Path: m.Path, Version: v})
 			keptAltMod = true
 		}
@@ -1323,7 +1377,7 @@ func updateUnprunedRoots(ctx context.Context, direct map[string]bool, rs *Requir
 		roots = append(roots, min...)
 	}
 	if MainModules.Len() > 1 {
-		module.Sort(roots)
+		gover.ModSort(roots)
 	}
 	if rs.pruning == unpruned && reflect.DeepEqual(roots, rs.rootModules) && reflect.DeepEqual(direct, rs.direct) {
 		// The root set is unchanged and rs was already unpruned, so keep rs to

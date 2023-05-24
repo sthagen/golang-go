@@ -7,6 +7,7 @@ package cshared_test
 import (
 	"bufio"
 	"bytes"
+	"cmd/cgo/internal/cgotest"
 	"debug/elf"
 	"debug/pe"
 	"encoding/binary"
@@ -24,6 +25,8 @@ import (
 	"unicode"
 )
 
+var globalSkip = func(t *testing.T) {}
+
 // C compiler with args (from $(go env CC) $(go env GOGCCFLAGS)).
 var cc []string
 
@@ -31,7 +34,7 @@ var cc []string
 var exeSuffix string
 
 var GOOS, GOARCH, GOROOT string
-var installdir, androiddir string
+var installdir string
 var libgoname string
 
 func TestMain(m *testing.M) {
@@ -42,19 +45,19 @@ func testMain(m *testing.M) int {
 	log.SetFlags(log.Lshortfile)
 	flag.Parse()
 	if testing.Short() && os.Getenv("GO_BUILDER_NAME") == "" {
-		fmt.Printf("SKIP - short mode and $GO_BUILDER_NAME not set\n")
-		os.Exit(0)
+		globalSkip = func(t *testing.T) { t.Skip("short mode and $GO_BUILDER_NAME not set") }
+		return m.Run()
 	}
 	if runtime.GOOS == "linux" {
 		if _, err := os.Stat("/etc/alpine-release"); err == nil {
-			fmt.Printf("SKIP - skipping failing test on alpine - go.dev/issue/19938\n")
-			os.Exit(0)
+			globalSkip = func(t *testing.T) { t.Skip("skipping failing test on alpine - go.dev/issue/19938") }
+			return m.Run()
 		}
 	}
 	if !testenv.HasGoBuild() {
 		// Checking for "go build" is a proxy for whether or not we can run "go env".
-		fmt.Printf("SKIP - no go build")
-		os.Exit(0)
+		globalSkip = func(t *testing.T) { t.Skip("no go build") }
+		return m.Run()
 	}
 
 	GOOS = goEnv("GOOS")
@@ -63,17 +66,6 @@ func testMain(m *testing.M) int {
 
 	if _, err := os.Stat(GOROOT); os.IsNotExist(err) {
 		log.Fatalf("Unable able to find GOROOT at '%s'", GOROOT)
-	}
-
-	androiddir = fmt.Sprintf("/data/local/tmp/testcshared-%d", os.Getpid())
-	if runtime.GOOS != GOOS && GOOS == "android" {
-		args := append(adbCmd(), "exec-out", "mkdir", "-p", androiddir)
-		cmd := exec.Command(args[0], args[1:]...)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			log.Fatalf("setupAndroid failed: %v\n%s\n", err, out)
-		}
-		defer cleanupAndroid()
 	}
 
 	cc = []string{goEnv("CC")}
@@ -148,7 +140,7 @@ func testMain(m *testing.M) int {
 	os.Setenv("GOPATH", GOPATH)
 
 	modRoot := filepath.Join(GOPATH, "src", "testcshared")
-	if err := overlayDir(modRoot, "testdata"); err != nil {
+	if err := cgotest.OverlayDir(modRoot, "testdata"); err != nil {
 		log.Panic(err)
 	}
 	if err := os.Chdir(modRoot); err != nil {
@@ -184,47 +176,6 @@ func cmdToRun(name string) string {
 	return "./" + name + exeSuffix
 }
 
-func adbCmd() []string {
-	cmd := []string{"adb"}
-	if flags := os.Getenv("GOANDROID_ADB_FLAGS"); flags != "" {
-		cmd = append(cmd, strings.Split(flags, " ")...)
-	}
-	return cmd
-}
-
-func adbPush(t *testing.T, filename string) {
-	if runtime.GOOS == GOOS || GOOS != "android" {
-		return
-	}
-	args := append(adbCmd(), "push", filename, fmt.Sprintf("%s/%s", androiddir, filename))
-	cmd := exec.Command(args[0], args[1:]...)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("adb command failed: %v\n%s\n", err, out)
-	}
-}
-
-func adbRun(t *testing.T, env []string, adbargs ...string) string {
-	if GOOS != "android" {
-		t.Fatalf("trying to run adb command when operating system is not android.")
-	}
-	args := append(adbCmd(), "exec-out")
-	// Propagate LD_LIBRARY_PATH to the adb shell invocation.
-	for _, e := range env {
-		if strings.Contains(e, "LD_LIBRARY_PATH=") {
-			adbargs = append([]string{e}, adbargs...)
-			break
-		}
-	}
-	shellcmd := fmt.Sprintf("cd %s; %s", androiddir, strings.Join(adbargs, " "))
-	args = append(args, shellcmd)
-	cmd := exec.Command(args[0], args[1:]...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("adb command failed: %v\n%s\n", err, out)
-	}
-	return strings.Replace(string(out), "\r", "", -1)
-}
-
 func run(t *testing.T, extraEnv []string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command(args[0], args[1:]...)
@@ -252,9 +203,6 @@ func run(t *testing.T, extraEnv []string, args ...string) string {
 
 func runExe(t *testing.T, extraEnv []string, args ...string) string {
 	t.Helper()
-	if runtime.GOOS != GOOS && GOOS == "android" {
-		return adbRun(t, append(os.Environ(), extraEnv...), args...)
-	}
 	return run(t, extraEnv, args...)
 }
 
@@ -378,15 +326,6 @@ func createHeaders() error {
 		}
 	}
 
-	if runtime.GOOS != GOOS && GOOS == "android" {
-		args = append(adbCmd(), "push", libgoname, fmt.Sprintf("%s/%s", androiddir, libgoname))
-		cmd = exec.Command(args[0], args[1:]...)
-		out, err = cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("adb command failed: %v\n%s\n", err, out)
-		}
-	}
-
 	return nil
 }
 
@@ -409,20 +348,9 @@ func createHeadersOnce(t *testing.T) {
 	}
 }
 
-func cleanupAndroid() {
-	if GOOS != "android" {
-		return
-	}
-	args := append(adbCmd(), "exec-out", "rm", "-rf", androiddir)
-	cmd := exec.Command(args[0], args[1:]...)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Panicf("cleanupAndroid failed: %v\n%s\n", err, out)
-	}
-}
-
 // test0: exported symbols in shared lib are accessible.
 func TestExportedSymbols(t *testing.T) {
+	globalSkip(t)
 	testenv.MustHaveCGO(t)
 	testenv.MustHaveExec(t)
 
@@ -434,7 +362,6 @@ func TestExportedSymbols(t *testing.T) {
 	createHeadersOnce(t)
 
 	runCC(t, "-I", installdir, "-o", cmd, "main0.c", libgoname)
-	adbPush(t, cmd)
 
 	defer os.Remove(bin)
 
@@ -529,6 +456,7 @@ func TestNumberOfExportedFunctions(t *testing.T) {
 	if GOOS != "windows" {
 		t.Skip("skipping windows only test")
 	}
+	globalSkip(t)
 	testenv.MustHaveGoBuild(t)
 	testenv.MustHaveCGO(t)
 	testenv.MustHaveBuildMode(t, "c-shared")
@@ -548,6 +476,7 @@ func TestExportedSymbolsWithDynamicLoad(t *testing.T) {
 	if GOOS == "windows" {
 		t.Skipf("Skipping on %s", GOOS)
 	}
+	globalSkip(t)
 	testenv.MustHaveCGO(t)
 	testenv.MustHaveExec(t)
 
@@ -563,7 +492,6 @@ func TestExportedSymbolsWithDynamicLoad(t *testing.T) {
 	} else {
 		runCC(t, "-o", cmd, "main1.c")
 	}
-	adbPush(t, cmd)
 
 	defer os.Remove(bin)
 
@@ -578,6 +506,7 @@ func TestUnexportedSymbols(t *testing.T) {
 	if GOOS == "windows" {
 		t.Skipf("Skipping on %s", GOOS)
 	}
+	globalSkip(t)
 	testenv.MustHaveGoBuild(t)
 	testenv.MustHaveCGO(t)
 	testenv.MustHaveBuildMode(t, "c-shared")
@@ -595,7 +524,6 @@ func TestUnexportedSymbols(t *testing.T) {
 		"-installsuffix", "testcshared",
 		"-o", libname, "./libgo2",
 	)
-	adbPush(t, libname)
 
 	linkFlags := "-Wl,--no-as-needed"
 	if GOOS == "darwin" || GOOS == "ios" {
@@ -603,7 +531,6 @@ func TestUnexportedSymbols(t *testing.T) {
 	}
 
 	runCC(t, "-o", cmd, "main2.c", linkFlags, libname)
-	adbPush(t, cmd)
 
 	defer os.Remove(libname)
 	defer os.Remove(bin)
@@ -617,6 +544,7 @@ func TestUnexportedSymbols(t *testing.T) {
 
 // test3: tests main.main is exported on android.
 func TestMainExportedOnAndroid(t *testing.T) {
+	globalSkip(t)
 	testenv.MustHaveCGO(t)
 	testenv.MustHaveExec(t)
 
@@ -636,7 +564,6 @@ func TestMainExportedOnAndroid(t *testing.T) {
 	createHeadersOnce(t)
 
 	runCC(t, "-o", cmd, "main3.c", "-ldl")
-	adbPush(t, cmd)
 
 	defer os.Remove(bin)
 
@@ -650,6 +577,7 @@ func testSignalHandlers(t *testing.T, pkgname, cfile, cmd string) {
 	if GOOS == "windows" {
 		t.Skipf("Skipping on %s", GOOS)
 	}
+	globalSkip(t)
 	testenv.MustHaveGoBuild(t)
 	testenv.MustHaveCGO(t)
 	testenv.MustHaveBuildMode(t, "c-shared")
@@ -662,13 +590,11 @@ func testSignalHandlers(t *testing.T, pkgname, cfile, cmd string) {
 		"-installsuffix", "testcshared",
 		"-o", libname, pkgname,
 	)
-	adbPush(t, libname)
 	if GOOS != "freebsd" {
 		runCC(t, "-pthread", "-o", cmd, cfile, "-ldl")
 	} else {
 		runCC(t, "-pthread", "-o", cmd, cfile)
 	}
-	adbPush(t, cmd)
 
 	bin := cmdToRun(cmd)
 
@@ -701,6 +627,7 @@ func TestPIE(t *testing.T) {
 	default:
 		t.Skipf("Skipping on %s", GOOS)
 	}
+	globalSkip(t)
 
 	t.Parallel()
 
@@ -738,6 +665,7 @@ func TestPIE(t *testing.T) {
 
 // Test that installing a second time recreates the header file.
 func TestCachedInstall(t *testing.T) {
+	globalSkip(t)
 	testenv.MustHaveGoBuild(t)
 	testenv.MustHaveCGO(t)
 	testenv.MustHaveBuildMode(t, "c-shared")
@@ -842,6 +770,7 @@ func TestGo2C2Go(t *testing.T) {
 	case "android":
 		t.Skip("test fails on android; issue 29087")
 	}
+	globalSkip(t)
 	testenv.MustHaveGoBuild(t)
 	testenv.MustHaveCGO(t)
 	testenv.MustHaveBuildMode(t, "c-shared")
@@ -894,6 +823,7 @@ func TestGo2C2Go(t *testing.T) {
 }
 
 func TestIssue36233(t *testing.T) {
+	globalSkip(t)
 	testenv.MustHaveCGO(t)
 
 	t.Parallel()

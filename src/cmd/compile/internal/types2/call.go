@@ -42,7 +42,7 @@ func (check *Checker) funcInst(tsig *Signature, pos syntax.Pos, x *operand, inst
 	} else {
 		instErrPos = pos
 	}
-	versionErr := !check.verifyVersionf(check.pkg, instErrPos, go1_18, "function instantiation")
+	versionErr := !check.verifyVersionf(instErrPos, go1_18, "function instantiation")
 
 	// targs and xlist are the type arguments and corresponding type expressions, or nil.
 	var targs []Type
@@ -311,7 +311,7 @@ func (check *Checker) callExpr(x *operand, call *syntax.CallExpr) exprKind {
 		// is an error checking its arguments (for example, if an incorrect number
 		// of arguments is supplied).
 		if got == want && want > 0 {
-			check.verifyVersionf(check.pkg, inst, go1_18, "function instantiation")
+			check.verifyVersionf(inst, go1_18, "function instantiation")
 			sig = check.instantiateSignature(inst.Pos(), inst, sig, targs, xlist)
 			// targs have been consumed; proceed with checking arguments of the
 			// non-generic signature.
@@ -374,7 +374,8 @@ func (check *Checker) exprList(elist []syntax.Expr) (xlist []*operand) {
 }
 
 // genericExprList is like exprList but result operands may be uninstantiated or partially
-// instantiated generic functions.
+// instantiated generic functions (where constraint information is insufficient to infer
+// the missing type arguments) for Go 1.21 and later.
 // For each non-generic or uninstantiated generic operand, the corresponding targsList and
 // xlistList elements do not exist (targsList and xlistList are nil) or the elements are nil.
 // For each partially instantiated generic function operand, the corresponding targsList and
@@ -396,13 +397,21 @@ func (check *Checker) genericExprList(elist []syntax.Expr) (resList []*operand, 
 		}()
 	}
 
-	if n := len(elist); n == 1 {
+	// Before Go 1.21, uninstantiated or partially instantiated argument functions are
+	// nor permitted. Checker.funcInst must infer missing type arguments in that case.
+	infer := true // for -lang < go1.21
+	n := len(elist)
+	if n > 0 && check.allowVersion(check.pkg, elist[0], go1_21) {
+		infer = false
+	}
+
+	if n == 1 {
 		// single value (possibly a partially instantiated function), or a multi-valued expression
 		e := elist[0]
 		var x operand
 		if inst, _ := e.(*syntax.IndexExpr); inst != nil && check.indexExpr(&x, inst) {
 			// x is a generic function.
-			targs, xlist := check.funcInst(nil, x.Pos(), &x, inst, false)
+			targs, xlist := check.funcInst(nil, x.Pos(), &x, inst, infer)
 			if targs != nil {
 				// x was not instantiated: collect the (partial) type arguments.
 				targsList = [][]Type{targs}
@@ -439,7 +448,7 @@ func (check *Checker) genericExprList(elist []syntax.Expr) (resList []*operand, 
 			var x operand
 			if inst, _ := e.(*syntax.IndexExpr); inst != nil && check.indexExpr(&x, inst) {
 				// x is a generic function.
-				targs, xlist := check.funcInst(nil, x.Pos(), &x, inst, false)
+				targs, xlist := check.funcInst(nil, x.Pos(), &x, inst, infer)
 				if targs != nil {
 					// x was not instantiated: collect the (partial) type arguments.
 					targsList[i] = targs
@@ -611,7 +620,7 @@ func (check *Checker) arguments(call *syntax.CallExpr, sig *Signature, targs []T
 	assert(len(tparams) == len(targs))
 
 	// at the moment we only support implicit instantiations of argument functions
-	_ = len(genericArgs) > 0 && check.verifyVersionf(check.pkg, args[genericArgs[0]], go1_21, "implicitly instantiated function as argument")
+	_ = len(genericArgs) > 0 && check.verifyVersionf(args[genericArgs[0]], go1_21, "implicitly instantiated function as argument")
 
 	// tparams holds the type parameters of the callee and generic function arguments, if any:
 	// the first n type parameters belong to the callee, followed by mi type parameters for each

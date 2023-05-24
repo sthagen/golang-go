@@ -100,6 +100,7 @@ func MkEnv() []cfg.EnvVar {
 		{Name: "GOROOT", Value: cfg.GOROOT},
 		{Name: "GOSUMDB", Value: cfg.GOSUMDB},
 		{Name: "GOTMPDIR", Value: cfg.Getenv("GOTMPDIR")},
+		{Name: "GOTOOLCHAIN", Value: cfg.Getenv("GOTOOLCHAIN")},
 		{Name: "GOTOOLDIR", Value: build.ToolDir},
 		{Name: "GOVCS", Value: cfg.GOVCS},
 		{Name: "GOVERSION", Value: runtime.Version()},
@@ -150,6 +151,9 @@ func findEnv(env []cfg.EnvVar, name string) string {
 		if e.Name == name {
 			return e.Value
 		}
+	}
+	if cfg.CanGetenv(name) {
+		return cfg.Getenv(name)
 	}
 	return ""
 }
@@ -526,6 +530,7 @@ func checkEnvWrite(key, val string) error {
 	}
 
 	// To catch typos and the like, check that we know the variable.
+	// If it's already in the env file, we assume it's known.
 	if !cfg.CanGetenv(key) {
 		return fmt.Errorf("unknown go command variable %s", key)
 	}
@@ -579,22 +584,29 @@ func checkEnvWrite(key, val string) error {
 	return nil
 }
 
-func updateEnvFile(add map[string]string, del map[string]bool) {
+func readEnvFileLines(mustExist bool) []string {
 	file, err := cfg.EnvFile()
 	if file == "" {
-		base.Fatalf("go: cannot find go env config: %v", err)
+		if mustExist {
+			base.Fatalf("go: cannot find go env config: %v", err)
+		}
+		return nil
 	}
 	data, err := os.ReadFile(file)
-	if err != nil && (!os.IsNotExist(err) || len(add) == 0) {
+	if err != nil && (!os.IsNotExist(err) || mustExist) {
 		base.Fatalf("go: reading go env config: %v", err)
 	}
-
 	lines := strings.SplitAfter(string(data), "\n")
 	if lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
 	} else {
 		lines[len(lines)-1] += "\n"
 	}
+	return lines
+}
+
+func updateEnvFile(add map[string]string, del map[string]bool) {
+	lines := readEnvFileLines(len(add) == 0)
 
 	// Delete all but last copy of any duplicated variables,
 	// since the last copy is the one that takes effect.
@@ -637,7 +649,11 @@ func updateEnvFile(add map[string]string, del map[string]bool) {
 		}
 	}
 
-	data = []byte(strings.Join(lines, ""))
+	file, err := cfg.EnvFile()
+	if file == "" {
+		base.Fatalf("go: cannot find go env config: %v", err)
+	}
+	data := []byte(strings.Join(lines, ""))
 	err = os.WriteFile(file, data, 0666)
 	if err != nil {
 		// Try creating directory.
