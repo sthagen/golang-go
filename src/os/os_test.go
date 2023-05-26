@@ -2995,15 +2995,23 @@ func TestDirFS(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	fs := DirFS("./testdata/dirfs")
-	if err := fstest.TestFS(fs, "a", "b", "dir/x"); err != nil {
+	fsys := DirFS("./testdata/dirfs")
+	if err := fstest.TestFS(fsys, "a", "b", "dir/x"); err != nil {
 		t.Fatal(err)
+	}
+
+	rdfs, ok := fsys.(fs.ReadDirFS)
+	if !ok {
+		t.Error("expected DirFS result to implement fs.ReadDirFS")
+	}
+	if _, err := rdfs.ReadDir("nonexistent"); err == nil {
+		t.Error("fs.ReadDir of nonexistent directory suceeded")
 	}
 
 	// Test that the error message does not contain a backslash,
 	// and does not contain the DirFS argument.
 	const nonesuch = "dir/nonesuch"
-	_, err := fs.Open(nonesuch)
+	_, err := fsys.Open(nonesuch)
 	if err == nil {
 		t.Error("fs.Open of nonexistent file succeeded")
 	} else {
@@ -3106,6 +3114,23 @@ func TestReadFileProc(t *testing.T) {
 		t.Skip(err)
 	}
 	data, err := ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		t.Fatalf("read %s: not newline-terminated: %q", name, data)
+	}
+}
+
+func TestDirFSReadFileProc(t *testing.T) {
+	t.Parallel()
+
+	fsys := DirFS("/")
+	name := "proc/sys/fs/pipe-max-size"
+	if _, err := fs.Stat(fsys, name); err != nil {
+		t.Skip()
+	}
+	data, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		t.Fatal(err)
 	}

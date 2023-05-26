@@ -25,6 +25,15 @@ Do not send CLs removing the interior tags from such phrases.
 
 <h2 id="language">Changes to the language</h2>
 
+<!-- https://go.dev/issue/59488 -->
+<p>
+  Go 1.21 adds two new built-ins to the language:
+  the new functions <code>min</code> and <code>max</code> compute the
+  smallest (or largest, for <code>max</code>) value of a fixed number
+  of given arguments.
+  See the language spec for <a href="https://tip.golang.org/ref/spec#Min_and_max">details</a>.
+</p>
+
 <p><!-- https://go.dev/issue/56986 -->
   TODO: <a href="https://go.dev/issue/56986">https://go.dev/issue/56986</a>: extended backwards compatibility for Go
 </p>
@@ -191,6 +200,14 @@ Do not send CLs removing the interior tags from such phrases.
   Structured logging emits key-value pairs
   to enable fast, accurate processing of large amounts of log data.
   The package supports integration with popular log analysis tools and services.
+</p>
+
+<h3 id="slices">New slices package</h3>
+
+<p><!-- https://go.dev/issue/45955, https://go.dev/issue/54768, https://go.dev/issue/57348, https://go.dev/issue/57433, CL 467417, CL 483175 -->
+  The new <a href="/pkg/slices">slices</a> package provides many common
+  operations on slices, using generic functions that work with slices
+  of any element type.
 </p>
 
 <h3 id="minor_library_changes">Minor changes to the library</h3>
@@ -565,12 +582,8 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="net/http"><dt><a href="/pkg/net/http/">net/http</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/44855 -->
-      TODO: <a href="https://go.dev/issue/44855">https://go.dev/issue/44855</a>: add ErrSchemeMismatch
-    </p>
-
-    <p><!-- CL 382117 -->
-      TODO: <a href="https://go.dev/cl/382117">https://go.dev/cl/382117</a>: net/http: expose &#34;http: server gave HTTP response to HTTPS client&#34; error; modified api/next/44855.txt
+    <p><!-- https://go.dev/issue/44855, CL 382117 -->
+      The new <a href="/pkg/net/http/#ErrSchemeMismatch"><code>ErrSchemeMismatch</code></a> error is returned by <a href="/pkg/net/http/#Client"><code>Client</code></a> and <a href="/pkg/net/http/#Transport"><code>Transport</code></a> when the server responds to an HTTPS request with an HTTP response.
     </p>
 
     <p><!-- CL 472636 -->
@@ -697,25 +710,17 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- runtime/trace -->
 
-<dl id="slices"><dt><a href="/pkg/slices/">slices</a></dt>
+<dl id="runtime/metrics"><dt><a href="/pkg/runtime/metrics/">runtime/metrics</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/54768 -->
-      TODO: <a href="https://go.dev/issue/54768">https://go.dev/issue/54768</a>: add DeleteFunc
-    </p>
+    <p><!-- https://go.dev/issue/56857 -->
+      A few previously-internal GC metrics, such as live heap size, are
+      now available.
 
-    <p><!-- https://go.dev/issue/57433 -->
-      TODO: <a href="https://go.dev/issue/57433">https://go.dev/issue/57433</a>: new standard library package based on x/exp/slices
-    </p>
-
-    <p><!-- CL 467417 -->
-      TODO: <a href="https://go.dev/cl/467417">https://go.dev/cl/467417</a>: slices: new package; modified api/next/57433.txt
-    </p>
-
-    <p><!-- CL 483175 -->
-      TODO: <a href="https://go.dev/cl/483175">https://go.dev/cl/483175</a>: slices: add DeleteFunc; modified api/next/54768.txt
+      <code>GOGC</code> and <code>GOMEMLIMIT</code> are also now
+      available as metrics.
     </p>
   </dd>
-</dl><!-- slices -->
+</dl><!-- runtime/metrics -->
 
 <dl id="spec"><dt><a href="/pkg/spec/">spec</a></dt>
   <dd>
@@ -732,16 +737,6 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
   </dd>
 </dl><!-- spec -->
-
-<dl id="slices"><dt><a href="/pkg/slices/">slices</a></dt>
-  <dd>
-    <p><!-- https://go.dev/issue/45955 -->
-      The new <a href="/pkg/slices/"><code>slices</code></a> package
-      provides many common operations on slices, using generic
-      functions that work with slices of any element type.
-    </p>
-  </dd>
-</dl>
 
 <dl id="sync"><dt><a href="/pkg/sync/">sync</a></dt>
   <dd>
@@ -790,14 +785,6 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
   </dd>
 </dl><!-- testing/slogtest -->
-
-<dl id="x/exp/slices"><dt><a href="/pkg/x/exp/slices/">x/exp/slices</a></dt>
-  <dd>
-    <p><!-- https://go.dev/issue/57348 -->
-      TODO: <a href="https://go.dev/issue/57348">https://go.dev/issue/57348</a>: Allow different types for haystack/needle in BinarySearchFunc
-    </p>
-  </dd>
-</dl><!-- x/exp/slices -->
 
 <dl id="x/sys/windows"><dt><a href="/pkg/x/sys/windows/">x/sys/windows</a></dt>
   <dd>

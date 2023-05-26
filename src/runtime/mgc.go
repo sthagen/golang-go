@@ -149,6 +149,28 @@ const (
 	sweepMinHeapDistance = 1024 * 1024
 )
 
+// heapObjectsCanMove always returns false in the current garbage collector.
+// It exists for go4.org/unsafe/assume-no-moving-gc, which is an
+// unfortunate idea that had an even more unfortunate implementation.
+// Every time a new Go release happened, the package stopped building,
+// and the authors had to add a new file with a new //go:build line, and
+// then the entire ecosystem of packages with that as a dependency had to
+// explicitly update to the new version. Many packages depend on
+// assume-no-moving-gc transitively, through paths like
+// inet.af/netaddr -> go4.org/intern -> assume-no-moving-gc.
+// This was causing a significant amount of friction around each new
+// release, so we added this bool for the package to //go:linkname
+// instead. The bool is still unfortunate, but it's not as bad as
+// breaking the ecosystem on every new release.
+//
+// If the Go garbage collector ever does move heap objects, we can set
+// this to true to break all the programs using assume-no-moving-gc.
+//
+//go:linkname heapObjectsCanMove
+func heapObjectsCanMove() bool {
+	return false
+}
+
 func gcinit() {
 	if unsafe.Sizeof(workbuf{}) != _WorkbufSize {
 		throw("size of Workbuf is suboptimal")
@@ -1085,6 +1107,9 @@ func gcMarkTermination() {
 	// having pages get stuck on them. These pages are hidden from
 	// the scavenger, so in small idle heaps a significant amount
 	// of additional memory might be held onto.
+	//
+	// Also, flush the pinner cache, to avoid leaking that memory
+	// indefinitely.
 	systemstack(func() {
 		forEachP(func(pp *p) {
 			pp.mcache.prepareForSweep()
@@ -1095,6 +1120,7 @@ func gcMarkTermination() {
 					unlock(&mheap_.lock)
 				})
 			}
+			pp.pinnerCache = nil
 		})
 	})
 	// Now that we've swept stale spans in mcaches, they don't

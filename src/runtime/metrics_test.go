@@ -5,6 +5,7 @@
 package runtime_test
 
 import (
+	"internal/testenv"
 	"reflect"
 	"runtime"
 	"runtime/debug"
@@ -213,6 +214,9 @@ func TestReadMetricsConsistency(t *testing.T) {
 		numGC  uint64
 		pauses uint64
 	}
+	var totalScan struct {
+		got, want uint64
+	}
 	var cpu struct {
 		gcAssist    float64
 		gcDedicated float64
@@ -295,6 +299,14 @@ func TestReadMetricsConsistency(t *testing.T) {
 			for i := range h.Counts {
 				gc.pauses += h.Counts[i]
 			}
+		case "/gc/scan/heap:bytes":
+			totalScan.want += samples[i].Value.Uint64()
+		case "/gc/scan/globals:bytes":
+			totalScan.want += samples[i].Value.Uint64()
+		case "/gc/scan/stack:bytes":
+			totalScan.want += samples[i].Value.Uint64()
+		case "/gc/scan/total:bytes":
+			totalScan.got = samples[i].Value.Uint64()
 		case "/sched/gomaxprocs:threads":
 			if got, want := samples[i].Value.Uint64(), uint64(runtime.GOMAXPROCS(-1)); got != want {
 				t.Errorf("gomaxprocs doesn't match runtime.GOMAXPROCS: got %d, want %d", got, want)
@@ -385,6 +397,9 @@ func TestReadMetricsConsistency(t *testing.T) {
 	// Check to see if that value makes sense.
 	if gc.pauses < gc.numGC*2 {
 		t.Errorf("fewer pauses than expected: got %d, want at least %d", gc.pauses, gc.numGC*2)
+	}
+	if totalScan.got != totalScan.want {
+		t.Errorf("/gc/scan/total:bytes doesn't line up with sum of /gc/scan*: total %d vs. sum %d", totalScan.got, totalScan.want)
 	}
 }
 
@@ -645,6 +660,18 @@ func TestCPUMetricsSleep(t *testing.T) {
 		// test is basically meaningless on this platform.
 		t.Skip("wasip1 currently busy-waits in idle time; test not applicable")
 	}
+
+	// Unconditionally skip this test as flaky.
+	//
+	// There's a fundamental issue with this test, which is that there's no
+	// guarantee the application will go idle; background goroutines and
+	// time spent in the scheduler going to sleep can always erode idle time
+	// sufficiently such that minimum idle time (or maximum user time) stays
+	// within some threshold.
+	//
+	// Leave this as skipped while we figure out a better way to check this.
+	testenv.SkipFlaky(t, 60376)
+
 	names := []string{
 		"/cpu/classes/idle:cpu-seconds",
 
@@ -681,8 +708,11 @@ func TestCPUMetricsSleep(t *testing.T) {
 	metrics.Read(m2)
 
 	// If the bug we expect is happening, then the Sleep CPU time will be accounted for
-	// as user time rather than idle time. Because we're doing this on one core, the
-	// maximum amount of time that can be attributed to user time is the time spent asleep.
+	// as user time rather than idle time.
+	//
+	// TODO(mknyszek): This number here is wrong. Background goroutines and just slow
+	// platforms spending a non-trivial amount of time in the scheduler doing things
+	// could easily erode idle time beyond this minimum.
 	minIdleCPUSeconds := dur.Seconds() * float64(runtime.GOMAXPROCS(-1))
 
 	if dt := m2[0].Value.Float64() - m1[0].Value.Float64(); dt < minIdleCPUSeconds {

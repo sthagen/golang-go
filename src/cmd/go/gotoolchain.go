@@ -15,18 +15,15 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"syscall"
 
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/gover"
 	"cmd/go/internal/modcmd"
-	"cmd/go/internal/modfetch"
 	"cmd/go/internal/modload"
 	"cmd/go/internal/run"
 
@@ -78,46 +75,68 @@ func switchGoToolchain() {
 		// and diagnose the problem.
 		return
 	}
+	gover.Startup.GOTOOLCHAIN = gotoolchain
 
-	gotoolchain, min, haveMin := strings.Cut(gotoolchain, "+")
-	if haveMin {
-		if gotoolchain != "auto" && gotoolchain != "path" {
-			base.Fatalf("invalid GOTOOLCHAIN %q: only auto and path can use +version", gotoolchain)
+	var minToolchain, minVers string
+	if x, y, ok := strings.Cut(gotoolchain, "+"); ok { // go1.2.3+auto
+		orig := gotoolchain
+		minToolchain, gotoolchain = x, y
+		minVers = gover.FromToolchain(minToolchain)
+		if minVers == "" {
+			base.Fatalf("invalid GOTOOLCHAIN %q: invalid minimum toolchain %q", orig, minToolchain)
 		}
-		if !strings.HasPrefix(min, "go1") {
-			base.Fatalf("invalid GOTOOLCHAIN %q: invalid minimum version %q", gotoolchain, min)
+		if gotoolchain != "auto" && gotoolchain != "path" {
+			base.Fatalf("invalid GOTOOLCHAIN %q: only version suffixes are +auto and +path", orig)
 		}
 	} else {
-		min = "go" + gover.Local()
+		minVers = gover.Local()
+		minToolchain = "go" + minVers
 	}
 
 	pathOnly := gotoolchain == "path"
 	if gotoolchain == "auto" || gotoolchain == "path" {
+		gotoolchain = minToolchain
+
 		// Locate and read go.mod or go.work.
 		// For go install m@v, it's the installed module's go.mod.
 		if m, goVers, ok := goInstallVersion(); ok {
-			v := strings.TrimPrefix(min, "go")
-			if gover.Compare(v, goVers) < 0 {
+			if gover.Compare(goVers, minVers) > 0 {
 				// Always print, because otherwise there's no way for the user to know
 				// that a non-default toolchain version is being used here.
 				// (Normally you can run "go version", but go install m@v ignores the
 				// context that "go version" works in.)
 				fmt.Fprintf(os.Stderr, "go: using go%s for %v\n", goVers, m)
-				v = goVers
+				gotoolchain = "go" + goVers
 			}
-			gotoolchain = "go" + v
 		} else {
-			goVers, toolchain := modGoToolchain()
-			if toolchain != "" {
-				// toolchain line wins by itself
-				gotoolchain = toolchain
-			} else {
-				v := strings.TrimPrefix(min, "go")
-				if gover.Compare(v, goVers) < 0 {
-					v = goVers
+			file, goVers, toolchain := modGoToolchain()
+			if toolchain == "local" {
+				// Local means always use the default local toolchain,
+				// which is already set, so nothing to do here.
+				// Note that if we have Go 1.21 installed originally,
+				// GOTOOLCHAIN=go1.30.0+auto or GOTOOLCHAIN=go1.30.0,
+				// and the go.mod  says "toolchain local", we use Go 1.30, not Go 1.21.
+				// That is, local overrides the "auto" part of the calculation
+				// but not the minimum that the user has set.
+				// Of course, if the go.mod also says "go 1.35", using Go 1.30
+				// will provoke an error about the toolchain being too old.
+				// That's what people who use toolchain local want:
+				// only ever use the toolchain configured in the local system
+				// (including its environment and go env -w file).
+			} else if toolchain != "" {
+				// Accept toolchain only if it is >= our min.
+				toolVers := gover.FromToolchain(toolchain)
+				if gover.Compare(toolVers, minVers) >= 0 {
+					gotoolchain = toolchain
 				}
-				gotoolchain = "go" + v
+			} else {
+				if gover.Compare(goVers, minVers) > 0 {
+					gotoolchain = "go" + goVers
+				}
 			}
+			gover.Startup.AutoFile = file
+			gover.Startup.AutoGoVersion = goVers
+			gover.Startup.AutoToolchain = toolchain
 		}
 	}
 
@@ -130,6 +149,8 @@ func switchGoToolchain() {
 	// We want to allow things like go1.20.3 but also gccgo-go1.20.3.
 	// We want to disallow mistakes / bad ideas like GOTOOLCHAIN=bash,
 	// since we will find that in the path lookup.
+	// gover.FromToolchain has already done this check (except for the 1)
+	// but doing it again makes sure we don't miss it on unexpected code paths.
 	if !strings.HasPrefix(gotoolchain, "go1") && !strings.Contains(gotoolchain, "-go1") {
 		base.Fatalf("invalid GOTOOLCHAIN %q", gotoolchain)
 	}
@@ -260,9 +281,9 @@ func execGoToolchain(gotoolchain, dir, exe string) {
 // modGoToolchain finds the enclosing go.work or go.mod file
 // and returns the go version and toolchain lines from the file.
 // The toolchain line overrides the version line
-func modGoToolchain() (goVers, toolchain string) {
+func modGoToolchain() (file, goVers, toolchain string) {
 	wd := base.UncachedCwd()
-	file := modload.FindGoWork(wd)
+	file = modload.FindGoWork(wd)
 	// $GOWORK can be set to a file that does not yet exist, if we are running 'go work init'.
 	// Do not try to load the file in that case
 	if _, err := os.Stat(file); err != nil {
@@ -272,14 +293,14 @@ func modGoToolchain() (goVers, toolchain string) {
 		file = modload.FindGoMod(wd)
 	}
 	if file == "" {
-		return "", ""
+		return "", "", ""
 	}
 
 	data, err := os.ReadFile(file)
 	if err != nil {
 		base.Fatalf("%v", err)
 	}
-	return gover.GoModLookup(data, "go"), gover.GoModLookup(data, "toolchain")
+	return file, gover.GoModLookup(data, "go"), gover.GoModLookup(data, "toolchain")
 }
 
 // goInstallVersion looks at the command line to see if it is go install m@v or go run m@v.
@@ -350,46 +371,25 @@ func goInstallVersion() (m module.Version, goVers string, ok bool) {
 		return module.Version{}, "", false
 	}
 
-	// We need to resolve the pkg to a module, to find its go.mod.
-	// Normally we use the module loading code to grab the full
-	// module file tree for pkg and all its path prefixes, checking each
-	// for a file tree that contains source code for pkg.
-	// We can't do that here, because the modules may use newer versions
-	// of Go that affect which files are contained in the modules and therefore
-	// affect their checksums: there is no guarantee an older version of Go
-	// can extract a newer Go module from a VCS repo and choose the right files
-	// (this allows evolution such as https://go.dev/issue/42965).
-	// Instead, we check for a module at all path prefixes (including path itself)
-	// and take the max of the Go versions along the path.
-	var paths []string
-	for len(m.Path) > 1 {
-		paths = append(paths, m.Path)
-		m.Path = path.Dir(m.Path)
+	// Set up modules without an explicit go.mod, to download go.mod.
+	modload.ForceUseModules = true
+	modload.RootMode = modload.NoRoot
+	modload.Init()
+	defer modload.Reset()
+
+	// See internal/load.PackagesAndErrorsOutsideModule
+	ctx := context.Background()
+	allowed := modload.CheckAllowed
+	if modload.IsRevisionQuery(m.Path, m.Version) {
+		// Don't check for retractions if a specific revision is requested.
+		allowed = nil
 	}
-	goVersions := make([]string, len(paths))
-	var wg sync.WaitGroup
-	for i, path := range paths {
-		i := i
-		path := path
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			// TODO(rsc): m.Version could in general be something like latest or patch or upgrade.
-			// Use modload.Query. See review comment on https://go.dev/cl/497079.
-			data, err := modfetch.GoMod(context.Background(), path, m.Version)
-			if err != nil {
-				return
-			}
-			goVersions[i] = gover.GoModLookup(data, "go")
-		}()
+	noneSelected := func(path string) (version string) { return "none" }
+	_, err := modload.QueryPackages(ctx, m.Path, m.Version, noneSelected, allowed)
+	tooNew, ok := err.(*gover.TooNewError)
+	if !ok {
+		return module.Version{}, "", false
 	}
-	wg.Wait()
-	goVers = ""
-	for i, v := range goVersions {
-		if gover.Compare(goVers, v) < 0 {
-			m.Path = paths[i]
-			goVers = v
-		}
-	}
-	return m, goVers, true
+	m.Path, m.Version, _ = strings.Cut(tooNew.What, "@")
+	return m, tooNew.GoVersion, true
 }

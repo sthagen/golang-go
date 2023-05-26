@@ -151,7 +151,11 @@ func TestScript(t *testing.T) {
 				}
 			}
 
-			scripttest.Run(t, engine, s, filepath.Base(file), bytes.NewReader(a.Comment))
+			// Note: Do not use filepath.Base(file) here:
+			// editors that can jump to file:line references in the output
+			// will work better seeing the full path relative to cmd/go
+			// (where the "go test" command is usually run).
+			scripttest.Run(t, engine, s, file, bytes.NewReader(a.Comment))
 		})
 	}
 }
@@ -241,6 +245,7 @@ func scriptEnv(srv *vcstest.Server, srvCertFile string) ([]string, error) {
 		"devnull=" + os.DevNull,
 		"goversion=" + version,
 		"CMDGO_TEST_RUN_MAIN=true",
+		"HGRCPATH=",
 	}
 
 	if testenv.Builder() != "" || os.Getenv("GIT_TRACE_CURL") == "1" {

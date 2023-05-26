@@ -573,8 +573,17 @@ func (t *tester) registerRaceBenchTest(pkg string) {
 func (t *tester) registerTests() {
 	// registerStdTestSpecially tracks import paths in the standard library
 	// whose test registration happens in a special way.
+	//
+	// These tests *must* be able to run normally as part of "go test std cmd",
+	// even if they are also registered separately by dist, because users often
+	// run go test directly. Use skips or build tags in preference to expanding
+	// this list.
 	registerStdTestSpecially := map[string]bool{
-		"cmd/internal/testdir": true, // Registered at the bottom with sharding.
+		// testdir can run normally as part of "go test std cmd", but because
+		// it's a very large test, we register is specially as several shards to
+		// enable better load balancing on sharded builders. Ideally the build
+		// system would know how to shard any large test package.
+		"cmd/internal/testdir": true,
 	}
 
 	// Fast path to avoid the ~1 second of `go list std cmd` when
@@ -786,6 +795,16 @@ func (t *tester) registerTests() {
 		t.registerCgoTests(cgoHeading)
 	}
 
+	if goos == "wasip1" {
+		t.registerTest("wasip1 host tests",
+			&goTest{
+				variant:   "host",
+				pkg:       "runtime/internal/wasitest",
+				timeout:   1 * time.Minute,
+				runOnHost: true,
+			})
+	}
+
 	if goos != "android" && !t.iOS() {
 		// Only start multiple test dir shards on builders,
 		// where they get distributed to multiple machines.
@@ -834,7 +853,7 @@ func (t *tester) addTest(name, heading string, fn func(*distTest) error) {
 	if !strings.Contains(name, ":") && heading != "Testing packages." {
 		panic("empty variant is reserved exclusively for registerStdTest")
 	} else if strings.HasSuffix(name, ":racebench") && heading != "Running benchmarks briefly." {
-		panic(":racebench variant is reserved exclusively for registerRaceBenchTest")
+		panic("racebench variant is reserved exclusively for registerRaceBenchTest")
 	}
 	if t.testNames == nil {
 		t.testNames = make(map[string]bool)
