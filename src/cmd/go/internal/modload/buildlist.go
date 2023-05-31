@@ -315,9 +315,13 @@ func readModGraph(ctx context.Context, pruning modPruning, roots []module.Versio
 		mg.g.Require(MainModules.mustGetSingleMainModule(), roots)
 	}
 
+	type dedupKey struct {
+		m       module.Version
+		pruning modPruning
+	}
 	var (
-		loadQueue       = par.NewQueue(runtime.GOMAXPROCS(0))
-		loadingUnpruned sync.Map // module.Version → nil; the set of modules that have been or are being loaded via roots that do not support pruning
+		loadQueue = par.NewQueue(runtime.GOMAXPROCS(0))
+		loading   sync.Map // dedupKey → nil; the set of modules that have been or are being loaded
 	)
 
 	// loadOne synchronously loads the explicit requirements for module m.
@@ -345,13 +349,11 @@ func readModGraph(ctx context.Context, pruning modPruning, roots []module.Versio
 			return
 		}
 
-		if pruning == unpruned {
-			if _, dup := loadingUnpruned.LoadOrStore(m, nil); dup {
-				// m has already been enqueued for loading. Since unpruned loading may
-				// follow cycles in the requirement graph, we need to return early
-				// to avoid making the load queue infinitely long.
-				return
-			}
+		if _, dup := loading.LoadOrStore(dedupKey{m, pruning}, nil); dup {
+			// m has already been enqueued for loading. Since unpruned loading may
+			// follow cycles in the requirement graph, we need to return early
+			// to avoid making the load queue infinitely long.
+			return
 		}
 
 		loadQueue.Add(func() {
@@ -607,7 +609,10 @@ func EditBuildList(ctx context.Context, add, mustSelect []module.Version) (chang
 
 // OverrideRoots edits the global requirement roots by replacing the specific module versions.
 func OverrideRoots(ctx context.Context, replace []module.Version) {
-	rs := requirements
+	requirements = overrideRoots(ctx, requirements, replace)
+}
+
+func overrideRoots(ctx context.Context, rs *Requirements, replace []module.Version) *Requirements {
 	drop := make(map[string]bool)
 	for _, m := range replace {
 		drop[m.Path] = true
@@ -620,7 +625,7 @@ func OverrideRoots(ctx context.Context, replace []module.Version) {
 	}
 	roots = append(roots, replace...)
 	gover.ModSort(roots)
-	requirements = newRequirements(rs.pruning, roots, rs.direct)
+	return newRequirements(rs.pruning, roots, rs.direct)
 }
 
 // A ConstraintError describes inconsistent constraints in EditBuildList

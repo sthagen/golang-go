@@ -222,6 +222,13 @@ Do not send CLs removing the interior tags from such phrases.
   TODO: complete this section, or delete if not needed
 </p>
 
+<h2 id="assembler">Assembler</h2>
+
+<!-- CL 476295 -->
+<p>
+  The verifier that checks for incorrect uses of <code>R15</code> when dynamic linking on amd64 has been improved.
+</p>
+
 <h2 id="linker">Linker</h2>
 
 <!-- CL 457455 -->
@@ -256,6 +263,14 @@ Do not send CLs removing the interior tags from such phrases.
   The new <a href="/pkg/slices">slices</a> package provides many common
   operations on slices, using generic functions that work with slices
   of any element type.
+</p>
+
+<h3 id="maps">New maps package</h3>
+
+<p><!-- https://go.dev/issue/57436, CL 464343 -->
+  The new <a href="/pkg/maps/">maps</a> package provides several
+  common operations on maps, using generic functions that work with
+  maps of any key or element type.
 </p>
 
 <h3 id="minor_library_changes">Minor changes to the library</h3>
@@ -418,12 +433,14 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="errors"><dt><a href="/pkg/errors/">errors</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/41198 -->
-      TODO: <a href="https://go.dev/issue/41198">https://go.dev/issue/41198</a>: add ErrUnsupported
-    </p>
-
-    <p><!-- CL 473935 -->
-      TODO: <a href="https://go.dev/cl/473935">https://go.dev/cl/473935</a>: errors: add ErrUnsupported; modified api/next/41198.txt
+    <p><!-- https://go.dev/issue/41198, CL 473935 -->
+      The new
+      <a href="/pkg/errors/#ErrUnsupported"><code>ErrUnsupported</code></a>
+      error provides a standardized way to indicate that a requested
+      operation may not be performed because it is unsupported.
+      For example, a call to
+      <a href="/pkg/os/#Link"><code>os.Link</code></a> when using a
+      file system that does not support hard links.
     </p>
   </dd>
 </dl><!-- errors -->
@@ -439,7 +456,9 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
 
     <p><!-- CL 480215 -->
-      TODO: <a href="https://go.dev/cl/480215">https://go.dev/cl/480215</a>: flag: panic if a flag is defined after being set
+      A flag definition (via <code>Bool</code>, <code>BoolVar</code>, <code>Int</code>, <code>IntVar</code>, etc.) will panic if <code>Set</code> has already been called on a flag with the same name.
+      <p>
+      This change is intended to detect cases where <a href="#language">changes in initialization order</a> cause flag operations to occur in a different order than expected. In many cases the fix to this problem is to introduce a explicit package dependence to correctly order the definition before any <code>Set</code> operations.
     </p>
   </dd>
 </dl><!-- flag -->
@@ -497,12 +516,8 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="hash/maphash"><dt><a href="/pkg/hash/maphash/">hash/maphash</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/47342 -->
-      TODO: <a href="https://go.dev/issue/47342">https://go.dev/issue/47342</a>: Provide a `purego` implementation
-    </p>
-
-    <p><!-- CL 468795 -->
-      TODO: <a href="https://go.dev/cl/468795">https://go.dev/cl/468795</a>: hash/maphash: add purego implementation
+    <p><!-- https://go.dev/issue/47342, CL 468795 -->
+      The <code>hash/maphash</code> package now has a pure Go implementation, selectable with the <code>purego</code> build tag.
     </p>
   </dd>
 </dl><!-- hash/maphash -->
@@ -567,18 +582,6 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- log/slog -->
 
-<dl id="maps"><dt><a href="/pkg/maps/">maps</a></dt>
-  <dd>
-    <p><!-- https://go.dev/issue/57436 -->
-      TODO: <a href="https://go.dev/issue/57436">https://go.dev/issue/57436</a>: new standard library package based on x/exp/maps
-    </p>
-
-    <p><!-- CL 464343 -->
-      TODO: <a href="https://go.dev/cl/464343">https://go.dev/cl/464343</a>: maps: new package; modified api/next/57436.txt
-    </p>
-  </dd>
-</dl><!-- maps -->
-
 <dl id="math"><dt><a href="/pkg/math/">math</a></dt>
   <dd>
     <p><!-- https://go.dev/issue/56491 -->
@@ -608,24 +611,33 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="net"><dt><a href="/pkg/net/">net</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/56539 -->
-      TODO: <a href="https://go.dev/issue/56539">https://go.dev/issue/56539</a>: add support for MPTCP
+    <p>
+      <!-- https://go.dev/issue/59166, https://go.dev/issue/56539 -->
+      <!-- CL 471136, CL 471137, CL 471140 -->
+      On Linux, the <a href="/pkg/net/">net</a> package can now use
+      Multipath TCP when the kernel supports it. It is not used by
+      default. To use Multipath TCP when available on a client, call
+      the
+      <a href="/pkg/net/#Dialer.SetMultipathTCP"><code>Dialer.SetMultipathTCP</code></a>
+      method before calling the
+      <a href="/pkg/net/#Dialer.Dial"><code>Dialer.Dial</code></a> or
+      <a href="/pkg/net/#Dialer.DialContext"><code>Dialer.DialContext</code></a>
+      methods. To use Multipath TCP when available on a server, call
+      the
+      <a href="/pkg/net/#ListenConfig.SetMultipathTCP"><code>ListenConfig.SetMultipathTCP</code></a>
+      method before calling the
+      <a href="/pkg/net/#ListenConfig.Listen"><code>ListenConfig.Listen</code></a>
+      method. Specify the network as <code>"tcp"</code> or
+      <code>"tcp4"</code> or <code>"tcp6"</code> as usual. If
+      Multipath TCP is not supported by the kernel or the remote host,
+      the connection will silently fall back to TCP. To test whether a
+      particular connection is using Multipath TCP, use the
+      <a href="/pkg/net/#TCPConn.MultipathTCP"><code>TCPConn.MultipathTCP</code></a>
+      method.
     </p>
-
-    <p><!-- https://go.dev/issue/59166 -->
-      TODO: <a href="https://go.dev/issue/59166">https://go.dev/issue/59166</a>: add func (*TCPConn) MultipathTCP() (bool, error)
-    </p>
-
-    <p><!-- CL 471136 -->
-      TODO: <a href="https://go.dev/cl/471136">https://go.dev/cl/471136</a>: net: mptcp: implement dialMPTCP; modified api/next/56539.txt
-    </p>
-
-    <p><!-- CL 471137 -->
-      TODO: <a href="https://go.dev/cl/471137">https://go.dev/cl/471137</a>: net: mptcp: implement listenMPTCP; modified api/next/56539.txt
-    </p>
-
-    <p><!-- CL 471140 -->
-      TODO: <a href="https://go.dev/cl/471140">https://go.dev/cl/471140</a>: net: mptcp: add TCPConn&#39;s MultipathTCP checker; modified api/next/59166.txt
+    <p>
+      In a future Go release we may enable Multipath TCP by default on
+      systems that support it.
     </p>
   </dd>
 </dl><!-- net -->
@@ -641,7 +653,11 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
 
     <p><!-- CL 494122 -->
-      TODO: <a href="https://go.dev/cl/494122">https://go.dev/cl/494122</a>: net/http: let ErrNotSupported match errors.ErrUnsupported; modified api/next/41198.txt
+      The <a href="/pkg/net/http/">net/http</a> package now supports
+      <a href="/pkg/errors/#ErrUnsupported"><code>errors.ErrUnsupported</code></a>,
+      in that the expression
+      <code>errors.Is(http.ErrNotSupported, errors.ErrUnsupported)</code>
+      will return true.
     </p>
   </dd>
 </dl><!-- net/http -->
@@ -656,7 +672,7 @@ Do not send CLs removing the interior tags from such phrases.
 
     <p><!-- CL 480135 -->
       On Windows the
-      <a href="/pkg/os#File.Chdir"><code>File.Chdir></a> method
+      <a href="/pkg/os#File.Chdir"><code>File.Chdir</code></a> method
       now changes the current directory to the file, rather than
       always returning an error.
     </p>
@@ -734,7 +750,12 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
 
     <p><!-- CL 447778 -->
-      TODO: <a href="https://go.dev/cl/447778">https://go.dev/cl/447778</a>: runtime: reimplement GODEBUG=cgocheck=2 as a GOEXPERIMENT
+      <code>GODEBUG=cgocheck=2</code>, a thorough checker of cgo pointer passing rules,
+      is no longer available as a <a href="/pkg/runtime#hdr-Environment_Variables">debug option</a>.
+      Instead, it is available as an experiment using <code>GOEXPERIMENT=cgocheck2</code>.
+      In particular this means that this mode has to be selected at build time instead of startup time.
+    <p>
+      <code>GODEBUG=cgocheck=1</code> is still available (and is still the default).
     </p>
 
     <p><!-- CL 472195 -->
@@ -822,6 +843,22 @@ Do not send CLs removing the interior tags from such phrases.
       <a href=http://simonsapin.github.io/wtf-8/"">WTF-8</a> strings.
       This is backward compatible as WTF-8 is a superset of the UTF-8
       format that was used in earlier releases.
+    </p>
+
+    <p><!-- CL 476578, CL 476875, CL 476916 -->
+      Several error values match the new
+      <a href="/pkg/errors/#ErrUnsupported"><code>errors.ErrUnsupported</code></a>,
+      such that <code>errors.Is(err, errors.ErrUnsupported)</code>
+      returns true.
+      <ul>
+	<li><code>ENOSYS</code></li>
+	<li><code>ENOTSUP</code></li>
+	<li><code>EOPNOTSUPP</code></li>
+	<li><code>EPLAN9</code> (Plan 9 only)</li>
+	<li><code>ERROR_CALL_NOT_IMPLEMENTED</code> (Windows only)</li>
+	<li><code>ERROR_NOT_SUPPORTED</code> (Windows only)</li>
+	<li><code>EWINDOWS</code> (Windows only)</li>
+      </ul>
     </p>
   </dd>
 </dl><!-- syscall -->
