@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// TODO: Replace with slices package when it lands in standard library.
+package p
 
-package slices
-
-// Clip removes unused capacity from the slice, returning s[:len(s):len(s)].
 func Clip[S ~[]E, E any](s S) S {
-	return s[:len(s):len(s)]
+	return s
 }
+
+var versions func()
+var _ = Clip /* ERROR "S (type func()) does not satisfy ~[]E" */ (versions)

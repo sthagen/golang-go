@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,9 +36,9 @@ import (
 	"cmd/go/internal/cache"
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/fsys"
+	"cmd/go/internal/gover"
 	"cmd/go/internal/load"
 	"cmd/go/internal/modload"
-	"cmd/go/internal/slices"
 	"cmd/go/internal/str"
 	"cmd/go/internal/trace"
 	"cmd/internal/buildid"
@@ -431,17 +432,7 @@ func allowedVersion(v string) bool {
 	if v == "" {
 		return true
 	}
-	// Special case "1.0" means "go1", which is OK.
-	if v == "1.0" {
-		return true
-	}
-	// Otherwise look through release tags of form "go1.23" for one that matches.
-	for _, tag := range cfg.BuildContext.ReleaseTags {
-		if strings.HasPrefix(tag, "go") && tag[2:] == v {
-			return true
-		}
-	}
-	return false
+	return gover.Compare(gover.Local(), v) >= 0
 }
 
 const (
