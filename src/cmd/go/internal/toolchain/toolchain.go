@@ -7,6 +7,7 @@ package toolchain
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"go/build"
 	"io/fs"
@@ -22,7 +23,6 @@ import (
 	"cmd/go/internal/base"
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/gover"
-	"cmd/go/internal/modcmd"
 	"cmd/go/internal/modfetch"
 	"cmd/go/internal/modload"
 	"cmd/go/internal/run"
@@ -410,22 +410,21 @@ func SwitchTo(gotoolchain string) {
 	// Download and unpack toolchain module into module cache.
 	// Note that multiple go commands might be doing this at the same time,
 	// and that's OK: the module cache handles that case correctly.
-	m := &modcmd.ModuleJSON{
+	m := module.Version{
 		Path:    gotoolchainModule,
 		Version: gotoolchainVersion + "-" + gotoolchain + "." + runtime.GOOS + "-" + runtime.GOARCH,
 	}
-	modcmd.DownloadModule(context.Background(), m)
-	if m.Error != "" {
-		if strings.Contains(m.Error, ".info: 404") {
+	dir, err := modfetch.Download(context.Background(), m)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
 			base.Fatalf("download %s for %s/%s: toolchain not available", gotoolchain, runtime.GOOS, runtime.GOARCH)
 		}
-		base.Fatalf("download %s: %v", gotoolchain, m.Error)
+		base.Fatalf("download %s: %v", gotoolchain, err)
 	}
 
 	// On first use after download, set the execute bits on the commands
 	// so that we can run them. Note that multiple go commands might be
 	// doing this at the same time, but if so no harm done.
-	dir := m.Dir
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(filepath.Join(dir, "bin/go"))
 		if err != nil {
@@ -580,7 +579,7 @@ func goInstallVersion() (m module.Version, goVers string, found bool) {
 	}
 	noneSelected := func(path string) (version string) { return "none" }
 	_, err := modload.QueryPackages(ctx, m.Path, m.Version, noneSelected, allowed)
-	if tooNew, ok := err.(*gover.TooNewError); ok {
+	if tooNew := (*gover.TooNewError)(nil); errors.As(err, &tooNew) {
 		m.Path, m.Version, _ = strings.Cut(tooNew.What, "@")
 		return m, tooNew.GoVersion, true
 	}
@@ -591,4 +590,23 @@ func goInstallVersion() (m module.Version, goVers string, found bool) {
 	// so return found == true so the caller does not fall back to
 	// consulting go.mod.
 	return m, "", true
+}
+
+// TryVersion tries to switch to a Go toolchain appropriate for version,
+// which was either found in a go.mod file of a dependency or resolved
+// on the command line from go@v.
+func TryVersion(ctx context.Context, version string) {
+	if !gover.IsValid(version) {
+		fmt.Fprintf(os.Stderr, "go: misuse of tryVersion: invalid version %q\n", version)
+		return
+	}
+	if (!HasAuto() && !HasPath()) || gover.Compare(version, gover.Local()) <= 0 {
+		return
+	}
+	tv, err := NewerToolchain(ctx, version)
+	if err != nil {
+		base.Errorf("go: %v\n", err)
+	}
+	fmt.Fprintf(os.Stderr, "go: switching to %v\n", tv)
+	SwitchTo(tv)
 }

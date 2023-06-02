@@ -144,21 +144,11 @@ Do not send CLs removing the interior tags from such phrases.
   <!-- cmd/dist: default to GOARM=7 on all non-arm systems -->
 </p>
 
-<!-- https://go.dev/issue/38248 -->
-<p>
-  <!-- replace CallImport with go:wasmimport directive -->
-</p>
-
 <h3 id="wasm">WebAssembly</h3>
 
-<!-- https://go.dev/issue/59149 -->
-<p>
-  <!-- allow the use of go:wasmimport globally -->
-</p>
-
-<!-- CL 489255 -->
-<p>
-  <!-- cmd/compile: remove go:wasmimport restriction -->
+<p><!-- https://go.dev/issue/38248, https://go.dev/issue/59149, CL 489255 -->
+  The new <code>go:wasmimport</code> directive can now be used in Go programs
+  to import functions from the WebAssembly host.
 </p>
 
 <!-- https://go.dev/issue/56100 -->
@@ -216,6 +206,13 @@ Do not send CLs removing the interior tags from such phrases.
   <!-- cmd/go: make go test build multiple executables; The go test command now supports using the -c flag with multiple packages. -->
 </p>
 
+<h3 id="cgo">Cgo</h3>
+
+<p><!-- CL 490819 -->
+  In files that <code>import "C"</code>, the Go toolchain now
+  correctly reports errors for attempts to declare Go methods on C types.
+</p>
+
 <h2 id="runtime-changes">Runtime</h2>
 
 <p>
@@ -261,14 +258,23 @@ Do not send CLs removing the interior tags from such phrases.
 
 <h2 id="compiler">Compiler</h2>
 
-<!-- CL 490819 -->
 <p>
-  <!-- cmd/cgo: reject attempts to declare methods on C types -->
+  Profile-guide optimization (PGO), added as a preview in Go 1.20, is now ready
+  for general use. PGO enables additional optimizations on code identified as
+  hot by profiles of production workloads. As mentioned in the
+  <a href="#go-command">Go command section</a>, PGO is enabled by default for
+  binaries that contain a <code>default.pgo</code> profile in the main
+  package directory. Performance improvements vary depending on application
+  behavior, with most programs from a representative set of Go programs seeing
+  between 2 and 7% improvement from enabling PGO. See the
+  <a href="/doc/pgo">PGO user guide</a> for detailed documentation.
 </p>
 
-<!-- CL 461315 -->
+<!-- https://go.dev/issue/59959 -->
 <p>
-  <!-- cmd/compile: enable deadcode of unreferenced large global maps -->
+  PGO builds can now devirtualize some interface method calls, adding a
+  concrete call to the most common callee. This enables further optimization,
+  such as inlining the callee.
 </p>
 
 <p>
@@ -294,7 +300,7 @@ Do not send CLs removing the interior tags from such phrases.
 <p>
   <!-- cmd/link: generate .xdata PE section -->
 </p>
-<!-- CL 463395 -->
+<!-- CL 463395, CL 461315 -->
 <p>
   In Go 1.21 the linker (with help from the compiler) is now capable of
   deleting dead (unreferenced) global map variables, if the number of
@@ -322,7 +328,7 @@ Do not send CLs removing the interior tags from such phrases.
 
 <p><!-- CL 487895 -->
   The new <a href="/pkg/testing/slogtest">testing/slogtest</a> package can help
-  to validate <a href="/pkg/log/slog#Handler">slog.Handler<a/> implementations.
+  to validate <a href="/pkg/log/slog#Handler">slog.Handler</a> implementations.
 </p>
 
 <h3 id="slices">New slices package</h3>
@@ -431,63 +437,31 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="crypto/elliptic"><dt><a href="/pkg/crypto/elliptic/">crypto/elliptic</a></dt>
   <dd>
     <p><!-- CL 459977 -->
-      TODO: <a href="https://go.dev/cl/459977">https://go.dev/cl/459977</a>: crypto/elliptic: deprecate unsafe APIs; modified api/next/34648.txt, api/next/52221.txt
+      All of the <a href="/pkg/crypto/elliptic/#Curve"><code>Curve</code></a> methods have been deprecated, along with <a href="/pkg/crypto/elliptic/#GenerateKey"><code>GenerateKey</code></a>, <a href="/pkg/crypto/elliptic/#Marshal"><code>Marshal</code></a>, and <a href="/pkg/crypto/elliptic/#Unmarshal"><code>Unmarshal</code></a>. For ECDH operations, the new <a href="/pkg/crypto/ecdh/"><code>crypto/ecdh</code></a> package should be used instead.
     </p>
   </dd>
 </dl><!-- crypto/elliptic -->
 
 <dl id="crypto/rsa"><dt><a href="/pkg/crypto/rsa/">crypto/rsa</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/56921 -->
-      TODO: <a href="https://go.dev/issue/56921">https://go.dev/issue/56921</a>: deprecate GenerateMultiPrimeKey and PrecomputedValues.CRTValues
-    </p>
-
-    <p><!-- CL 459976 -->
-      TODO: <a href="https://go.dev/cl/459976">https://go.dev/cl/459976</a>: crypto/rsa: deprecate multiprime RSA support; modified api/next/56921.txt
+    <p><!-- https://go.dev/issue/56921, CL 459976 -->
+      The <a href="/pkg/crypto/rsa/#GenerateMultiPrimeKey"><code>GenerateMultiPrimeKey</code></a> function and the <a href="/pkg/crypto/rsa/#PrecomputedValues.CRTValues"><code>PrecomputedValues.CRTValues</code></a> field have been deprecated. <a href="/pkg/crypto/rsa/#PrecomputedValues.CRTValues"><code>PrecomputedValues.CRTValues</code></a> will still be populated when <a href="/pkg/crypto/rsa/#PrivateKey.Precompute"><code>PrivateKey.Precompute</code></a> is called, but the values will not be used during decryption operations.
     </p>
   </dd>
 </dl><!-- crypto/rsa -->
 
-<dl id="crypto/sha1"><dt><a href="/pkg/crypto/sha1/">crypto/sha1</a></dt>
-  <dd>
-    <p><!-- CL 483815 -->
-      TODO: <a href="https://go.dev/cl/483815">https://go.dev/cl/483815</a>: crypto/sha1: add WriteString and WriteByte method
-    </p>
-  </dd>
-</dl><!-- crypto/sha1 -->
-
 <dl id="crypto/sha256"><dt><a href="/pkg/crypto/sha256/">crypto/sha256</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/50543 -->
-      TODO: <a href="https://go.dev/issue/50543">https://go.dev/issue/50543</a>: add native SHA256 instruction implementation for AMD64
-    </p>
-
-    <p><!-- CL 408795 -->
-      TODO: <a href="https://go.dev/cl/408795">https://go.dev/cl/408795</a>: crypto/sha256: add sha-ni implementation; crypto/sha256 uses Intel SHA extensions on new enough x86 processors, making it 3-4X faster.
-    </p>
-
-    <p><!-- CL 481478 -->
-      TODO: <a href="https://go.dev/cl/481478">https://go.dev/cl/481478</a>: crypto/sha256: add WriteString and WriteByte method
+    <p><!-- https://go.dev/issue/50543, CL 408795 -->
+      SHA-224 and SHA-256 operations now use native instructions when available when <code>GOOS=amd64</code>, providing a performance improvement on the order of 3-4x.
     </p>
   </dd>
 </dl><!-- crypto/sha256 -->
 
-<dl id="crypto/sha512"><dt><a href="/pkg/crypto/sha512/">crypto/sha512</a></dt>
-  <dd>
-    <p><!-- CL 483816 -->
-      TODO: <a href="https://go.dev/cl/483816">https://go.dev/cl/483816</a>: crypto/sha512: add WriteString and WriteByte method
-    </p>
-  </dd>
-</dl><!-- crypto/sha512 -->
-
 <dl id="crypto/x509"><dt><a href="/pkg/crypto/x509/">crypto/x509</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/53573 -->
-      TODO: <a href="https://go.dev/issue/53573">https://go.dev/issue/53573</a>: surface ReasonCode inside x509.RevocationList entries
-    </p>
-
-    <p><!-- CL 468875 -->
-      TODO: <a href="https://go.dev/cl/468875">https://go.dev/cl/468875</a>: crypto/x509: surface ReasonCode in RevocationList API; modified api/next/53573.txt
+    <p><!-- https://go.dev/issue/53573, CL 468875 -->
+      <a href="/pkg/crypto/x509/#RevocationList.RevokedCertificates"><code>RevocationList.RevokedCertificates</code></a> has been deprecated and replaced with the new <a href="/pkg/crypto/x509/#RevocationList.Entries"><code>RevocationList.Entries</code></a> field, which is a slice of <a href="/pkg/crypto/x509/#RevocationListEntry"><code>RevocationListEntry</code></a>. <a href="/pkg/crypto/x509/#RevocationListEntry"><code>RevocationListEntry</code></a> contains all of the fields in <a href="/pkg/crypto/x509/#pkix.RevokedCertificate"><code>pkix.RevokedCertificate</code></a>, as well as the revocation reason code.
     </p>
   </dd>
 </dl><!-- crypto/x509 -->
@@ -573,9 +547,19 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
 
     <p><!-- CL 480215 -->
-      A flag definition (via <code>Bool</code>, <code>BoolVar</code>, <code>Int</code>, <code>IntVar</code>, etc.) will panic if <code>Set</code> has already been called on a flag with the same name.
-      <p>
-      This change is intended to detect cases where <a href="#language">changes in initialization order</a> cause flag operations to occur in a different order than expected. In many cases the fix to this problem is to introduce a explicit package dependence to correctly order the definition before any <code>Set</code> operations.
+      A flag definition
+      (via <a href="/pkg/flag/#Bool"><code>Bool</code></a>,
+      <a href="/pkg/flag/#BoolVar"><code>BoolVar</code></a>,
+      <a href="/pkg/flag/#Int"><code>Int</code></a>,
+      <a href="/pkg/flag/#IntVar"><code>IntVar</code></a>, etc.)
+      will panic if <a href="/pkg/flag/#Set"><code>Set</code></a> has
+      already been called on a flag with the same name. This change is
+      intended to detect cases where <a href="#language">changes in
+      initialization order</a> cause flag operations to occur in a
+      different order than expected. In many cases the fix to this
+      problem is to introduce a explicit package dependence to
+      correctly order the definition before any
+      <a href="/pkg/flag/#Set"><code>Set</code></a> operations.
     </p>
   </dd>
 </dl><!-- flag -->
@@ -608,11 +592,11 @@ Do not send CLs removing the interior tags from such phrases.
       with <code>//go:</code>) in file headers (before
       the <code>package</code> declaration). These directives are
       available in the new
-      <a href="/pkg/go/build/Package"><code>Package</code></a> fields
-      <a href="/pkg/go/build/Package.Directives"><code>Directives</code></a>,
-      <a href="/pkg/go/build/Package.TestDirectives"><code>TestDirectives</code></a>,
+      <a href="/pkg/go/build#Package"><code>Package</code></a> fields
+      <a href="/pkg/go/build#Package.Directives"><code>Directives</code></a>,
+      <a href="/pkg/go/build#Package.TestDirectives"><code>TestDirectives</code></a>,
       and
-      <a href="/pkg/go/build/Package.XTestDirectives"><code>XTestDirectives</code></a>.
+      <a href="/pkg/go/build#Package.XTestDirectives"><code>XTestDirectives</code></a>.
     </p>
   </dd>
 </dl><!-- go/build -->
@@ -771,9 +755,18 @@ Do not send CLs removing the interior tags from such phrases.
       <a href="/pkg/io/fs/#DirEntry"><code>io/fs.DirEntry</code></a>
       interface returned by the
       <a href="/pkg/os/#ReadDir"><code>ReadDir</code></a> function and
-      the <a href="/pkg/os/#File.ReadDir"><code>File.ReadDir</code>
+      the <a href="/pkg/os/#File.ReadDir"><code>File.ReadDir</code></a>
       method now implements a <code>String</code> method that calls
       <a href="/pkg/io/fs/#FormatDirEntry"><code>io/fs.FormatDirEntry</code></a>.
+    </p>
+
+    <p><!-- https://go.dev/issue/53761, CL 416775, CL 498015-->
+    The implementation of the
+    <a href="/pkg/io/fs/#FS"><code>io/fs.FS</code></a> interface returned by
+    the <a href="/pkg/os/#DirFS"><code>DirFS</code></a> function now implements
+    the <a href="/pkg/io/fs/#ReadFileFS"><code>io/fs.ReadFileFS</code></a> and
+    the <a href="/pkg/io/fs/#ReadDirFS"><code>io/fs.ReadDirFS</code></a>
+    interfaces.
     </p>
   </dd>
 </dl><!-- os -->

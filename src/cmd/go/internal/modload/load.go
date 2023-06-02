@@ -341,7 +341,10 @@ func LoadPackages(ctx context.Context, opts PackageOpts, patterns ...string) (ma
 		}
 	}
 
-	initialRS := loadModFile(ctx, &opts)
+	initialRS, err := loadModFile(ctx, &opts)
+	if err != nil {
+		base.Fatal(err)
+	}
 
 	ld := loadFromRoots(ctx, loaderParams{
 		PackageOpts:  opts,
@@ -430,7 +433,7 @@ func LoadPackages(ctx context.Context, opts PackageOpts, patterns ...string) (ma
 			// preserve checksums for) additional entities from compatRS, which are
 			// only needed for compatibility with ld.TidyCompatibleVersion.
 			if err := modfetch.WriteGoSum(ctx, keep, mustHaveCompleteRequirements()); err != nil {
-				base.Fatalf("go: %v", err)
+				base.Fatal(err)
 			}
 		}
 	}
@@ -451,7 +454,7 @@ func LoadPackages(ctx context.Context, opts PackageOpts, patterns ...string) (ma
 
 	if !ExplicitWriteGoMod && opts.ResolveMissingImports {
 		if err := commitRequirements(ctx, WriteOpts{}); err != nil {
-			base.Fatalf("go: %v", err)
+			base.Fatal(err)
 		}
 	}
 
@@ -714,7 +717,7 @@ func ImportFromFiles(ctx context.Context, gofiles []string) {
 	tags := imports.Tags()
 	imports, testImports, err := imports.ScanFiles(gofiles, tags)
 	if err != nil {
-		base.Fatalf("go: %v", err)
+		base.Fatal(err)
 	}
 
 	loaded = loadFromRoots(ctx, loaderParams{
@@ -734,7 +737,7 @@ func ImportFromFiles(ctx context.Context, gofiles []string) {
 
 	if !ExplicitWriteGoMod {
 		if err := commitRequirements(ctx, WriteOpts{}); err != nil {
-			base.Fatalf("go: %v", err)
+			base.Fatal(err)
 		}
 	}
 }
@@ -1020,12 +1023,12 @@ func loadFromRoots(ctx context.Context, params loaderParams) *loader {
 			ld.TidyCompatibleVersion = ld.GoVersion
 		}
 
-		if gover.Compare(ld.GoVersion, tidyGoModSumVersion) < 0 {
+		if gover.Compare(ld.GoVersion, gover.TidyGoModSumVersion) < 0 {
 			ld.skipImportModFiles = true
 		}
 	}
 
-	if gover.Compare(ld.GoVersion, narrowAllVersion) < 0 && !ld.UseVendorAll {
+	if gover.Compare(ld.GoVersion, gover.NarrowAllVersion) < 0 && !ld.UseVendorAll {
 		// The module's go version explicitly predates the change in "all" for graph
 		// pruning, so continue to use the older interpretation.
 		ld.allClosesOverTests = true
