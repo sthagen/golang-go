@@ -222,10 +222,7 @@ func (mms *MainModuleSet) HighestReplaced() map[string]string {
 // or the go.work file in workspace mode.
 func (mms *MainModuleSet) GoVersion() string {
 	if inWorkspaceMode() {
-		if mms.workFile != nil && mms.workFile.Go != nil {
-			return mms.workFile.Go.Version
-		}
-		return gover.DefaultGoWorkVersion
+		return gover.FromGoWork(mms.workFile)
 	}
 	if mms != nil && len(mms.versions) == 1 {
 		f := mms.ModFile(mms.mustGetSingleMainModule())
@@ -235,9 +232,7 @@ func (mms *MainModuleSet) GoVersion() string {
 			// TODO(#49228): Clean this up; see loadModFile.
 			return gover.Local()
 		}
-		if f.Go != nil {
-			return f.Go.Version
-		}
+		return gover.FromGoMod(f)
 	}
 	return gover.DefaultGoModVersion
 }
@@ -465,6 +460,9 @@ func Init() {
 			// It's a bit of a peculiar thing to disallow but quite mysterious
 			// when it happens. See golang.org/issue/26708.
 			fmt.Fprintf(os.Stderr, "go: warning: ignoring go.mod in system temp root %v\n", os.TempDir())
+			if RootMode == NeedRoot {
+				base.Fatal(ErrNoModRoot)
+			}
 			if !mustUseModules {
 				return
 			}
@@ -686,6 +684,47 @@ func WriteWorkFile(path string, wf *modfile.WorkFile) error {
 	return os.WriteFile(path, out, 0666)
 }
 
+// UpdateWorkGoVersion updates the go line in wf to be at least goVers,
+// reporting whether it changed the file.
+func UpdateWorkGoVersion(wf *modfile.WorkFile, goVers string) (changed bool) {
+	old := gover.FromGoWork(wf)
+	if gover.Compare(old, goVers) >= 0 {
+		return false
+	}
+
+	wf.AddGoStmt(goVers)
+
+	// We wrote a new go line. For reproducibility,
+	// if the toolchain running right now is newer than the new toolchain line,
+	// update the toolchain line to record the newer toolchain.
+	// The user never sets the toolchain explicitly in a 'go work' command,
+	// so this is only happening as a result of a go or toolchain line found
+	// in a module.
+	// If the toolchain running right now is a dev toolchain (like "go1.21")
+	// writing 'toolchain go1.21' will not be useful, since that's not an actual
+	// toolchain you can download and run. In that case fall back to at least
+	// checking that the toolchain is new enough for the Go version.
+	toolchain := "go" + old
+	if wf.Toolchain != nil {
+		toolchain = wf.Toolchain.Name
+	}
+	if gover.IsLang(gover.Local()) {
+		toolchain = gover.ToolchainMax(toolchain, "go"+goVers)
+	} else {
+		toolchain = gover.ToolchainMax(toolchain, "go"+gover.Local())
+	}
+
+	// Drop the toolchain line if it is implied by the go line
+	// or if it is asking for a toolchain older than Go 1.21,
+	// which will not understand the toolchain line.
+	if toolchain == "go"+goVers || gover.Compare(gover.FromToolchain(toolchain), gover.GoStrictVersion) < 0 {
+		wf.DropToolchainStmt()
+	} else {
+		wf.AddToolchainStmt(toolchain)
+	}
+	return true
+}
+
 // UpdateWorkFile updates comments on directory directives in the go.work
 // file to include the associated module path.
 func UpdateWorkFile(wf *modfile.WorkFile) {
@@ -783,17 +822,33 @@ func loadModFile(ctx context.Context, opts *PackageOpts) (*Requirements, error) 
 		// any module.
 		mainModule := module.Version{Path: "command-line-arguments"}
 		MainModules = makeMainModules([]module.Version{mainModule}, []string{""}, []*modfile.File{nil}, []*modFileIndex{nil}, nil)
-		goVersion := gover.Local()
-		rawGoVersion.Store(mainModule, goVersion)
-		pruning := pruningForGoVersion(goVersion)
+		var (
+			goVersion string
+			pruning   modPruning
+			roots     []module.Version
+			direct    = map[string]bool{"go": true}
+		)
 		if inWorkspaceMode() {
+			// Since we are in a workspace, the Go version for the synthetic
+			// "command-line-arguments" module must not exceed the Go version
+			// for the workspace.
+			goVersion = MainModules.GoVersion()
 			pruning = workspace
+			roots = []module.Version{
+				mainModule,
+				{Path: "go", Version: goVersion},
+				{Path: "toolchain", Version: gover.LocalToolchain()},
+			}
+		} else {
+			goVersion = gover.Local()
+			pruning = pruningForGoVersion(goVersion)
+			roots = []module.Version{
+				{Path: "go", Version: goVersion},
+				{Path: "toolchain", Version: gover.LocalToolchain()},
+			}
 		}
-		roots := []module.Version{
-			{Path: "go", Version: gover.Local()},
-			{Path: "toolchain", Version: gover.LocalToolchain()},
-		}
-		requirements = newRequirements(pruning, roots, nil)
+		rawGoVersion.Store(mainModule, goVersion)
+		requirements = newRequirements(pruning, roots, direct)
 		if cfg.BuildMod == "vendor" {
 			// For issue 56536: Some users may have GOFLAGS=-mod=vendor set.
 			// Make sure it behaves as though the fake module is vendored
@@ -813,10 +868,30 @@ func loadModFile(ctx context.Context, opts *PackageOpts) (*Requirements, error) 
 		data, f, err := ReadModFile(gomod, fixVersion(ctx, &fixed))
 		if err != nil {
 			if inWorkspaceMode() {
-				err = fmt.Errorf("cannot load module %s listed in go.work file: %w", base.ShortPath(gomod), err)
+				if tooNew, ok := err.(*gover.TooNewError); ok && !strings.HasPrefix(cfg.CmdName, "work ") {
+					// Switching to a newer toolchain won't help - the go.work has the wrong version.
+					// Report this more specific error, unless we are a command like 'go work use'
+					// or 'go work sync', which will fix the problem after the caller sees the TooNewError
+					// and switches to a newer toolchain.
+					err = errWorkTooOld(gomod, workFile, tooNew.GoVersion)
+				} else {
+					err = fmt.Errorf("cannot load module %s listed in go.work file: %w",
+						base.ShortPath(filepath.Dir(gomod)), err)
+				}
 			}
 			errs = append(errs, err)
 			continue
+		}
+		if inWorkspaceMode() && !strings.HasPrefix(cfg.CmdName, "work ") {
+			// Refuse to use workspace if its go version is too old.
+			// Disable this check if we are a workspace command like work use or work sync,
+			// which will fix the problem.
+			mv := gover.FromGoMod(f)
+			wv := gover.FromGoWork(workFile)
+			if gover.Compare(mv, wv) > 0 && gover.Compare(mv, gover.GoStrictVersion) >= 0 {
+				errs = append(errs, errWorkTooOld(gomod, workFile, mv))
+				continue
+			}
 		}
 
 		modFiles = append(modFiles, f)
@@ -873,8 +948,8 @@ func loadModFile(ctx context.Context, opts *PackageOpts) (*Requirements, error) 
 		if cfg.BuildMod == "mod" && cfg.CmdName != "mod graph" && cfg.CmdName != "mod why" {
 			// go line is missing from go.mod; add one there and add to derived requirements.
 			v := gover.Local()
-			if opts != nil && opts.TidyGo {
-				v = opts.GoVersion
+			if opts != nil && opts.TidyGoVersion != "" {
+				v = opts.TidyGoVersion
 			}
 			addGoStmt(MainModules.ModFile(mainModule), mainModule, v)
 			rs = overrideRoots(ctx, rs, []module.Version{{Path: "go", Version: v}})
@@ -898,6 +973,11 @@ func loadModFile(ctx context.Context, opts *PackageOpts) (*Requirements, error) 
 
 	requirements = rs
 	return requirements, nil
+}
+
+func errWorkTooOld(gomod string, wf *modfile.WorkFile, goVers string) error {
+	return fmt.Errorf("module %s listed in go.work file requires go >= %s, but go.work lists go %s; to update it:\n\tgo work use",
+		base.ShortPath(filepath.Dir(gomod)), goVers, gover.FromGoWork(wf))
 }
 
 // CreateModFile initializes a new module by creating a go.mod file.
@@ -1168,9 +1248,7 @@ func requirementsFromModFiles(ctx context.Context, workFile *modfile.WorkFile, m
 		pruning = workspace
 		roots = make([]module.Version, len(MainModules.Versions()), 2+len(MainModules.Versions()))
 		copy(roots, MainModules.Versions())
-		if workFile.Go != nil {
-			goVersion = workFile.Go.Version
-		}
+		goVersion = gover.FromGoWork(workFile)
 		if workFile.Toolchain != nil {
 			toolchain = workFile.Toolchain.Name
 		}
@@ -1197,29 +1275,24 @@ func requirementsFromModFiles(ctx context.Context, workFile *modfile.WorkFile, m
 				direct[r.Mod.Path] = true
 			}
 		}
-		if modFile.Go != nil {
-			goVersion = modFile.Go.Version
-		}
+		goVersion = gover.FromGoMod(modFile)
 		if modFile.Toolchain != nil {
 			toolchain = modFile.Toolchain.Name
 		}
 	}
 
 	// Add explicit go and toolchain versions, inferring as needed.
-	if opts != nil && opts.TidyGo {
-		goVersion = opts.GoVersion
-	}
-	if goVersion == "" {
-		goVersion = gover.DefaultGoModVersion
-	}
 	roots = append(roots, module.Version{Path: "go", Version: goVersion})
-	direct["go"] = true
+	direct["go"] = true // Every module directly uses the language and runtime.
 
-	if toolchain == "" {
-		toolchain = "go" + goVersion
+	if toolchain != "" {
+		roots = append(roots, module.Version{Path: "toolchain", Version: toolchain})
+		// Leave the toolchain as indirect: nothing in the user's module directly
+		// imports a package from the toolchain, and (like an indirect dependency in
+		// a module without graph pruning) we may remove the toolchain line
+		// automatically if the 'go' version is changed so that it implies the exact
+		// same toolchain.
 	}
-	roots = append(roots, module.Version{Path: "toolchain", Version: toolchain})
-	direct["toolchain"] = true
 
 	gover.ModSort(roots)
 	rs := newRequirements(pruning, roots, direct)
@@ -1534,6 +1607,10 @@ func findImportComment(file string) string {
 type WriteOpts struct {
 	DropToolchain     bool // go get toolchain@none
 	ExplicitToolchain bool // go get has set explicit toolchain version
+
+	// TODO(bcmills): Make 'go mod tidy' update the go version in the Requirements
+	// instead of writing directly to the modfile.File
+	TidyWroteGo bool // Go.Version field already updated by 'go mod tidy'
 }
 
 // WriteGoMod writes the current build list back to go.mod.
@@ -1597,8 +1674,8 @@ func commitRequirements(ctx context.Context, opts WriteOpts) (err error) {
 		// We cannot assume that we know how to update a go.mod to a newer version.
 		return &gover.TooNewError{What: "updating go.mod", GoVersion: goVersion}
 	}
-	wroteGo := false
-	if modFile.Go == nil || modFile.Go.Version != goVersion {
+	wroteGo := opts.TidyWroteGo
+	if !wroteGo && modFile.Go == nil || modFile.Go.Version != goVersion {
 		alwaysUpdate := cfg.BuildMod == "mod" || cfg.CmdName == "mod tidy" || cfg.CmdName == "get"
 		if modFile.Go == nil && goVersion == gover.DefaultGoModVersion && !alwaysUpdate {
 			// The go.mod has no go line, the implied default Go version matches
@@ -1615,15 +1692,23 @@ func commitRequirements(ctx context.Context, opts WriteOpts) (err error) {
 
 	// For reproducibility, if we are writing a new go line,
 	// and we're not explicitly modifying the toolchain line with 'go get toolchain@something',
+	// and the go version is one that supports switching toolchains,
 	// and the toolchain running right now is newer than the current toolchain line,
 	// then update the toolchain line to record the newer toolchain.
+	//
+	// TODO(#57001): This condition feels too complicated. Can we simplify it?
+	// TODO(#57001): Add more tests for toolchain lines.
 	toolVers := gover.FromToolchain(toolchain)
-	if wroteGo && !opts.DropToolchain && !opts.ExplicitToolchain && gover.Compare(gover.Local(), toolVers) > 0 {
+	if wroteGo && !opts.DropToolchain && !opts.ExplicitToolchain &&
+		gover.Compare(goVersion, gover.GoStrictVersion) >= 0 &&
+		(gover.Compare(gover.Local(), toolVers) > 0 && !gover.IsLang(gover.Local())) {
 		toolchain = "go" + gover.Local()
+		toolVers = gover.FromToolchain(toolchain)
 	}
 
-	if opts.DropToolchain || toolchain == "go"+goVersion {
-		// go get toolchain@none or toolchain matches go line; drop it.
+	if opts.DropToolchain || toolchain == "go"+goVersion || (gover.Compare(toolVers, gover.GoStrictVersion) < 0 && !opts.ExplicitToolchain) {
+		// go get toolchain@none or toolchain matches go line or isn't valid; drop it.
+		// TODO(#57001): 'go get' should reject explicit toolchains below GoStrictVersion.
 		modFile.DropToolchainStmt()
 	} else {
 		modFile.AddToolchainStmt(toolchain)
@@ -1733,6 +1818,7 @@ func keepSums(ctx context.Context, ld *loader, rs *Requirements, which whichSums
 	// not just the modules containing the actual packages — in order to rule out
 	// ambiguous import errors the next time we load the package.
 	if ld != nil {
+		keepPkgGoModSums := !ld.Tidy || gover.Compare(ld.requirements.GoVersion(), gover.TidyGoModSumVersion) >= 0
 		for _, pkg := range ld.pkgs {
 			// We check pkg.mod.Path here instead of pkg.inStd because the
 			// pseudo-package "C" is not in std, but not provided by any module (and
@@ -1746,7 +1832,7 @@ func keepSums(ctx context.Context, ld *loader, rs *Requirements, which whichSums
 			// However, we didn't do so before Go 1.21, and the bug is relatively
 			// minor, so we maintain the previous (buggy) behavior in 'go mod tidy' to
 			// avoid introducing unnecessary churn.
-			if !ld.Tidy || gover.Compare(ld.GoVersion, gover.TidyGoModSumVersion) >= 0 {
+			if keepPkgGoModSums {
 				r := resolveReplacement(pkg.mod)
 				keep[modkey(r)] = true
 			}

@@ -639,8 +639,8 @@ func goModSummary(m module.Version) (*modFileSummary, error) {
 // rawGoModSummary cannot be used on the main module outside of workspace mode.
 func rawGoModSummary(m module.Version) (*modFileSummary, error) {
 	if gover.IsToolchain(m.Path) {
-		if m.Path == "go" {
-			// Declare that go 1.2.3 requires toolchain 1.2.3,
+		if m.Path == "go" && gover.Compare(m.Version, gover.GoStrictVersion) >= 0 {
+			// Declare that go 1.21.3 requires toolchain 1.21.3,
 			// so that go get knows that downgrading toolchain implies downgrading go
 			// and similarly upgrading go requires upgrading the toolchain.
 			return &modFileSummary{module: m, require: []module.Version{{Path: "toolchain", Version: "go" + m.Version}}}, nil
@@ -654,6 +654,12 @@ func rawGoModSummary(m module.Version) (*modFileSummary, error) {
 		// If we are not in workspace mode, then the requirements of the main module
 		// are the roots of the module graph and we expect them to be kept consistent.
 		panic("internal error: rawGoModSummary called on a main module")
+	}
+	if m.Version == "" && inWorkspaceMode() && m.Path == "command-line-arguments" {
+		// "go work sync" calls LoadModGraph to make sure the module graph is valid.
+		// If there are no modules in the workspace, we synthesize an empty
+		// command-line-arguments module, which rawGoModData cannot read a go.mod for.
+		return &modFileSummary{module: m}, nil
 	}
 	return rawGoModSummaryCache.Do(m, func() (*modFileSummary, error) {
 		summary := new(modFileSummary)
@@ -685,9 +691,9 @@ func rawGoModSummary(m module.Version) (*modFileSummary, error) {
 				summary.require = append(summary.require, req.Mod)
 			}
 		}
-		if summary.goVersion != "" && gover.Compare(summary.goVersion, "1.21") >= 0 {
+		if summary.goVersion != "" && gover.Compare(summary.goVersion, gover.GoStrictVersion) >= 0 {
 			if gover.Compare(summary.goVersion, gover.Local()) > 0 {
-				return nil, &gover.TooNewError{What: summary.module.String(), GoVersion: summary.goVersion}
+				return nil, &gover.TooNewError{What: "module " + m.String(), GoVersion: summary.goVersion}
 			}
 			summary.require = append(summary.require, module.Version{Path: "go", Version: summary.goVersion})
 		}
