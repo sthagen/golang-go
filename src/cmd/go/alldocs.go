@@ -104,6 +104,7 @@
 //		Change to dir before running the command.
 //		Any files named on the command line are interpreted after
 //		changing directories.
+//		If used, this flag must be the first one in the command line.
 //	-a
 //		force rebuilding of packages that are already up-to-date.
 //	-n
@@ -671,6 +672,14 @@
 //
 //	go get example.com/mod@none
 //
+// To upgrade the minimum required Go version to the latest released Go version:
+//
+//	go get go@latest
+//
+// To upgrade the Go toolchain to the latest patch release of the current Go toolchain:
+//
+//	go get toolchain@patch
+//
 // See https://golang.org/ref/mod#go-get for details.
 //
 // In earlier versions of Go, 'go get' was used to build and install packages.
@@ -704,6 +713,9 @@
 // from a repository.
 //
 // For more about modules, see https://golang.org/ref/mod.
+//
+// For more about using 'go get' to update the minimum Go version and
+// suggested Go toolchain, see https://go.dev/doc/toolchain.
 //
 // For more about specifying packages, see 'go help packages'.
 //
@@ -1787,9 +1799,9 @@
 //	    the package list (if present) must appear before this flag.
 //
 //	-c
-//	    Compile the test binary to pkg.test but do not run it
+//	    Compile the test binary to pkg.test in the current directory but do not run it
 //	    (where pkg is the last element of the package's import path).
-//	    The file name can be changed with the -o flag.
+//	    The file name or target directory can be changed with the -o flag.
 //
 //	-exec xprog
 //	    Run the test binary using xprog. The behavior is the same as
@@ -1802,6 +1814,8 @@
 //	-o file
 //	    Compile the test binary to the named file.
 //	    The test still runs (unless -c or -i is specified).
+//	    If file ends in a slash or names an existing directory,
+//	    the test is written to pkg.test in that directory.
 //
 // The test binary also accepts flags that control execution of the test; these
 // flags are also accessible by 'go test'. See 'go help testflag' for details.
@@ -1854,7 +1868,7 @@
 //
 // Usage:
 //
-//	go vet [-C dir] [-n] [-x] [-vettool prog] [build flags] [vet flags] [packages]
+//	go vet [build flags] [-vettool prog] [vet flags] [packages]
 //
 // Vet runs the Go vet command on the packages named by the import paths.
 //
@@ -1862,10 +1876,6 @@
 // For more about specifying packages, see 'go help packages'.
 // For a list of checkers and their flags, see 'go tool vet help'.
 // For details of a specific checker such as 'printf', see 'go tool vet help printf'.
-//
-// The -C flag changes to dir before running the 'go vet' command.
-// The -n flag prints commands that would be executed.
-// The -x flag prints commands as they are executed.
 //
 // The -vettool=prog flag selects a different analysis tool with alternative
 // or additional checks.
@@ -1875,7 +1885,7 @@
 //	go vet -vettool=$(which shadow)
 //
 // The build flags supported by go vet are those that control package resolution
-// and execution, such as -n, -x, -v, -tags, and -toolexec.
+// and execution, such as -C, -n, -x, -v, -tags, and -toolexec.
 // For more about these flags, see 'go help build'.
 //
 // See also: go fmt, go fix.
@@ -2173,7 +2183,7 @@
 //		The operating system for which to compile code.
 //		Examples are linux, darwin, windows, netbsd.
 //	GOPATH
-//		For more details see: 'go help gopath'.
+//		Controls where various files are stored. See: 'go help gopath'.
 //	GOPROXY
 //		URL of Go module proxy. See https://golang.org/ref/mod#environment-variables
 //		and https://golang.org/ref/mod#module-proxy for details.
@@ -2187,6 +2197,8 @@
 //	GOSUMDB
 //		The name of checksum database to use and optionally its public key and
 //		URL. See https://golang.org/ref/mod#authenticating.
+//	GOTOOLCHAIN
+//		Controls which Go toolchain is used. See https://go.dev/doc/toolchain.
 //	GOTMPDIR
 //		The directory where the go command will write
 //		temporary source files, packages, and binaries.

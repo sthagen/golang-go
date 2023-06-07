@@ -56,13 +56,14 @@ It is a comma-separated list of name=val pairs setting these named variables:
 	requires a rebuild), see https://pkg.go.dev/internal/goexperiment for details.
 
 	dontfreezetheworld: by default, the start of a fatal panic or throw
-	"freezes the world", stopping all goroutines, which makes it possible
-	to traceback all goroutines (running goroutines cannot be traced), and
+	"freezes the world", preempting all threads to stop all running
+	goroutines, which makes it possible to traceback all goroutines, and
 	keeps their state close to the point of panic. Setting
-	dontfreezetheworld=1 disables freeze, allowing goroutines to continue
-	executing during panic processing. This can be useful when debugging
-	the runtime scheduler, as freezetheworld perturbs scheduler state and
-	thus may hide problems.
+	dontfreezetheworld=1 disables this preemption, allowing goroutines to
+	continue executing during panic processing. Note that goroutines that
+	naturally enter the scheduler will still stop. This can be useful when
+	debugging the runtime scheduler, as freezetheworld perturbs scheduler
+	state and thus may hide problems.
 
 	efence: setting efence=1 causes the allocator to run in a mode
 	where each object is allocated on a unique page and addresses are
@@ -233,6 +234,25 @@ the set of Go environment variables. They influence the building of Go programs
 GOARCH, GOOS, and GOROOT are recorded at compile time and made available by
 constants or functions in this package, but they do not influence the execution
 of the run-time system.
+
+# Security
+
+On Unix platforms, Go's runtime system behaves slightly differently when a
+binary is setuid/setgid or executed with setuid/setgid-like properties, in order
+to prevent dangerous behaviors. On Linux this is determined by checking for the
+AT_SECURE flag in the auxiliary vector, on the BSDs and Solaris/Illumos it is
+determined by checking the issetugid syscall, and on AIX it is determined by
+checking if the uid/gid match the effective uid/gid.
+
+When the runtime determines the binary is setuid/setgid-like, it does three main
+things:
+  - The standard input/output file descriptors (0, 1, 2) are checked to be open.
+    If any of them are closed, they are opened pointing at /dev/null.
+  - The value of the GOTRACEBACK environment variable is set to 'none'.
+  - When a signal is received that terminates the program, or the program
+    encounters an unrecoverable panic that would otherwise override the value
+    of GOTRACEBACK, the goroutine stack, registers, and other memory related
+    information are omitted.
 */
 package runtime
 
