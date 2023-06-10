@@ -31,7 +31,7 @@ Do not send CLs removing the interior tags from such phrases.
   We expect almost all Go programs to continue to compile and run as before.
 </p>
 
-<p>
+<p><!-- https://go.dev/issue/57631 -->
   Go 1.21 introduces a small change to the numbering of releases.
   In the past, we used Go 1.<i>N</i> to refer to both the overall Go language version and release family
   as well as the first release in that family.
@@ -318,6 +318,14 @@ Do not send CLs removing the interior tags from such phrases.
 
 <h2 id="assembler">Assembler</h2>
 
+<!-- https://go.dev/issue/58378 -->
+<p>
+  On amd64, frameless nosplit assembly functions are no longer automatically marked as <code>NOFRAME</code>.
+  Instead, the <code>NOFRAME</code> attribute must be explicitly specified if desired,
+  which is already the behavior on other architectures supporting frame pointers.
+  With this, the runtime now maintains the frame pointers for stack transitions.
+</p>
+
 <!-- CL 476295 -->
 <p>
   The verifier that checks for incorrect uses of <code>R15</code> when dynamic linking on amd64 has been improved.
@@ -368,7 +376,11 @@ Do not send CLs removing the interior tags from such phrases.
 
 <h3 id="slices">New slices package</h3>
 
-<p><!-- https://go.dev/issue/45955, https://go.dev/issue/54768, https://go.dev/issue/57348, https://go.dev/issue/57433, CL 467417, CL 483175 -->
+<p>
+  <!-- https://go.dev/issue/45955, https://go.dev/issue/54768 -->
+  <!-- https://go.dev/issue/57348, https://go.dev/issue/57433 -->
+  <!-- https://go.dev/issue/58565, https://go.dev/issue/60091 -->
+  <!-- CL 467417, CL 468855, CL 483175, CL 496078, CL 498175 -->
   The new <a href="/pkg/slices">slices</a> package provides many common
   operations on slices, using generic functions that work with slices
   of any element type.
@@ -380,6 +392,16 @@ Do not send CLs removing the interior tags from such phrases.
   The new <a href="/pkg/maps/">maps</a> package provides several
   common operations on maps, using generic functions that work with
   maps of any key or element type.
+</p>
+
+<p><!-- https://go.dev/issue/59488, CL 469356 -->
+  The new <a href="/pkg/cmp/">cmp</a> package defines the type
+  constraint <a href="/pkg/cmp/#Ordered"><code>Ordered</code></a> and
+  two new generic functions
+  <a href="/pkg/cmp/#Less"><code>Less</code></a>
+  and <a href="/pkg/cmp/#Compare"><code>Compare</code></a> that are
+  useful with <a href="/ref/spec/#Comparison_operators">ordered
+  types</a>.
 </p>
 
 <h3 id="minor_library_changes">Minor changes to the library</h3>
@@ -472,18 +494,34 @@ Do not send CLs removing the interior tags from such phrases.
 <dl id="crypto/elliptic"><dt><a href="/pkg/crypto/elliptic/">crypto/elliptic</a></dt>
   <dd>
     <p><!-- CL 459977 -->
-      All of the <a href="/pkg/crypto/elliptic/#Curve"><code>Curve</code></a> methods have been deprecated, along with <a href="/pkg/crypto/elliptic/#GenerateKey"><code>GenerateKey</code></a>, <a href="/pkg/crypto/elliptic/#Marshal"><code>Marshal</code></a>, and <a href="/pkg/crypto/elliptic/#Unmarshal"><code>Unmarshal</code></a>. For ECDH operations, the new <a href="/pkg/crypto/ecdh/"><code>crypto/ecdh</code></a> package should be used instead.
+      All of the <a href="/pkg/crypto/elliptic/#Curve"><code>Curve</code></a> methods have been deprecated, along with <a href="/pkg/crypto/elliptic/#GenerateKey"><code>GenerateKey</code></a>, <a href="/pkg/crypto/elliptic/#Marshal"><code>Marshal</code></a>, and <a href="/pkg/crypto/elliptic/#Unmarshal"><code>Unmarshal</code></a>. For ECDH operations, the new <a href="/pkg/crypto/ecdh/"><code>crypto/ecdh</code></a> package should be used instead. For lower-level operations, use third-party modules such as <a href="https://pkg.go.dev/filippo.io/nistec">filippo.io/nistec</a>.
     </p>
   </dd>
 </dl><!-- crypto/elliptic -->
 
+<dl id="crypto/rand"><dt><a href="/pkg/crypto/rand/">crypto/rand</a></dt>
+  <dd>
+    <p><!-- CL 463123 -->
+      The <a href="/pkg/crypto/rand/"><code>crypto/rand</code></a> package now uses the <code>getrandom</code> system call on NetBSD 10.0 and later.
+    </p>
+  </dd>
+</dl><!-- crypto/rand -->
+
 <dl id="crypto/rsa"><dt><a href="/pkg/crypto/rsa/">crypto/rsa</a></dt>
   <dd>
+    <p><!-- CL 471259, CL 492935 -->
+      The performance of private RSA operations (decryption and signing) is now better than Go 1.19 for <code>GOOS=amd64</code> and <code>GOOS=arm64</code>. It had regressed in Go 1.20.
+    </p>
+    <p>
+      Due to the addition of private fields to <a href="/pkg/crypto/rsa/#PrecomputedValues"><code>PrecomputedValues</code></a>, <a href="/pkg/crypto/rsa/#PrivateKey.Precompute"><code>PrivateKey.Precompute</code></a> must be called for optimal performance even if deserializing (for example from JSON) a previously-precomputed private key.
+    </p>
     <p><!-- https://go.dev/issue/56921, CL 459976 -->
       The <a href="/pkg/crypto/rsa/#GenerateMultiPrimeKey"><code>GenerateMultiPrimeKey</code></a> function and the <a href="/pkg/crypto/rsa/#PrecomputedValues.CRTValues"><code>PrecomputedValues.CRTValues</code></a> field have been deprecated. <a href="/pkg/crypto/rsa/#PrecomputedValues.CRTValues"><code>PrecomputedValues.CRTValues</code></a> will still be populated when <a href="/pkg/crypto/rsa/#PrivateKey.Precompute"><code>PrivateKey.Precompute</code></a> is called, but the values will not be used during decryption operations.
     </p>
   </dd>
 </dl><!-- crypto/rsa -->
+
+<!-- CL 483815 reverted -->
 
 <dl id="crypto/sha256"><dt><a href="/pkg/crypto/sha256/">crypto/sha256</a></dt>
   <dd>
@@ -492,6 +530,66 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
   </dd>
 </dl><!-- crypto/sha256 -->
+
+<!-- CL 481478 reverted -->
+<!-- CL 483816 reverted -->
+
+<dl id="crypto/tls"><dt><a href="/pkg/crypto/tls/">crypto/tls</a></dt>
+  <dd>
+    <p><!-- https://go.dev/issue/60105 -->
+      Applications can now control the content of session tickets.
+      <ul>
+        <li>
+          The new <a href="/pkg/crypto/tls/#SessionState"><code>SessionState</code></a> type
+          describes a resumable session.
+        </li>
+        <li>
+          The <a href="/pkg/crypto/tls/#SessionState.Bytes"><code>SessionState.Bytes</code></a>
+          method and <a href="/pkg/crypto/tls/#ParseSessionState"><code>ParseSessionState</code></a>
+          function serialize and deserialize a <code>SessionState</code>.
+        </li>
+        <li>
+          The <a href="/pkg/crypto/tls/#Config.WrapSession"><code>Config.WrapSession</code></a> and
+          <a href="/pkg/crypto/tls/#Config.UnwrapSession"><code>Config.UnwrapSession</code></a>
+          hooks convert a <code>SessionState</code> to and from a ticket.
+        </li>
+        <li>
+          The <a href="/pkg/crypto/tls/#Config.EncryptTicket"><code>Config.EncryptTicket</code></a>
+          and <a href="/pkg/crypto/tls/#Config.DecryptTicket"><code>Config.DecryptTicket</code></a>
+          methods provide a default implementation of <code>WrapSession</code> and
+          <code>UnwrapSession</code>.
+        </li>
+        <li>
+          The <a href="/pkg/crypto/tls/#ClientSessionState.ResumptionState"><code>ClientSessionState.ResumptionState</code></a> method and
+          <a href="/pkg/crypto/tls/#NewResumptionState"><code>NewResumptionState</code></a> function
+          may be used by a <code>ClientSessionCache</code> implementation to store and
+          resume sessions.
+        </li>
+      </ul>
+    </p>
+
+    <p><!-- CL 497376 -->
+      The package now supports the extended master secret extension (RFC 7627),
+      and enables it by default. Additionally, the deprecation of
+      <a href="/pkg/crypto/tls/#ConnectionState.TLSUnique"><code>ConnectionState.TLSUnique</code></a>
+      has been reverted, and it is populated when a connection which uses
+      extended master secret is resumed. Session tickets produced by
+      Go pre-1.21 are not interoperable with Go 1.21, meaning connections
+      resumed across versions will fall back to full handshakes.
+    </p>
+
+    <p><!-- https://go.dev/issue/44886, https://go.dev/issue/60107 -->
+      The new <a href="/pkg/crypto/tls/#QUICConn"><code>QUICConn</code></a> type
+      provides support for QUIC implementations. Note that this is not itself
+      a QUIC implementation.
+    </p>
+
+    <p><!-- https://go.dev/issue/46308 -->
+      The new <a href="/pkg/crypto/tls/#VersionName"></code>VersionName</code></a> function
+      returns the name for a TLS version number.
+    </p>
+  </dd>
+</dl><!-- crypto/tls -->
 
 <dl id="crypto/x509"><dt><a href="/pkg/crypto/x509/">crypto/x509</a></dt>
   <dd>
@@ -520,6 +618,11 @@ Do not send CLs removing the interior tags from such phrases.
     <p><!-- CL 473256 -->
       The package now defines the constant
       <a href="/pkg/debug/elf/#COMPRESS_ZSTD"><code>COMPRESS_ZSTD</code></a>.
+    </p>
+
+    <p><!-- https://go.dev/issue/60348, CL 496918 -->
+      The package now defines the constant
+      <a href="/pkg/debug/elf/#R_PPC64_REL24_P9NOTOC"><code>R_PPC64_REL24_P9NOTOC</code></a>.
     </p>
   </dd>
 </dl><!-- debug/elf -->
@@ -665,6 +768,17 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- hash/maphash -->
 
+<dl id="html/template"><dt><a href="/pkg/html/template/">html/template</a></dt>
+  <dd>
+    <p><!-- https://go.dev/issue/59584, CL 496395 -->
+      The new error
+      <a href="/pkg/html/template/#ErrJSTemplate"><code>ErrJSTemplate</code></a>
+      is returned when an action appears in a JavaScript template
+      literal. Previously an unexported error was returned.
+    </p>
+  </dd>
+</dl><!-- html/template -->
+
 <dl id="io/fs"><dt><a href="/pkg/io/fs/">io/fs</a></dt>
   <dd>
     <p><!-- https://go.dev/issue/54451, CL 489555 -->
@@ -690,13 +804,13 @@ Do not send CLs removing the interior tags from such phrases.
   </dd>
 </dl><!-- io/fs -->
 
-<!-- https://go.dev/issue/56491 rolled back -->
-<!-- CL 459435 reverted -->
-<!-- CL 467515 reverted -->
+<!-- https://go.dev/issue/56491 rolled back by https://go.dev/issue/60519 -->
+<!-- CL 459435 reverted by CL 467255 -->
+<!-- CL 467515 reverted by CL 499416 -->
 
 <dl id="math/big"><dt><a href="/pkg/math/big/">math/big</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/56984, CL 453115 -->
+    <p><!-- https://go.dev/issue/56984, CL 453115, CL 500116 -->
       The new <a href="/pkg/math/big/#Int.Float64"><code>Int.Float64</code></a>
       method returns the nearest floating-point value to a
       multi-precision integer, along with an indication of any
@@ -777,6 +891,14 @@ Do not send CLs removing the interior tags from such phrases.
       <a href="/pkg/os#File.Chdir"><code>File.Chdir</code></a> method
       now changes the current directory to the file, rather than
       always returning an error.
+    </p>
+
+    <p><!-- CL 495079 -->
+      On Unix systems, if a non-blocking descriptor is passed
+      to <a href="/pkg/os/#NewFile"><code>NewFile</code></a>, calling
+      the <a href="/pkg/os/#File.Fd"><code>File.Fd</code></a> method
+      will now return a non-blocking descriptor. Previously the
+      descriptor was converted to blocking mode.
     </p>
 
     <p><!-- CL 477215 -->
@@ -884,8 +1006,12 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="runtime"><dt><a href="/pkg/runtime/">runtime</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/38651 -->
-      TODO: <a href="https://go.dev/issue/38651">https://go.dev/issue/38651</a>: add &#39;created by goroutine number&#39; to stack traces
+    <p><!-- https://go.dev/issue/38651, CL 435337 -->
+      Textual stack traces produced by Go programs, such as those
+      produced when crashing, calling <code>runtime.Stack</code>, or
+      collecting a goroutine profile with <code>debug=2</code>, now
+      include the IDs of the goroutines that created each goroutine in
+      the stack trace.
     </p>
 
     <p><!-- https://go.dev/issue/57441, CL 474915 -->
@@ -904,7 +1030,7 @@ Do not send CLs removing the interior tags from such phrases.
       <code>GODEBUG=cgocheck=1</code> is still available (and is still the default).
     </p>
 
-    <p><!-- https://go.dev/issue/46787 -->
+    <p><!-- https://go.dev/issue/46787, CL 367296 -->
       A new type <code>Pinner</code> has been added to the runtime
       package. <code>Pinner</code>s may be used to "pin" Go memory
       such that it may be used more freely by non-Go code. For instance,
@@ -915,8 +1041,22 @@ Do not send CLs removing the interior tags from such phrases.
 
       See <a href="/pkg/runtime#Pinner">the docs</a> for more details.
     </p>
+
+    <!-- CL 472195 no release note needed -->
   </dd>
 </dl><!-- runtime -->
+
+<dl id="runtime/metrics"><dt><a href="/pkg/runtime/metrics/">runtime/metrics</a></dt>
+  <dd>
+    <p><!-- https://go.dev/issue/56857, CL 497315 -->
+      A few previously-internal GC metrics, such as live heap size, are
+      now available.
+
+      <code>GOGC</code> and <code>GOMEMLIMIT</code> are also now
+      available as metrics.
+    </p>
+  </dd>
+</dl><!-- runtime/metrics -->
 
 <dl id="runtime/trace"><dt><a href="/pkg/runtime/trace/">runtime/trace</a></dt>
   <dd>
@@ -931,18 +1071,6 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
   </dd>
 </dl><!-- runtime/trace -->
-
-<dl id="runtime/metrics"><dt><a href="/pkg/runtime/metrics/">runtime/metrics</a></dt>
-  <dd>
-    <p><!-- https://go.dev/issue/56857 -->
-      A few previously-internal GC metrics, such as live heap size, are
-      now available.
-
-      <code>GOGC</code> and <code>GOMEMLIMIT</code> are also now
-      available as metrics.
-    </p>
-  </dd>
-</dl><!-- runtime/metrics -->
 
 <dl id="sync"><dt><a href="/pkg/sync/">sync</a></dt>
   <dd>
@@ -1038,7 +1166,7 @@ Do not send CLs removing the interior tags from such phrases.
 
 <h3 id="darwin">Darwin</h3>
 
-<p><!-- go.dev/issue/57125 -->
+<p><!-- https://go.dev/issue/57125 -->
   As <a href="go1.20#darwin">announced</a> in the Go 1.20 release notes,
   Go 1.21 requires macOS 10.15 Catalina or later;
   support for previous versions has been discontinued.
@@ -1046,7 +1174,7 @@ Do not send CLs removing the interior tags from such phrases.
 
 <h3 id="windows">Windows</h3>
 
-<p><!-- go.dev/issue/57003, go.dev/issue/57004 -->
+<p><!-- https://go.dev/issue/57003, https://go.dev/issue/57004 -->
   As <a href="go1.20#windows">announced</a> in the Go 1.20 release notes,
   Go 1.21 requires at least Windows 10 or Windows Server 2016;
   support for previous versions has been discontinued.
@@ -1096,3 +1224,11 @@ Do not send CLs removing the interior tags from such phrases.
 <!-- https://go.dev/issue/54232 -->
 <!-- https://go.dev/issue/57906 -->
 <!-- https://go.dev/issue/58668 -->
+<!-- https://go.dev/issue/59676 -->
+
+<!-- changes to cmd/api that don't need release notes. -->
+<!-- CL 469115, CL 469135, CL 499981 -->
+
+<!-- proposals that don't need release enotes. -->
+<!-- https://go.dev/issue/10275 -->
+<!-- https://go.dev/issue/59719 -->
