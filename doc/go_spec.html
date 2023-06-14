@@ -1,6 +1,6 @@
 <!--{
 	"Title": "The Go Programming Language Specification",
-	"Subtitle": "Version of June 7, 2023",
+	"Subtitle": "Version of June 13, 2023",
 	"Path": "/ref/spec"
 }-->
 
@@ -5588,21 +5588,6 @@ succeeds but the result value is implementation-dependent.
 
 <ol>
 <li>
-Converting a signed or unsigned integer value to a string type yields a
-string containing the UTF-8 representation of the integer. Values outside
-the range of valid Unicode code points are converted to <code>"\uFFFD"</code>.
-
-<pre>
-string('a')       // "a"
-string(-1)        // "\ufffd" == "\xef\xbf\xbd"
-string(0xf8)      // "\u00f8" == "ø" == "\xc3\xb8"
-
-type myString string
-myString(0x65e5)  // "\u65e5" == "日" == "\xe6\x97\xa5"
-</pre>
-</li>
-
-<li>
 Converting a slice of bytes to a string type yields
 a string whose successive bytes are the elements of the slice.
 
@@ -5667,6 +5652,31 @@ runes("白鵬翔")              // []rune{0x767d, 0x9d6c, 0x7fd4}
 []myRune("♫♬")              // []myRune{0x266b, 0x266c}
 []myRune(myString("🌐"))    // []myRune{0x1f310}
 </pre>
+</li>
+
+<li>
+Finally, for historical reasons, an integer value may be converted to a string type.
+This form of conversion yields a string containing the (possibly multi-byte) UTF-8
+representation of the Unicode code point with the given integer value.
+Values outside the range of valid Unicode code points are converted to <code>"\uFFFD"</code>.
+
+<pre>
+string('a')          // "a"
+string(65)           // "A"
+string('\xf8')       // "\u00f8" == "ø" == "\xc3\xb8"
+string(-1)           // "\ufffd" == "\xef\xbf\xbd"
+
+type myString string
+myString('\u65e5')   // "\u65e5" == "日" == "\xe6\x97\xa5"
+</pre>
+
+Note: This form of conversion may eventually be removed from the language.
+The <a href="/pkg/cmd/vet"><code>go vet</code></a> tool flags certain
+integer-to-string conversions as potential errors.
+Library functions such as
+<a href="/pkg/unicode/utf8#AppendRune"><code>utf8.AppendRune</code></a> or
+<a href="/pkg/unicode/utf8#EncodeRune"><code>utf8.EncodeRune</code></a>
+should be used instead.
 </li>
 </ol>
 
@@ -8003,6 +8013,9 @@ The declaration order of variables declared in multiple files is determined
 by the order in which the files are presented to the compiler: Variables
 declared in the first file are declared before any of the variables declared
 in the second file, and so on.
+To ensure reproducible initialization behavior, build systems are encouraged
+to present multiple files belonging to the same package in lexical file name
+order to a compiler.
 </p>
 
 <p>
@@ -8113,15 +8126,30 @@ in a program.
 </p>
 
 <p>
-A package with no imports is initialized by assigning initial values
-to all its package-level variables followed by calling all <code>init</code>
-functions in the order they appear in the source, possibly in multiple files,
-as presented to the compiler.
+The entire package is initialized by assigning initial values
+to all its package-level variables followed by calling
+all <code>init</code> functions in the order they appear
+in the source, possibly in multiple files, as presented
+to the compiler.
+</p>
+
+<h3 id="Program_initialization">Program initialization</h3>
+
+<p>
+The packages of a complete program are initialized stepwise, one package at a time.
 If a package has imports, the imported packages are initialized
 before initializing the package itself. If multiple packages import
 a package, the imported package will be initialized only once.
 The importing of packages, by construction, guarantees that there
 can be no cyclic initialization dependencies.
+More precisely:
+</p>
+
+<p>
+Given the list of all packages, sorted by import path, in each step the first
+uninitialized package in the list for which all imported packages (if any) are
+already initialized is <a href="#Package_initialization">initialized</a>.
+This step is repeated until all packages are initialized.
 </p>
 
 <p>
@@ -8134,13 +8162,6 @@ always sequences
 the <code>init</code> functions: it will not invoke the next one
 until the previous one has returned.
 </p>
-
-<p>
-To ensure reproducible initialization behavior, build systems are encouraged
-to present multiple files belonging to the same package in lexical file name
-order to a compiler.
-</p>
-
 
 <h3 id="Program_execution">Program execution</h3>
 <p>
@@ -8157,8 +8178,8 @@ func main() { … }
 </pre>
 
 <p>
-Program execution begins by initializing the main package and then
-invoking the function <code>main</code>.
+Program execution begins by <a href="#Program_initialization">initializing the program</a>
+and then invoking the function <code>main</code> in package <code>main</code>.
 When that function invocation returns, the program exits.
 It does not wait for other (non-<code>main</code>) goroutines to complete.
 </p>
