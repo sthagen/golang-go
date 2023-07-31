@@ -81,14 +81,24 @@ type tester struct {
 	worklist []*work
 }
 
+// work tracks command execution for a test.
 type work struct {
-	dt    *distTest
-	cmd   *exec.Cmd // Must write stdout/stderr to work.out
-	flush func()    // If non-nil, called after cmd.Run
-	start chan bool
-	out   bytes.Buffer
-	err   error
-	end   chan bool
+	dt    *distTest     // unique test name, etc.
+	cmd   *exec.Cmd     // must write stdout/stderr to out
+	flush func()        // if non-nil, called after cmd.Run
+	start chan bool     // a true means to start, a false means to skip
+	out   bytes.Buffer  // combined stdout/stderr from cmd
+	err   error         // work result
+	end   chan struct{} // a value means cmd ended (or was skipped)
+}
+
+// printSkip prints a skip message for all of work.
+func (w *work) printSkip(t *tester, msg string) {
+	if t.json {
+		synthesizeSkipEvent(json.NewEncoder(&w.out), w.dt.name, msg)
+		return
+	}
+	fmt.Fprintln(&w.out, msg)
 }
 
 // A distTest is a test run by dist test.
@@ -500,6 +510,18 @@ func (opts *goTest) packages() []string {
 		panic("no packages")
 	}
 	return pkgs
+}
+
+// printSkip prints a skip message for all of goTest.
+func (opts *goTest) printSkip(t *tester, msg string) {
+	if t.json {
+		enc := json.NewEncoder(os.Stdout)
+		for _, pkg := range opts.packages() {
+			synthesizeSkipEvent(enc, pkg, msg)
+		}
+		return
+	}
+	fmt.Println(msg)
 }
 
 // ranGoTest and stdMatches are state closed over by the stdlib
@@ -932,7 +954,7 @@ func (t *tester) registerTest(heading string, test *goTest, opts ...registerTest
 			if skipFunc != nil {
 				msg, skip := skipFunc(dt)
 				if skip {
-					t.printSkip(test, msg)
+					test.printSkip(t, msg)
 					return nil
 				}
 			}
@@ -957,30 +979,6 @@ func (t *tester) registerTest(heading string, test *goTest, opts ...registerTest
 		test1 := *test
 		test1.pkg, test1.pkgs = pkg, nil
 		register1(&test1)
-	}
-}
-
-func (t *tester) printSkip(test *goTest, msg string) {
-	if !t.json {
-		fmt.Println(msg)
-		return
-	}
-	type event struct {
-		Time    time.Time
-		Action  string
-		Package string
-		Output  string `json:",omitempty"`
-	}
-	out := json.NewEncoder(os.Stdout)
-	for _, pkg := range test.packages() {
-		ev := event{Time: time.Now(), Package: testName(pkg, test.variant), Action: "start"}
-		out.Encode(ev)
-		ev.Action = "output"
-		ev.Output = msg
-		out.Encode(ev)
-		ev.Action = "skip"
-		ev.Output = ""
-		out.Encode(ev)
 	}
 }
 
@@ -1245,8 +1243,8 @@ func (t *tester) registerCgoTests(heading string) {
 	}
 }
 
-// run pending test commands, in parallel, emitting headers as appropriate.
-// When finished, emit header for nextTest, which is going to run after the
+// runPending runs pending test commands, in parallel, emitting headers as appropriate.
+// When finished, it emits header for nextTest, which is going to run after the
 // pending commands are done (and runPending returns).
 // A test should call runPending if it wants to make sure that it is not
 // running in parallel with earlier tests, or if it has some other reason
@@ -1256,7 +1254,7 @@ func (t *tester) runPending(nextTest *distTest) {
 	t.worklist = nil
 	for _, w := range worklist {
 		w.start = make(chan bool)
-		w.end = make(chan bool)
+		w.end = make(chan struct{})
 		// w.cmd must be set up to write to w.out. We can't check that, but we
 		// can check for easy mistakes.
 		if w.cmd.Stdout == nil || w.cmd.Stdout == os.Stdout || w.cmd.Stderr == nil || w.cmd.Stderr == os.Stderr {
@@ -1265,7 +1263,7 @@ func (t *tester) runPending(nextTest *distTest) {
 		go func(w *work) {
 			if !<-w.start {
 				timelog("skip", w.dt.name)
-				w.out.WriteString("skipped due to earlier error\n")
+				w.printSkip(t, "skipped due to earlier error")
 			} else {
 				timelog("start", w.dt.name)
 				w.err = w.cmd.Run()
@@ -1276,13 +1274,13 @@ func (t *tester) runPending(nextTest *distTest) {
 					if isUnsupportedVMASize(w) {
 						timelog("skip", w.dt.name)
 						w.out.Reset()
-						w.out.WriteString("skipped due to unsupported VMA\n")
+						w.printSkip(t, "skipped due to unsupported VMA")
 						w.err = nil
 					}
 				}
 			}
 			timelog("end", w.dt.name)
-			w.end <- true
+			w.end <- struct{}{}
 		}(w)
 	}
 
@@ -1530,7 +1528,7 @@ func (t *tester) makeGOROOTUnwritable() (undo func()) {
 // internal/platform.RaceDetectorSupported, which can't be used here
 // because cmd/dist can not import internal packages during bootstrap.
 // The race detector only supports 48-bit VMA on arm64. But we don't have
-// a good solution to check VMA size(See https://golang.org/issue/29948)
+// a good solution to check VMA size (see https://go.dev/issue/29948).
 // raceDetectorSupported will always return true for arm64. But race
 // detector tests may abort on non 48-bit VMA configuration, the tests
 // will be marked as "skipped" in this case.
@@ -1639,10 +1637,10 @@ func buildModeSupported(compiler, buildmode, goos, goarch string) bool {
 
 // isUnsupportedVMASize reports whether the failure is caused by an unsupported
 // VMA for the race detector (for example, running the race detector on an
-// arm64 machine configured with 39-bit VMA)
+// arm64 machine configured with 39-bit VMA).
 func isUnsupportedVMASize(w *work) bool {
 	unsupportedVMA := []byte("unsupported VMA range")
-	return w.dt.name == "race" && bytes.Contains(w.out.Bytes(), unsupportedVMA)
+	return strings.Contains(w.dt.name, ":race") && bytes.Contains(w.out.Bytes(), unsupportedVMA)
 }
 
 // isEnvSet reports whether the environment variable evar is
