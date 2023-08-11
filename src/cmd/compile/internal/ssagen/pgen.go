@@ -64,6 +64,22 @@ func cmpstackvarlt(a, b *ir.Name) bool {
 		return a.Type().Alignment() > b.Type().Alignment()
 	}
 
+	// Sort normal variables before open-coded-defer slots, so that the
+	// latter are grouped together and near the top of the frame (to
+	// minimize varint encoding of their varp offset).
+	if a.OpenDeferSlot() != b.OpenDeferSlot() {
+		return a.OpenDeferSlot()
+	}
+
+	// If a and b are both open-coded defer slots, then order them by
+	// index in descending order, so they'll be laid out in the frame in
+	// ascending order.
+	//
+	// Their index was saved in FrameOffset in state.openDeferSave.
+	if a.OpenDeferSlot() {
+		return a.FrameOffset() > b.FrameOffset()
+	}
+
 	// Tie breaker for stable results.
 	return a.Sym().Name < b.Sym().Name
 }
@@ -105,6 +121,14 @@ func (s *ssafn) AllocFrame(f *ssa.Func) {
 
 	// Mark the PAUTO's unused.
 	for _, ln := range fn.Dcl {
+		if ln.OpenDeferSlot() {
+			// Open-coded defer slots have indices that were assigned
+			// upfront during SSA construction, but the defer statement can
+			// later get removed during deadcode elimination (#61895). To
+			// keep their relative offsets correct, treat them all as used.
+			continue
+		}
+
 		if needAlloc(ln) {
 			ln.SetUsed(false)
 		}

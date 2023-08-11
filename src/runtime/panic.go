@@ -635,18 +635,25 @@ func (p *_panic) start(pc uintptr, sp unsafe.Pointer) {
 	p.startPC = getcallerpc()
 	p.startSP = unsafe.Pointer(getcallersp())
 
-	if !p.deferreturn {
-		p.link = gp._panic
-		gp._panic = (*_panic)(noescape(unsafe.Pointer(p)))
-	} else {
-		// Fast path for deferreturn: if there's a pending linked defer
-		// for this frame, then we know there aren't any open-coded
-		// defers, and we don't need to find the parent frame either.
-		if d := gp._defer; d != nil && d.sp == uintptr(sp) {
-			p.sp = sp
-			return
+	if p.deferreturn {
+		p.sp = sp
+
+		if s := (*savedOpenDeferState)(gp.param); s != nil {
+			// recovery saved some state for us, so that we can resume
+			// calling open-coded defers without unwinding the stack.
+
+			gp.param = nil
+
+			p.retpc = s.retpc
+			p.deferBitsPtr = (*byte)(add(sp, s.deferBitsOffset))
+			p.slotsPtr = add(sp, s.slotsOffset)
 		}
+
+		return
 	}
+
+	p.link = gp._panic
+	gp._panic = (*_panic)(noescape(unsafe.Pointer(p)))
 
 	// Initialize state machine, and find the first frame with a defer.
 	//
@@ -682,24 +689,30 @@ func (p *_panic) nextDefer() (func(), bool) {
 	p.argp = add(p.startSP, sys.MinFrameSize)
 
 	for {
-		for p.openDefers > 0 {
-			p.openDefers--
+		for p.deferBitsPtr != nil {
+			bits := *p.deferBitsPtr
 
-			// Find the closure offset for the next deferred call.
-			var closureOffset uint32
-			closureOffset, p.closureOffsets = readvarintUnsafe(p.closureOffsets)
-
-			bit := uint8(1 << p.openDefers)
-			if *p.deferBitsPtr&bit == 0 {
-				continue
+			// Check whether any open-coded defers are still pending.
+			//
+			// Note: We need to check this upfront (rather than after
+			// clearing the top bit) because it's possible that Goexit
+			// invokes a deferred call, and there were still more pending
+			// open-coded defers in the frame; but then the deferred call
+			// panic and invoked the remaining defers in the frame, before
+			// recovering and restarting the Goexit loop.
+			if bits == 0 {
+				p.deferBitsPtr = nil
+				break
 			}
-			*p.deferBitsPtr &^= bit
 
-			if *p.deferBitsPtr == 0 {
-				p.openDefers = 0 // short circuit: no more active defers
-			}
+			// Find index of top bit set.
+			i := 7 - uintptr(sys.LeadingZeros8(bits))
 
-			return *(*func())(add(p.varp, -uintptr(closureOffset))), true
+			// Clear bit and store it back.
+			bits &^= 1 << i
+			*p.deferBitsPtr = bits
+
+			return *(*func())(add(p.slotsPtr, i*goarch.PtrSize)), true
 		}
 
 		if d := gp._defer; d != nil && d.sp == uintptr(p.sp) {
@@ -733,9 +746,7 @@ func (p *_panic) nextFrame() (ok bool) {
 	gp := getg()
 	systemstack(func() {
 		var limit uintptr
-		if p.deferreturn {
-			limit = uintptr(p.fp)
-		} else if d := gp._defer; d != nil {
+		if d := gp._defer; d != nil {
 			limit = uintptr(d.sp)
 		}
 
@@ -752,47 +763,50 @@ func (p *_panic) nextFrame() (ok bool) {
 			// then we can simply loop until we find the next frame where
 			// it's non-zero.
 
-			if fd := funcdata(u.frame.fn, abi.FUNCDATA_OpenCodedDeferInfo); fd != nil {
-				if u.frame.fn.deferreturn == 0 {
-					throw("missing deferreturn")
-				}
-				p.retpc = u.frame.fn.entry() + uintptr(u.frame.fn.deferreturn)
-
-				var deferBitsOffset uint32
-				deferBitsOffset, fd = readvarintUnsafe(fd)
-				deferBitsPtr := (*uint8)(add(unsafe.Pointer(u.frame.varp), -uintptr(deferBitsOffset)))
-
-				if *deferBitsPtr != 0 {
-					var openDefers uint32
-					openDefers, fd = readvarintUnsafe(fd)
-
-					p.openDefers = uint8(openDefers)
-					p.deferBitsPtr = deferBitsPtr
-					p.closureOffsets = fd
-					break // found a frame with open-coded defers
-				}
+			if u.frame.sp == limit {
+				break // found a frame with linked defers
 			}
 
-			if u.frame.sp == limit {
-				break // found a frame with linked defers, or deferreturn with no defers
+			if p.initOpenCodedDefers(u.frame.fn, unsafe.Pointer(u.frame.varp)) {
+				break // found a frame with open-coded defers
 			}
 
 			u.next()
 		}
 
-		if p.deferreturn {
-			p.lr = 0 // prevent unwinding past this frame
-		} else {
-			p.lr = u.frame.lr
-		}
+		p.lr = u.frame.lr
 		p.sp = unsafe.Pointer(u.frame.sp)
 		p.fp = unsafe.Pointer(u.frame.fp)
-		p.varp = unsafe.Pointer(u.frame.varp)
 
 		ok = true
 	})
 
 	return
+}
+
+func (p *_panic) initOpenCodedDefers(fn funcInfo, varp unsafe.Pointer) bool {
+	fd := funcdata(fn, abi.FUNCDATA_OpenCodedDeferInfo)
+	if fd == nil {
+		return false
+	}
+
+	if fn.deferreturn == 0 {
+		throw("missing deferreturn")
+	}
+
+	deferBitsOffset, fd := readvarintUnsafe(fd)
+	deferBitsPtr := (*uint8)(add(varp, -uintptr(deferBitsOffset)))
+	if *deferBitsPtr == 0 {
+		return false // has open-coded defers, but none pending
+	}
+
+	slotsOffset, fd := readvarintUnsafe(fd)
+
+	p.retpc = fn.entry() + uintptr(fn.deferreturn)
+	p.deferBitsPtr = deferBitsPtr
+	p.slotsPtr = add(varp, -uintptr(slotsOffset))
+
+	return true
 }
 
 // The implementation of the predeclared function recover.
@@ -885,6 +899,7 @@ var paniclk mutex
 func recovery(gp *g) {
 	p := gp._panic
 	pc, sp := p.retpc, uintptr(p.sp)
+	p0, saveOpenDeferState := p, p.deferBitsPtr != nil && *p.deferBitsPtr != 0
 
 	// Unwind the panic stack.
 	for ; p != nil && uintptr(p.startSP) < sp; p = p.link {
@@ -909,6 +924,7 @@ func recovery(gp *g) {
 		// worthwhile though.
 		if p.goexit {
 			pc, sp = p.startPC, uintptr(p.startSP)
+			saveOpenDeferState = false // goexit is unwinding the stack anyway
 			break
 		}
 
@@ -918,6 +934,24 @@ func recovery(gp *g) {
 
 	if p == nil { // must be done with signal
 		gp.sig = 0
+	}
+
+	if gp.param != nil {
+		throw("unexpected gp.param")
+	}
+	if saveOpenDeferState {
+		// If we're returning to deferreturn and there are more open-coded
+		// defers for it to call, save enough state for it to be able to
+		// pick up where p0 left off.
+		gp.param = unsafe.Pointer(&savedOpenDeferState{
+			retpc: p0.retpc,
+
+			// We need to save deferBitsPtr and slotsPtr too, but those are
+			// stack pointers. To avoid issues around heap objects pointing
+			// to the stack, save them as offsets from SP.
+			deferBitsOffset: uintptr(unsafe.Pointer(p0.deferBitsPtr)) - uintptr(p0.sp),
+			slotsOffset:     uintptr(p0.slotsPtr) - uintptr(p0.sp),
+		})
 	}
 
 	// TODO(mdempsky): Currently, we rely on frames containing "defer"

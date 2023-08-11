@@ -427,6 +427,28 @@ func TestDirectorySymbolicLink(t *testing.T) {
 	testDirLinks(t, tests)
 }
 
+func mustHaveWorkstation(t *testing.T) {
+	mar, err := windows.OpenSCManager(nil, nil, windows.SERVICE_QUERY_STATUS)
+	if err != nil {
+		return
+	}
+	defer syscall.CloseHandle(mar)
+	//LanmanWorkstation is the service name, and Workstation is the display name.
+	srv, err := windows.OpenService(mar, syscall.StringToUTF16Ptr("LanmanWorkstation"), windows.SERVICE_QUERY_STATUS)
+	if err != nil {
+		return
+	}
+	defer syscall.CloseHandle(srv)
+	var state windows.SERVICE_STATUS
+	err = windows.QueryServiceStatus(srv, &state)
+	if err != nil {
+		return
+	}
+	if state.CurrentState != windows.SERVICE_RUNNING {
+		t.Skip("Requires the Windows service Workstation, but it is detected that it is not enabled.")
+	}
+}
+
 func TestNetworkSymbolicLink(t *testing.T) {
 	testenv.MustHaveSymlink(t)
 
@@ -498,6 +520,7 @@ func TestNetworkSymbolicLink(t *testing.T) {
 	}
 	fi2, err := os.Stat(UNCPath)
 	if err != nil {
+		mustHaveWorkstation(t)
 		t.Fatal(err)
 	}
 	if !os.SameFile(fi1, fi2) {
@@ -527,6 +550,45 @@ func TestNetworkSymbolicLink(t *testing.T) {
 	}
 	if got != target {
 		t.Errorf(`filepath.EvalSymlinks(%#q): got %v, want %v`, link, got, target)
+	}
+}
+
+func TestStatLxSymLink(t *testing.T) {
+	if _, err := exec.LookPath("wsl"); err != nil {
+		t.Skip("skipping: WSL not detected")
+	}
+
+	temp := t.TempDir()
+	chdir(t, temp)
+
+	const target = "target"
+	const link = "link"
+
+	_, err := testenv.Command(t, "wsl", "/bin/mkdir", target).Output()
+	if err != nil {
+		// This normally happens when WSL still doesn't have a distro installed to run on.
+		t.Skipf("skipping: WSL is not correctly installed: %v", err)
+	}
+
+	_, err = testenv.Command(t, "wsl", "/bin/ln", "-s", target, link).Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fi, err := os.Lstat(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := fi.Mode(); m&fs.ModeSymlink != 0 {
+		// This can happen depending on newer WSL versions when running as admin or in developer mode.
+		t.Skip("skipping: WSL created reparse tag IO_REPARSE_TAG_SYMLINK instead of a IO_REPARSE_TAG_LX_SYMLINK")
+	}
+	// Stat'ing a IO_REPARSE_TAG_LX_SYMLINK from outside WSL always return ERROR_CANT_ACCESS_FILE.
+	// We check this condition to validate that os.Stat has tried to follow the link.
+	_, err = os.Stat(link)
+	const ERROR_CANT_ACCESS_FILE = syscall.Errno(1920)
+	if err == nil || !errors.Is(err, ERROR_CANT_ACCESS_FILE) {
+		t.Fatalf("os.Stat(%q): got %v, want ERROR_CANT_ACCESS_FILE", link, err)
 	}
 }
 
