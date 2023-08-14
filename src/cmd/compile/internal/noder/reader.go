@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"cmd/compile/internal/base"
-	"cmd/compile/internal/deadcode"
 	"cmd/compile/internal/dwarfgen"
 	"cmd/compile/internal/inline"
 	"cmd/compile/internal/ir"
@@ -1900,6 +1899,10 @@ func (r *reader) forStmt(label *types.Sym) ir.Node {
 	perLoopVars := r.Bool()
 	r.closeAnotherScope()
 
+	if ir.IsConst(cond, constant.Bool) && !ir.BoolVal(cond) {
+		return init // simplify "for init; false; post { ... }" into "init"
+	}
+
 	stmt := ir.NewForStmt(pos, init, cond, post, body, perLoopVars)
 	stmt.Label = label
 	return stmt
@@ -1913,9 +1916,14 @@ func (r *reader) ifStmt() ir.Node {
 	cond := r.expr()
 	then := r.blockStmt()
 	els := r.stmts()
+	r.closeAnotherScope()
+
+	if ir.IsConst(cond, constant.Bool) && len(init)+len(then)+len(els) == 0 {
+		return nil // drop empty if statement
+	}
+
 	n := ir.NewIfStmt(pos, cond, then, els)
 	n.SetInit(init)
-	r.closeAnotherScope()
 	return n
 }
 
@@ -3007,7 +3015,14 @@ func (r *reader) tempCopy(pos src.XPos, expr ir.Node, init *ir.Nodes) *ir.Name {
 		assign.Def = true
 		tmp.Defn = assign
 
-		typecheck.Target.Decls = append(typecheck.Target.Decls, typecheck.Stmt(assign))
+		// TODO(mdempsky): This code doesn't work anymore, because we now
+		// rely on types2 to compute InitOrder. If it's going to be used
+		// for testing again, the assignment here probably needs to be
+		// added to typecheck.Target.InitOrder somewhere.
+		//
+		// Probably just easier to address the escape analysis limitation.
+		//
+		// typecheck.Target.Decls = append(typecheck.Target.Decls, typecheck.Stmt(assign))
 
 		return tmp
 	}
@@ -3305,6 +3320,30 @@ func (r *reader) pkgInit(self *types.Pkg, target *ir.Package) {
 
 	r.pkgDecls(target)
 
+	initOrder := make([]ir.Node, r.Len())
+	for i := range initOrder {
+		lhs := make([]ir.Node, r.Len())
+		for j := range lhs {
+			lhs[j] = r.obj()
+		}
+		rhs := r.expr()
+		pos := lhs[0].Pos()
+
+		var as ir.Node
+		if len(lhs) == 1 {
+			as = typecheck.Stmt(ir.NewAssignStmt(pos, lhs[0], rhs))
+		} else {
+			as = typecheck.Stmt(ir.NewAssignListStmt(pos, ir.OAS2, lhs, []ir.Node{rhs}))
+		}
+
+		for _, v := range lhs {
+			v.(*ir.Name).Defn = as
+		}
+
+		initOrder[i] = as
+	}
+	target.InitOrder = initOrder
+
 	r.Sync(pkgbits.SyncEOF)
 }
 
@@ -3321,37 +3360,17 @@ func (r *reader) pkgDecls(target *ir.Package) {
 		case declFunc:
 			names := r.pkgObjs(target)
 			assert(len(names) == 1)
-			target.Decls = append(target.Decls, names[0].Func)
+			target.Funcs = append(target.Funcs, names[0].Func)
 
 		case declMethod:
 			typ := r.typ()
 			_, sym := r.selector()
 
 			method := typecheck.Lookdot1(nil, sym, typ, typ.Methods(), 0)
-			target.Decls = append(target.Decls, method.Nname.(*ir.Name).Func)
+			target.Funcs = append(target.Funcs, method.Nname.(*ir.Name).Func)
 
 		case declVar:
-			pos := r.pos()
 			names := r.pkgObjs(target)
-			values := r.exprList()
-
-			if len(names) > 1 && len(values) == 1 {
-				as := ir.NewAssignListStmt(pos, ir.OAS2, nil, values)
-				for _, name := range names {
-					as.Lhs.Append(name)
-					name.Defn = as
-				}
-				target.Decls = append(target.Decls, as)
-			} else {
-				for i, name := range names {
-					as := ir.NewAssignStmt(pos, name, nil)
-					if i < len(values) {
-						as.Y = values[i]
-					}
-					name.Defn = as
-					target.Decls = append(target.Decls, as)
-				}
-			}
 
 			if n := r.Len(); n > 0 {
 				assert(len(names) == 1)
@@ -3399,15 +3418,15 @@ func (r *reader) pkgObjs(target *ir.Package) []*ir.Name {
 			}
 		}
 
-		if types.IsExported(sym.Name) {
+		if base.Ctxt.Flag_dynlink && types.LocalPkg.Name == "main" && types.IsExported(sym.Name) && name.Op() == ir.ONAME {
 			assert(!sym.OnExportList())
-			target.Exports = append(target.Exports, name)
+			target.PluginExports = append(target.PluginExports, name)
 			sym.SetOnExportList(true)
 		}
 
-		if base.Flag.AsmHdr != "" {
+		if base.Flag.AsmHdr != "" && (name.Op() == ir.OLITERAL || name.Op() == ir.OTYPE) {
 			assert(!sym.Asm())
-			target.Asms = append(target.Asms, name)
+			target.AsmHdrDecls = append(target.AsmHdrDecls, name)
 			sym.SetAsm(true)
 		}
 	}
@@ -3527,8 +3546,6 @@ func unifiedInlineCall(call *ir.CallExpr, fn *ir.Func, inlIndex int) *ir.Inlined
 	// Note issue 28603.
 	init.Append(ir.NewInlineMarkStmt(call.Pos().WithIsStmt(), int64(r.inlTreeIndex)))
 
-	nparams := len(r.curfn.Dcl)
-
 	ir.WithFunc(r.curfn, func() {
 		if !r.syntheticBody(call.Pos()) {
 			assert(r.Bool()) // have body
@@ -3544,8 +3561,6 @@ func unifiedInlineCall(call *ir.CallExpr, fn *ir.Func, inlIndex int) *ir.Inlined
 		// themselves. But currently it's an easy fix to #50552.
 		readBodies(typecheck.Target, true)
 
-		deadcode.Func(r.curfn)
-
 		// Replace any "return" statements within the function body.
 		var edit func(ir.Node) ir.Node
 		edit = func(n ir.Node) ir.Node {
@@ -3560,22 +3575,14 @@ func unifiedInlineCall(call *ir.CallExpr, fn *ir.Func, inlIndex int) *ir.Inlined
 
 	body := ir.Nodes(r.curfn.Body)
 
-	// Quirkish: We need to eagerly prune variables added during
-	// inlining, but removed by deadcode.FuncBody above. Unused
-	// variables will get removed during stack frame layout anyway, but
-	// len(fn.Dcl) ends up influencing things like autotmp naming.
+	// Reparent any declarations into the caller function.
+	for _, name := range r.curfn.Dcl {
+		name.Curfn = callerfn
+		callerfn.Dcl = append(callerfn.Dcl, name)
 
-	used := usedLocals(body)
-
-	for i, name := range r.curfn.Dcl {
-		if i < nparams || used.Has(name) {
-			name.Curfn = callerfn
-			callerfn.Dcl = append(callerfn.Dcl, name)
-
-			if name.AutoTemp() {
-				name.SetEsc(ir.EscUnknown)
-				name.SetInlLocal(true)
-			}
+		if name.AutoTemp() {
+			name.SetEsc(ir.EscUnknown)
+			name.SetInlLocal(true)
 		}
 	}
 
@@ -3629,7 +3636,7 @@ func expandInline(fn *ir.Func, pri pkgReaderIndex) {
 	// with the same information some other way.
 
 	fndcls := len(fn.Dcl)
-	topdcls := len(typecheck.Target.Decls)
+	topdcls := len(typecheck.Target.Funcs)
 
 	tmpfn := ir.NewFunc(fn.Pos())
 	tmpfn.Nname = ir.NewNameAt(fn.Nname.Pos(), fn.Sym())
@@ -3643,10 +3650,6 @@ func expandInline(fn *ir.Func, pri pkgReaderIndex) {
 		r.funarghack = true
 
 		r.funcBody(tmpfn)
-
-		ir.WithFunc(tmpfn, func() {
-			deadcode.Func(tmpfn)
-		})
 	}
 
 	used := usedLocals(tmpfn.Body)
@@ -3665,7 +3668,7 @@ func expandInline(fn *ir.Func, pri pkgReaderIndex) {
 	// typecheck.Stmts may have added function literals to
 	// typecheck.Target.Decls. Remove them again so we don't risk trying
 	// to compile them multiple times.
-	typecheck.Target.Decls = typecheck.Target.Decls[:topdcls]
+	typecheck.Target.Funcs = typecheck.Target.Funcs[:topdcls]
 }
 
 // usedLocals returns a set of local variables that are used within body.
@@ -3929,7 +3932,7 @@ func finishWrapperFunc(fn *ir.Func, target *ir.Package) {
 		}
 	})
 
-	target.Decls = append(target.Decls, fn)
+	target.Funcs = append(target.Funcs, fn)
 }
 
 // newWrapperType returns a copy of the given signature type, but with

@@ -21,11 +21,8 @@ import (
 
 // MakeInit creates a synthetic init function to handle any
 // package-scope initialization statements.
-//
-// TODO(mdempsky): Move into noder, so that the types2-based frontends
-// can use Info.InitOrder instead.
 func MakeInit() {
-	nf := initOrder(typecheck.Target.Decls)
+	nf := typecheck.Target.InitOrder
 	if len(nf) == 0 {
 		return
 	}
@@ -59,7 +56,7 @@ func MakeInit() {
 	ir.WithFunc(fn, func() {
 		typecheck.Stmts(nf)
 	})
-	typecheck.Target.Decls = append(typecheck.Target.Decls, fn)
+	typecheck.Target.Funcs = append(typecheck.Target.Funcs, fn)
 	if base.Debug.WrapGlobalMapDbg > 1 {
 		fmt.Fprintf(os.Stderr, "=-= len(newfuncs) is %d for %v\n",
 			len(newfuncs), fn)
@@ -68,7 +65,7 @@ func MakeInit() {
 		if base.Debug.WrapGlobalMapDbg > 1 {
 			fmt.Fprintf(os.Stderr, "=-= add to target.decls %v\n", nfn)
 		}
-		typecheck.Target.Decls = append(typecheck.Target.Decls, ir.Node(nfn))
+		typecheck.Target.Funcs = append(typecheck.Target.Funcs, nfn)
 	}
 
 	// Prepend to Inits, so it runs first, before any user-declared init
@@ -84,13 +81,13 @@ func MakeInit() {
 	typecheck.InitTodoFunc = nil
 }
 
-// Task makes and returns an initialization record for the package.
+// MakeTask makes an initialization record for the package, if necessary.
 // See runtime/proc.go:initTask for its layout.
 // The 3 tasks for initialization are:
 //  1. Initialize all of the packages the current package depends on.
 //  2. Initialize all the variables that have initializers.
 //  3. Run any init functions.
-func Task() *ir.Name {
+func MakeTask() {
 	var deps []*obj.LSym // initTask records for packages the current package depends on
 	var fns []*obj.LSym  // functions to call for package initialization
 
@@ -153,7 +150,7 @@ func Task() *ir.Name {
 			typecheck.Stmts(fnInit.Body)
 			ir.CurFunc = nil
 
-			typecheck.Target.Decls = append(typecheck.Target.Decls, fnInit)
+			typecheck.Target.Funcs = append(typecheck.Target.Funcs, fnInit)
 			typecheck.Target.Inits = append(typecheck.Target.Inits, fnInit)
 		}
 	}
@@ -191,7 +188,7 @@ func Task() *ir.Name {
 	}
 
 	if len(deps) == 0 && len(fns) == 0 && types.LocalPkg.Path != "main" && types.LocalPkg.Path != "runtime" {
-		return nil // nothing to initialize
+		return // nothing to initialize
 	}
 
 	// Make an .inittask structure.
@@ -219,7 +216,6 @@ func Task() *ir.Name {
 	// An initTask has pointers, but none into the Go heap.
 	// It's not quite read only, the state field must be modifiable.
 	objw.Global(lsym, int32(ot), obj.NOPTR)
-	return task
 }
 
 // initRequiredForCoverage returns TRUE if we need to force creation

@@ -113,6 +113,11 @@ func (s *Schedule) staticcopy(l *ir.Name, loff int64, rn *ir.Name, typ *types.Ty
 	if rn.Class != ir.PEXTERN || rn.Sym().Pkg != types.LocalPkg {
 		return false
 	}
+	if rn.Defn == nil {
+		// No explicit initialization value. Probably zeroed but perhaps
+		// supplied externally and of unknown value.
+		return false
+	}
 	if rn.Defn.Op() != ir.OAS {
 		return false
 	}
@@ -125,9 +130,8 @@ func (s *Schedule) staticcopy(l *ir.Name, loff int64, rn *ir.Name, typ *types.Ty
 	orig := rn
 	r := rn.Defn.(*ir.AssignStmt).Y
 	if r == nil {
-		// No explicit initialization value. Probably zeroed but perhaps
-		// supplied externally and of unknown value.
-		return false
+		// types2.InitOrder doesn't include default initializers.
+		base.Fatalf("unexpected initializer: %v", rn.Defn)
 	}
 
 	for r.Op() == ir.OCONVNOP && !types.Identical(r.Type(), typ) {
@@ -677,9 +681,15 @@ var statuniqgen int // name generator for static temps
 // Use readonlystaticname for read-only node.
 func StaticName(t *types.Type) *ir.Name {
 	// Don't use LookupNum; it interns the resulting string, but these are all unique.
-	n := typecheck.NewName(typecheck.Lookup(fmt.Sprintf("%s%d", obj.StaticNamePref, statuniqgen)))
+	sym := typecheck.Lookup(fmt.Sprintf("%s%d", obj.StaticNamePref, statuniqgen))
 	statuniqgen++
-	typecheck.Declare(n, ir.PEXTERN)
+
+	n := typecheck.NewName(sym)
+	sym.Def = n
+
+	n.Class = ir.PEXTERN
+	typecheck.Target.Externs = append(typecheck.Target.Externs, n)
+
 	n.SetType(t)
 	n.Linksym().Set(obj.AttrStatic, true)
 	return n

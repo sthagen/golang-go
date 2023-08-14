@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/coverage"
-	"cmd/compile/internal/deadcode"
 	"cmd/compile/internal/devirtualize"
 	"cmd/compile/internal/dwarfgen"
 	"cmd/compile/internal/escape"
@@ -212,34 +211,12 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	// because it generates itabs for initializing global variables.
 	ssagen.InitConfig()
 
-	// First part of coverage fixup (if applicable).
-	var cnames coverage.Names
-	if base.Flag.Cfg.CoverageInfo != nil {
-		cnames = coverage.FixupVars()
-	}
-
 	// Create "init" function for package-scope variable initialization
 	// statements, if any.
-	//
-	// Note: This needs to happen early, before any optimizations. The
-	// Go spec defines a precise order than initialization should be
-	// carried out in, and even mundane optimizations like dead code
-	// removal can skew the results (e.g., #43444).
 	pkginit.MakeInit()
 
-	// Second part of code coverage fixup (init func modification),
-	// if applicable.
-	if base.Flag.Cfg.CoverageInfo != nil {
-		coverage.FixupInit(cnames)
-	}
-
-	// Eliminate some obviously dead code.
-	// Must happen after typechecking.
-	for _, n := range typecheck.Target.Decls {
-		if n.Op() == ir.ODCLFUNC {
-			deadcode.Func(n.(*ir.Func))
-		}
-	}
+	// Apply coverage fixups, if applicable.
+	coverage.Fixup()
 
 	// Compute Addrtaken for names.
 	// We need to wait until typechecking is done so that when we see &x[i]
@@ -247,7 +224,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	// We compute Addrtaken in bulk here.
 	// After this phase, we maintain Addrtaken incrementally.
 	if typecheck.DirtyAddrtaken {
-		typecheck.ComputeAddrtaken(typecheck.Target.Decls)
+		typecheck.ComputeAddrtaken(typecheck.Target.Funcs)
 		typecheck.DirtyAddrtaken = false
 	}
 	typecheck.IncrementalAddrtaken = true
@@ -268,7 +245,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 		// TODO(prattmic): No need to use bottom-up visit order. This
 		// is mirroring the PGO IRGraph visit order, which also need
 		// not be bottom-up.
-		ir.VisitFuncsBottomUp(typecheck.Target.Decls, func(list []*ir.Func, recursive bool) {
+		ir.VisitFuncsBottomUp(typecheck.Target.Funcs, func(list []*ir.Func, recursive bool) {
 			for _, fn := range list {
 				devirtualize.ProfileGuided(fn, profile)
 			}
@@ -285,18 +262,14 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 
 	// Devirtualize and get variable capture right in for loops
 	var transformed []loopvar.VarAndLoop
-	for _, n := range typecheck.Target.Decls {
-		if n.Op() == ir.ODCLFUNC {
-			devirtualize.Static(n.(*ir.Func))
-			transformed = append(transformed, loopvar.ForCapture(n.(*ir.Func))...)
-		}
+	for _, n := range typecheck.Target.Funcs {
+		devirtualize.Static(n)
+		transformed = append(transformed, loopvar.ForCapture(n)...)
 	}
 	ir.CurFunc = nil
 
 	// Build init task, if needed.
-	if initTask := pkginit.Task(); initTask != nil {
-		typecheck.Export(initTask)
-	}
+	pkginit.MakeTask()
 
 	// Generate ABI wrappers. Must happen before escape analysis
 	// and doesn't benefit from dead-coding or inlining.
@@ -311,7 +284,7 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	// Large values are also moved off stack in escape analysis;
 	// because large values may contain pointers, it must happen early.
 	base.Timer.Start("fe", "escapes")
-	escape.Funcs(typecheck.Target.Decls)
+	escape.Funcs(typecheck.Target.Funcs)
 
 	loopvar.LogTransformations(transformed)
 
@@ -329,15 +302,14 @@ func Main(archInit func(*ssagen.ArchInfo)) {
 	// Don't use range--walk can add functions to Target.Decls.
 	base.Timer.Start("be", "compilefuncs")
 	fcount := int64(0)
-	for i := 0; i < len(typecheck.Target.Decls); i++ {
-		if fn, ok := typecheck.Target.Decls[i].(*ir.Func); ok {
-			// Don't try compiling dead hidden closure.
-			if fn.IsDeadcodeClosure() {
-				continue
-			}
-			enqueueFunc(fn)
-			fcount++
+	for i := 0; i < len(typecheck.Target.Funcs); i++ {
+		fn := typecheck.Target.Funcs[i]
+		// Don't try compiling dead hidden closure.
+		if fn.IsDeadcodeClosure() {
+			continue
 		}
+		enqueueFunc(fn)
+		fcount++
 	}
 	base.Timer.AddEvent(fcount, "funcs")
 
