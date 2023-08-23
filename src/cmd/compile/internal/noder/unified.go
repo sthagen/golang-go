@@ -83,8 +83,6 @@ func unified(m posMap, noders []*noder) {
 
 	target := typecheck.Target
 
-	typecheck.TypecheckAllowed = true
-
 	localPkgReader = newPkgReader(pkgbits.NewPkgDecoder(types.LocalPkg.Path, data))
 	readPackage(localPkgReader, types.LocalPkg, true)
 
@@ -111,7 +109,7 @@ func unified(m posMap, noders []*noder) {
 	// For functions originally came from package runtime,
 	// mark as norace to prevent instrumenting, see issue #60439.
 	for _, fn := range target.Funcs {
-		if !base.Flag.CompilingRuntime && types.IsRuntimePkg(fn.Sym().Pkg) {
+		if !base.Flag.CompilingRuntime && types.RuntimeSymName(fn.Sym()) != "" {
 			fn.Pragma |= ir.Norace
 		}
 	}
@@ -319,7 +317,7 @@ func readPackage(pr *pkgReader, importpkg *types.Pkg, localStub bool) {
 
 		if r.Bool() {
 			sym := importpkg.Lookup(".inittask")
-			task := ir.NewNameAt(src.NoXPos, sym)
+			task := ir.NewNameAt(src.NoXPos, sym, nil)
 			task.Class = ir.PEXTERN
 			sym.Def = task
 		}

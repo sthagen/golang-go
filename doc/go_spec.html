@@ -1,6 +1,6 @@
 <!--{
 	"Title": "The Go Programming Language Specification",
-	"Subtitle": "Version of Aug 2, 2023",
+	"Subtitle": "Version of Aug 21, 2023",
 	"Path": "/ref/spec"
 }-->
 
@@ -4491,7 +4491,7 @@ the type parameters of the functions that need to be instantiated
 and for which no explicit type arguments is provided.
 These type parameters are called <i>bound</i> type parameters.
 For instance, in the <code>dedup</code> example above, the type parameters
-<code>P</code> and <code>E</code> are bound to <code>dedup</code>.
+<code>S</code> and <code>E</code> are bound to <code>dedup</code>.
 An argument to a generic function call may be a generic function itself.
 The type parameters of that function are included in the set of bound
 type parameters.
@@ -5570,7 +5570,7 @@ myString([]myRune{0x1f30e})              // "\U0001f30e" == "🌎"
 
 <li>
 Converting a value of a string type to a slice of bytes type
-yields a slice whose successive elements are the bytes of the string.
+yields a non-nil slice whose successive elements are the bytes of the string.
 
 <pre>
 []byte("hellø")             // []byte{'h', 'e', 'l', 'l', '\xc3', '\xb8'}
@@ -8488,7 +8488,7 @@ Finally, two types that are not bound type parameters unify loosely
 	identical <a href="#Interface_types">type terms</a>,
 	both or neither embed the predeclared type
 	<a href="#Predeclared_identifiers">comparable</a>,
-	corresponding method types unify per the element matching mode,
+	corresponding method types unify exactly,
 	and the method set of one of the interfaces is a subset of
 	the method set of the other interface.
 </li>

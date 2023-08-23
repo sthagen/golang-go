@@ -9,7 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"internal/buildcfg"
-	"internal/coverage"
+	"internal/coverage/covcmd"
 	"internal/platform"
 	"log"
 	"os"
@@ -133,11 +133,11 @@ type CmdFlags struct {
 			Patterns map[string][]string
 			Files    map[string]string
 		}
-		ImportDirs   []string                   // appended to by -I
-		ImportMap    map[string]string          // set by -importcfg
-		PackageFile  map[string]string          // set by -importcfg; nil means not in use
-		CoverageInfo *coverage.CoverFixupConfig // set by -coveragecfg
-		SpectreIndex bool                       // set by -spectre=index or -spectre=all
+		ImportDirs   []string                 // appended to by -I
+		ImportMap    map[string]string        // set by -importcfg
+		PackageFile  map[string]string        // set by -importcfg; nil means not in use
+		CoverageInfo *covcmd.CoverFixupConfig // set by -coveragecfg
+		SpectreIndex bool                     // set by -spectre=index or -spectre=all
 		// Whether we are adding any sort of code instrumentation, such as
 		// when the race detector is enabled.
 		Instrumenting bool
@@ -181,6 +181,7 @@ func ParseFlags() {
 	Debug.PGOInline = 1
 	Debug.PGODevirtualize = 1
 	Debug.SyncFrames = -1 // disable sync markers by default
+	Debug.ZeroCopy = 1
 
 	Debug.Checkptr = -1 // so we can tell whether it is set explicitly
 
@@ -198,6 +199,12 @@ func ParseFlags() {
 
 	if Debug.Gossahash != "" {
 		hashDebug = NewHashDebug("gossahash", Debug.Gossahash, nil)
+	}
+
+	// Compute whether we're compiling the runtime from the package path. Test
+	// code can also use the flag to set this explicitly.
+	if Flag.Std && objabi.LookupPkgSpecial(Ctxt.Pkgpath).Runtime {
+		Flag.CompilingRuntime = true
 	}
 
 	// Three inputs govern loop iteration variable rewriting, hash, experiment, flag.
@@ -316,9 +323,6 @@ func ParseFlags() {
 		}
 	}
 
-	if Flag.CompilingRuntime && Flag.N != 0 {
-		log.Fatal("cannot disable optimizations while compiling runtime")
-	}
 	if Flag.LowerC < 1 {
 		log.Fatalf("-c must be at least 1, got %d", Flag.LowerC)
 	}
@@ -327,6 +331,10 @@ func ParseFlags() {
 	}
 
 	if Flag.CompilingRuntime {
+		// It is not possible to build the runtime with no optimizations,
+		// because the compiler cannot eliminate enough write barriers.
+		Flag.N = 0
+
 		// Runtime can't use -d=checkptr, at least not yet.
 		Debug.Checkptr = 0
 
@@ -504,7 +512,7 @@ func readImportCfg(file string) {
 }
 
 func readCoverageCfg(file string) {
-	var cfg coverage.CoverFixupConfig
+	var cfg covcmd.CoverFixupConfig
 	data, err := os.ReadFile(file)
 	if err != nil {
 		log.Fatalf("-coveragecfg: %v", err)

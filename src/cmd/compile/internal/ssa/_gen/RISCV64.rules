@@ -103,7 +103,7 @@
 
 (CvtBoolToUint8 ...) => (Copy ...)
 
-(Round(64|32)F ...) => (Copy ...)
+(Round(32|64)F ...) => (LoweredRound(32|64)F ...)
 
 (Slicemask <t> x) => (SRAI [63] (NEG <t> x))
 
@@ -229,16 +229,17 @@
 
 (EqPtr x y) => (SEQZ (SUB <typ.Uintptr> x y))
 (Eq64  x y) => (SEQZ (SUB <x.Type> x y))
-(Eq32  x y) => (SEQZ (SUB <x.Type> (ZeroExt32to64 x) (ZeroExt32to64 y)))
+(Eq32  x y) &&  x.Type.IsSigned() => (SEQZ (SUB <x.Type> (SignExt32to64 x) (SignExt32to64 y)))
+(Eq32  x y) && !x.Type.IsSigned() => (SEQZ (SUB <x.Type> (ZeroExt32to64 x) (ZeroExt32to64 y)))
 (Eq16  x y) => (SEQZ (SUB <x.Type> (ZeroExt16to64 x) (ZeroExt16to64 y)))
 (Eq8   x y) => (SEQZ (SUB <x.Type> (ZeroExt8to64  x) (ZeroExt8to64  y)))
 (Eq(64|32)F ...) => (FEQ(D|S) ...)
 
-(NeqPtr x y) => (SNEZ (SUB <typ.Uintptr> x y))
-(Neq64  x y) => (SNEZ (SUB <x.Type> x y))
-(Neq32  x y) => (SNEZ (SUB <x.Type> (ZeroExt32to64 x) (ZeroExt32to64 y)))
-(Neq16  x y) => (SNEZ (SUB <x.Type> (ZeroExt16to64 x) (ZeroExt16to64 y)))
-(Neq8   x y) => (SNEZ (SUB <x.Type> (ZeroExt8to64  x) (ZeroExt8to64  y)))
+(NeqPtr x y) => (Not (EqPtr x y))
+(Neq64  x y) => (Not (Eq64  x y))
+(Neq32  x y) => (Not (Eq32  x y))
+(Neq16  x y) => (Not (Eq16  x y))
+(Neq8   x y) => (Not (Eq8   x y))
 (Neq(64|32)F ...) => (FNE(D|S) ...)
 
 // Loads
@@ -779,6 +780,10 @@
 (Select0 m:(LoweredMuluhilo x y)) && m.Uses == 1 => (MULHU x y)
 (Select1 m:(LoweredMuluhilo x y)) && m.Uses == 1 => (MUL x y)
 
+(FADD(S|D) a (FMUL(S|D) x y)) && a.Block.Func.useFMA(v) => (FMADD(S|D) x y a)
+(FSUB(S|D) a (FMUL(S|D) x y)) && a.Block.Func.useFMA(v) => (FNMSUB(S|D) x y a)
+(FSUB(S|D) (FMUL(S|D) x y) a) && a.Block.Func.useFMA(v) => (FMSUB(S|D) x y a)
+
 // Merge negation into fused multiply-add and multiply-subtract.
 //
 // Key:
@@ -789,5 +794,7 @@
 //                D B
 //
 // Note: multiplication commutativity handled by rule generator.
+(F(MADD|NMADD|MSUB|NMSUB)S neg:(FNEGS x) y z) && neg.Uses == 1 => (F(NMSUB|MSUB|NMADD|MADD)S x y z)
+(F(MADD|NMADD|MSUB|NMSUB)S x y neg:(FNEGS z)) && neg.Uses == 1 => (F(MSUB|NMSUB|MADD|NMADD)S x y z)
 (F(MADD|NMADD|MSUB|NMSUB)D neg:(FNEGD x) y z) && neg.Uses == 1 => (F(NMSUB|MSUB|NMADD|MADD)D x y z)
 (F(MADD|NMADD|MSUB|NMSUB)D x y neg:(FNEGD z)) && neg.Uses == 1 => (F(MSUB|NMSUB|MADD|NMADD)D x y z)

@@ -459,7 +459,7 @@ func safeExpr(n ir.Node, init *ir.Nodes) ir.Node {
 }
 
 func copyExpr(n ir.Node, t *types.Type, init *ir.Nodes) ir.Node {
-	l := typecheck.Temp(t)
+	l := typecheck.TempAt(base.Pos, ir.CurFunc, t)
 	appendWalkStmt(init, ir.NewAssignStmt(base.Pos, l, n))
 	return l
 }
@@ -608,7 +608,7 @@ func walkCall1(n *ir.CallExpr, init *ir.Nodes) {
 
 	for i, arg := range args {
 		// Validate argument and parameter types match.
-		param := params.Field(i)
+		param := params[i]
 		if !types.Identical(arg.Type(), param.Type) {
 			base.FatalfAt(n.Pos(), "assigning %L to parameter %v (type %v)", arg, param.Sym, param.Type)
 		}
@@ -618,7 +618,7 @@ func walkCall1(n *ir.CallExpr, init *ir.Nodes) {
 		// to prevent that calls from clobbering arguments already on the stack.
 		if mayCall(arg) {
 			// assignment of arg to Temp
-			tmp := typecheck.Temp(param.Type)
+			tmp := typecheck.TempAt(base.Pos, ir.CurFunc, param.Type)
 			init.Append(convas(typecheck.Stmt(ir.NewAssignStmt(base.Pos, tmp, arg)).(*ir.AssignStmt), init))
 			// replace arg with temp
 			args[i] = tmp
@@ -714,7 +714,7 @@ func walkDotType(n *ir.TypeAssertExpr, init *ir.Nodes) ir.Node {
 	n.X = walkExpr(n.X, init)
 	// Set up interface type addresses for back end.
 	if !n.Type().IsInterface() && !n.X.Type().IsEmptyInterface() {
-		n.ITab = reflectdata.ITabAddr(n.Type(), n.X.Type())
+		n.ITab = reflectdata.ITabAddrAt(base.Pos, n.Type(), n.X.Type())
 	}
 	return n
 }
@@ -977,14 +977,14 @@ func usemethod(n *ir.CallExpr) {
 	}
 
 	t := dot.Selection.Type
-	if t.NumParams() != 1 || t.Params().Field(0).Type.Kind() != pKind {
+	if t.NumParams() != 1 || t.Param(0).Type.Kind() != pKind {
 		return
 	}
 	switch t.NumResults() {
 	case 1:
 		// ok
 	case 2:
-		if t.Results().Field(1).Type.Kind() != types.TBOOL {
+		if t.Result(1).Type.Kind() != types.TBOOL {
 			return
 		}
 	default:
@@ -993,7 +993,7 @@ func usemethod(n *ir.CallExpr) {
 
 	// Check that first result type is "reflect.Method". Note that we have to check sym name and sym package
 	// separately, as we can't check for exact string "reflect.Method" reliably (e.g., see #19028 and #38515).
-	if s := t.Results().Field(0).Type.Sym(); s != nil && s.Name == "Method" && types.IsReflectPkg(s.Pkg) {
+	if s := t.Result(0).Type.Sym(); s != nil && types.ReflectSymName(s) == "Method" {
 		ir.CurFunc.SetReflectMethod(true)
 		// The LSym is initialized at this point. We need to set the attribute on the LSym.
 		ir.CurFunc.LSym.Set(obj.AttrReflectMethod, true)

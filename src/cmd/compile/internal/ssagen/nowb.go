@@ -82,7 +82,7 @@ func (c *nowritebarrierrecChecker) findExtraCalls(nn ir.Node) {
 	if fn.Class != ir.PFUNC || fn.Defn == nil {
 		return
 	}
-	if !types.IsRuntimePkg(fn.Sym().Pkg) || fn.Sym().Name != "systemstack" {
+	if types.RuntimeSymName(fn.Sym()) != "systemstack" {
 		return
 	}
 
@@ -97,9 +97,6 @@ func (c *nowritebarrierrecChecker) findExtraCalls(nn ir.Node) {
 		callee = arg.Func
 	default:
 		base.Fatalf("expected ONAME or OCLOSURE node, got %+v", arg)
-	}
-	if callee.Op() != ir.ODCLFUNC {
-		base.Fatalf("expected ODCLFUNC node, got %+v", callee)
 	}
 	c.extraCalls[c.curfn] = append(c.extraCalls[c.curfn], nowritebarrierrecCall{callee, n.Pos()})
 }

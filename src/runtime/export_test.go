@@ -1330,7 +1330,7 @@ func (t *SemTable) Enqueue(addr *uint32) {
 //
 // Returns true if there actually was a waiter to be dequeued.
 func (t *SemTable) Dequeue(addr *uint32) bool {
-	s, _ := t.semTable.rootFor(addr).dequeue(addr)
+	s, _, _ := t.semTable.rootFor(addr).dequeue(addr)
 	if s != nil {
 		releaseSudog(s)
 		return true
@@ -1820,8 +1820,8 @@ func (s *ScavengeIndex) SetEmpty(ci ChunkIdx) {
 	s.i.setEmpty(chunkIdx(ci))
 }
 
-func (s *ScavengeIndex) SetNoHugePage(ci ChunkIdx) bool {
-	return s.i.setNoHugePage(chunkIdx(ci))
+func (s *ScavengeIndex) SetNoHugePage(ci ChunkIdx) {
+	s.i.setNoHugePage(chunkIdx(ci))
 }
 
 func CheckPackScavChunkData(gen uint32, inUse, lastInUse uint16, flags uint8) bool {
@@ -1922,6 +1922,8 @@ func FPCallers(pcBuf []uintptr) int {
 	return fpTracebackPCs(unsafe.Pointer(getfp()), pcBuf)
 }
 
+const FramePointerEnabled = framepointer_enabled
+
 var (
 	IsPinned      = isPinned
 	GetPinCounter = pinnerGetPinCounter
@@ -1944,7 +1946,7 @@ func MyGenericFunc[T any]() {
 
 func UnsafePoint(pc uintptr) bool {
 	fi := findfunc(pc)
-	v := pcdatavalue(fi, abi.PCDATA_UnsafePoint, pc, nil)
+	v := pcdatavalue(fi, abi.PCDATA_UnsafePoint, pc)
 	switch v {
 	case abi.UnsafePointUnsafe:
 		return true

@@ -377,9 +377,9 @@ func (s *Schedule) StaticAssign(l *ir.Name, loff int64, r ir.Node, typ *types.Ty
 
 		var itab *ir.AddrExpr
 		if typ.IsEmptyInterface() {
-			itab = reflectdata.TypePtr(val.Type())
+			itab = reflectdata.TypePtrAt(base.Pos, val.Type())
 		} else {
-			itab = reflectdata.ITabAddr(val.Type(), typ)
+			itab = reflectdata.ITabAddrAt(base.Pos, val.Type(), typ)
 		}
 
 		// Create a copy of l to modify while we emit data.
@@ -684,13 +684,12 @@ func StaticName(t *types.Type) *ir.Name {
 	sym := typecheck.Lookup(fmt.Sprintf("%s%d", obj.StaticNamePref, statuniqgen))
 	statuniqgen++
 
-	n := typecheck.NewName(sym)
+	n := ir.NewNameAt(base.Pos, sym, t)
 	sym.Def = n
 
 	n.Class = ir.PEXTERN
 	typecheck.Target.Externs = append(typecheck.Target.Externs, n)
 
-	n.SetType(t)
 	n.Linksym().Set(obj.AttrStatic, true)
 	return n
 }
@@ -1043,7 +1042,9 @@ func tryWrapGlobalMapInit(n ir.Node) (mapvar *ir.Name, genfn *ir.Func, call ir.N
 	//
 	minitsym := typecheck.LookupNum("map.init.", mapinitgen)
 	mapinitgen++
-	newfn := typecheck.DeclFunc(minitsym, nil, nil, nil)
+
+	newfn := ir.NewFunc(base.Pos, base.Pos, minitsym, types.NewSignature(nil, nil, nil))
+	typecheck.DeclFunc(newfn)
 	if base.Debug.WrapGlobalMapDbg > 0 {
 		fmt.Fprintf(os.Stderr, "=-= generated func is %v\n", newfn)
 	}
@@ -1055,8 +1056,6 @@ func tryWrapGlobalMapInit(n ir.Node) (mapvar *ir.Name, genfn *ir.Func, call ir.N
 	// Insert assignment into function body; mark body finished.
 	newfn.Body = append(newfn.Body, as)
 	typecheck.FinishFuncBody()
-
-	typecheck.Func(newfn)
 
 	const no = `
 	// Register new function with decls.

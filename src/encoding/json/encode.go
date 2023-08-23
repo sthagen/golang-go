@@ -245,7 +245,7 @@ func (e *MarshalerError) Error() string {
 // Unwrap returns the underlying error.
 func (e *MarshalerError) Unwrap() error { return e.Err }
 
-var hex = "0123456789abcdef"
+const hex = "0123456789abcdef"
 
 // An encodeState encodes JSON into a bytes.Buffer.
 type encodeState struct {
@@ -781,15 +781,11 @@ func encodeByteSlice(e *encodeState, v reflect.Value, _ encOpts) {
 		e.WriteString("null")
 		return
 	}
-	s := v.Bytes()
-	encodedLen := base64.StdEncoding.EncodedLen(len(s))
-	e.Grow(len(`"`) + encodedLen + len(`"`))
 
-	// TODO(https://go.dev/issue/53693): Use base64.Encoding.AppendEncode.
+	s := v.Bytes()
 	b := e.AvailableBuffer()
 	b = append(b, '"')
-	base64.StdEncoding.Encode(b[len(b):][:encodedLen], s)
-	b = b[:len(b)+encodedLen]
+	b = base64.StdEncoding.AppendEncode(b, s)
 	b = append(b, '"')
 	e.Write(b)
 }

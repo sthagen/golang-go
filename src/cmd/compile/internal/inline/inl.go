@@ -438,13 +438,6 @@ func InlineImpossible(fn *ir.Func) string {
 		return reason
 	}
 
-	// If fn is synthetic hash or eq function, cannot inline it.
-	// The function is not generated in Unified IR frontend at this moment.
-	if ir.IsEqOrHashFunc(fn) {
-		reason = "type eq/hash function"
-		return reason
-	}
-
 	return ""
 }
 
@@ -471,7 +464,7 @@ func canDelayResults(fn *ir.Func) bool {
 	}
 
 	// temporaries for return values.
-	for _, param := range fn.Type().Results().FieldSlice() {
+	for _, param := range fn.Type().Results() {
 		if sym := types.OrigSym(param.Sym); sym != nil && !sym.IsBlank() {
 			return false // found a named result parameter (case 3)
 		}
@@ -512,6 +505,7 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 	if n == nil {
 		return false
 	}
+opSwitch:
 	switch n.Op() {
 	// Call is okay if inlinable and we have the budget for the body.
 	case ir.OCALLFUNC:
@@ -523,22 +517,19 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 		var cheap bool
 		if n.X.Op() == ir.ONAME {
 			name := n.X.(*ir.Name)
-			if name.Class == ir.PFUNC && types.IsRuntimePkg(name.Sym().Pkg) {
-				fn := name.Sym().Name
-				if fn == "getcallerpc" || fn == "getcallersp" {
+			if name.Class == ir.PFUNC {
+				switch fn := types.RuntimeSymName(name.Sym()); fn {
+				case "getcallerpc", "getcallersp":
 					v.reason = "call to " + fn
 					return true
-				}
-				if fn == "throw" {
+				case "throw":
 					v.budget -= inlineExtraThrowCost
-					break
+					break opSwitch
 				}
-			}
-			// Special case for reflect.noescpae. It does just type
-			// conversions to appease the escape analysis, and doesn't
-			// generate code.
-			if name.Class == ir.PFUNC && types.IsReflectPkg(name.Sym().Pkg) {
-				if name.Sym().Name == "noescape" {
+				// Special case for reflect.noescape. It does just type
+				// conversions to appease the escape analysis, and doesn't
+				// generate code.
+				if types.ReflectSymName(name.Sym()) == "noescape" {
 					cheap = true
 				}
 			}
@@ -560,7 +551,7 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 			if meth := ir.MethodExprName(n.X); meth != nil {
 				if fn := meth.Func; fn != nil {
 					s := fn.Sym()
-					if types.IsRuntimePkg(s.Pkg) && s.Name == "heapBits.nextArena" {
+					if types.RuntimeSymName(s) == "heapBits.nextArena" {
 						// Special case: explicitly allow mid-stack inlining of
 						// runtime.heapBits.next even though it calls slow-path
 						// runtime.heapBits.nextArena.
@@ -590,7 +581,7 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 
 		// Determine if the callee edge is for an inlinable hot callee or not.
 		if v.profile != nil && v.curFunc != nil {
-			if fn := inlCallee(n.X, v.profile); fn != nil && typecheck.HaveInlineBody(fn) {
+			if fn := inlCallee(v.curFunc, n.X, v.profile); fn != nil && typecheck.HaveInlineBody(fn) {
 				lineOffset := pgo.NodeLineOffset(n, fn)
 				csi := pgo.CallSiteInfo{LineOffset: lineOffset, Caller: v.curFunc}
 				if _, o := candHotEdgeMap[csi]; o {
@@ -606,7 +597,7 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 			break
 		}
 
-		if fn := inlCallee(n.X, v.profile); fn != nil && typecheck.HaveInlineBody(fn) {
+		if fn := inlCallee(v.curFunc, n.X, v.profile); fn != nil && typecheck.HaveInlineBody(fn) {
 			v.budget -= fn.Inl.Cost
 			break
 		}
@@ -633,6 +624,8 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 		v.budget -= inlineExtraPanicCost
 
 	case ir.ORECOVER:
+		base.FatalfAt(n.Pos(), "ORECOVER missed typecheck")
+	case ir.ORECOVERFP:
 		// recover matches the argument frame pointer to find
 		// the right panic value, so it needs an argument frame.
 		v.reason = "call to recover"
@@ -652,10 +645,7 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 		// should try to account for that if we're going to account for captures.
 		v.budget -= 15
 
-	case ir.OGO,
-		ir.ODEFER,
-		ir.ODCLTYPE, // can't print yet
-		ir.OTAILCALL:
+	case ir.OGO, ir.ODEFER, ir.OTAILCALL:
 		v.reason = "unhandled op " + n.Op().String()
 		return true
 
@@ -687,7 +677,7 @@ func (v *hairyVisitor) doNode(n ir.Node) bool {
 		// This doesn't produce code, but the children might.
 		v.budget++ // undo default cost
 
-	case ir.ODCLCONST, ir.OFALL, ir.OTYPE:
+	case ir.OFALL, ir.OTYPE:
 		// These nodes don't produce code; omit from inlining budget.
 		return false
 
@@ -826,11 +816,9 @@ func inlcopy(n ir.Node) ir.Node {
 			// x.Func.Nname.Ntype, x.Func.Dcl, x.Func.ClosureVars, and
 			// x.Func.Body for iexport and local inlining.
 			oldfn := x.Func
-			newfn := ir.NewFunc(oldfn.Pos())
+			newfn := ir.NewFunc(oldfn.Pos(), oldfn.Nname.Pos(), oldfn.Nname.Sym(), oldfn.Nname.Type())
 			m.(*ir.ClosureExpr).Func = newfn
-			newfn.Nname = ir.NewNameAt(oldfn.Nname.Pos(), oldfn.Nname.Sym())
 			// XXX OK to share fn.Type() ??
-			newfn.Nname.SetType(oldfn.Nname.Type())
 			newfn.Body = inlcopylist(oldfn.Body)
 			// Make shallow copy of the Dcl and ClosureVar slices
 			newfn.Dcl = append([]*ir.Name(nil), oldfn.Dcl...)
@@ -853,7 +841,7 @@ func InlineCalls(fn *ir.Func, profile *pgo.Profile) {
 	var inlCalls []*ir.InlinedCallExpr
 	var edit func(ir.Node) ir.Node
 	edit = func(n ir.Node) ir.Node {
-		return inlnode(n, bigCaller, &inlCalls, edit, profile)
+		return inlnode(fn, n, bigCaller, &inlCalls, edit, profile)
 	}
 	ir.EditChildren(fn, edit)
 
@@ -884,7 +872,7 @@ func InlineCalls(fn *ir.Func, profile *pgo.Profile) {
 // The result of inlnode MUST be assigned back to n, e.g.
 //
 //	n.Left = inlnode(n.Left)
-func inlnode(n ir.Node, bigCaller bool, inlCalls *[]*ir.InlinedCallExpr, edit func(ir.Node) ir.Node, profile *pgo.Profile) ir.Node {
+func inlnode(callerfn *ir.Func, n ir.Node, bigCaller bool, inlCalls *[]*ir.InlinedCallExpr, edit func(ir.Node) ir.Node, profile *pgo.Profile) ir.Node {
 	if n == nil {
 		return n
 	}
@@ -916,8 +904,11 @@ func inlnode(n ir.Node, bigCaller bool, inlCalls *[]*ir.InlinedCallExpr, edit fu
 			// even when package reflect was compiled without it (#35073).
 			if meth := ir.MethodExprName(n.X); meth != nil {
 				s := meth.Sym()
-				if base.Debug.Checkptr != 0 && types.IsReflectPkg(s.Pkg) && (s.Name == "Value.UnsafeAddr" || s.Name == "Value.Pointer") {
-					return n
+				if base.Debug.Checkptr != 0 {
+					switch types.ReflectSymName(s) {
+					case "Value.UnsafeAddr", "Value.Pointer":
+						return n
+					}
 				}
 			}
 		}
@@ -945,8 +936,8 @@ func inlnode(n ir.Node, bigCaller bool, inlCalls *[]*ir.InlinedCallExpr, edit fu
 		if ir.IsIntrinsicCall(call) {
 			break
 		}
-		if fn := inlCallee(call.X, profile); fn != nil && typecheck.HaveInlineBody(fn) {
-			n = mkinlcall(call, fn, bigCaller, inlCalls)
+		if fn := inlCallee(callerfn, call.X, profile); fn != nil && typecheck.HaveInlineBody(fn) {
+			n = mkinlcall(callerfn, call, fn, bigCaller, inlCalls)
 		}
 	}
 
@@ -957,7 +948,7 @@ func inlnode(n ir.Node, bigCaller bool, inlCalls *[]*ir.InlinedCallExpr, edit fu
 
 // inlCallee takes a function-typed expression and returns the underlying function ONAME
 // that it refers to if statically known. Otherwise, it returns nil.
-func inlCallee(fn ir.Node, profile *pgo.Profile) *ir.Func {
+func inlCallee(caller *ir.Func, fn ir.Node, profile *pgo.Profile) (res *ir.Func) {
 	fn = ir.StaticValue(fn)
 	switch fn.Op() {
 	case ir.OMETHEXPR:
@@ -978,6 +969,9 @@ func inlCallee(fn ir.Node, profile *pgo.Profile) *ir.Func {
 	case ir.OCLOSURE:
 		fn := fn.(*ir.ClosureExpr)
 		c := fn.Func
+		if len(c.ClosureVars) != 0 && c.ClosureVars[0].Outer.Curfn != caller {
+			return nil // inliner doesn't support inlining across closure frames
+		}
 		CanInline(c, profile)
 		return c
 	}
@@ -992,7 +986,7 @@ var SSADumpInline = func(*ir.Func) {}
 
 // InlineCall allows the inliner implementation to be overridden.
 // If it returns nil, the function will not be inlined.
-var InlineCall = func(call *ir.CallExpr, fn *ir.Func, inlIndex int) *ir.InlinedCallExpr {
+var InlineCall = func(callerfn *ir.Func, call *ir.CallExpr, fn *ir.Func, inlIndex int) *ir.InlinedCallExpr {
 	base.Fatalf("inline.InlineCall not overridden")
 	panic("unreachable")
 }
@@ -1053,27 +1047,27 @@ func inlineCostOK(n *ir.CallExpr, caller, callee *ir.Func, bigCaller bool) (bool
 // The result of mkinlcall MUST be assigned back to n, e.g.
 //
 //	n.Left = mkinlcall(n.Left, fn, isddd)
-func mkinlcall(n *ir.CallExpr, fn *ir.Func, bigCaller bool, inlCalls *[]*ir.InlinedCallExpr) ir.Node {
+func mkinlcall(callerfn *ir.Func, n *ir.CallExpr, fn *ir.Func, bigCaller bool, inlCalls *[]*ir.InlinedCallExpr) ir.Node {
 	if fn.Inl == nil {
 		if logopt.Enabled() {
-			logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(ir.CurFunc),
+			logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
 				fmt.Sprintf("%s cannot be inlined", ir.PkgFuncName(fn)))
 		}
 		return n
 	}
 
-	if ok, maxCost := inlineCostOK(n, ir.CurFunc, fn, bigCaller); !ok {
+	if ok, maxCost := inlineCostOK(n, callerfn, fn, bigCaller); !ok {
 		if logopt.Enabled() {
-			logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(ir.CurFunc),
+			logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", ir.FuncName(callerfn),
 				fmt.Sprintf("cost %d of %s exceeds max caller cost %d", fn.Inl.Cost, ir.PkgFuncName(fn), maxCost))
 		}
 		return n
 	}
 
-	if fn == ir.CurFunc {
+	if fn == callerfn {
 		// Can't recursively inline a function into itself.
 		if logopt.Enabled() {
-			logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", fmt.Sprintf("recursive call to %s", ir.FuncName(ir.CurFunc)))
+			logopt.LogOpt(n.Pos(), "cannotInlineCall", "inline", fmt.Sprintf("recursive call to %s", ir.FuncName(callerfn)))
 		}
 		return n
 	}
@@ -1104,7 +1098,7 @@ func mkinlcall(n *ir.CallExpr, fn *ir.Func, bigCaller bool, inlCalls *[]*ir.Inli
 	for inlIndex := parent; inlIndex >= 0; inlIndex = base.Ctxt.InlTree.Parent(inlIndex) {
 		if base.Ctxt.InlTree.InlinedFunction(inlIndex) == sym {
 			if base.Flag.LowerM > 1 {
-				fmt.Printf("%v: cannot inline %v into %v: repeated recursive cycle\n", ir.Line(n), fn, ir.FuncName(ir.CurFunc))
+				fmt.Printf("%v: cannot inline %v into %v: repeated recursive cycle\n", ir.Line(n), fn, ir.FuncName(callerfn))
 			}
 			return n
 		}
@@ -1170,7 +1164,7 @@ func mkinlcall(n *ir.CallExpr, fn *ir.Func, bigCaller bool, inlCalls *[]*ir.Inli
 		fmt.Printf("%v: Before inlining: %+v\n", ir.Line(n), n)
 	}
 
-	res := InlineCall(n, fn, inlIndex)
+	res := InlineCall(callerfn, n, fn, inlIndex)
 
 	if res == nil {
 		base.FatalfAt(n.Pos(), "inlining call to %v failed", fn)

@@ -26,33 +26,22 @@ func LookupNum(prefix string, n int) *types.Sym {
 }
 
 // Given funarg struct list, return list of fn args.
-func NewFuncParams(tl *types.Type, mustname bool) []*ir.Field {
-	var args []*ir.Field
-	gen := 0
-	for _, t := range tl.Fields().Slice() {
-		s := t.Sym
+func NewFuncParams(origs []*types.Field, mustname bool) []*types.Field {
+	res := make([]*types.Field, len(origs))
+	for i, orig := range origs {
+		s := orig.Sym
 		if mustname && (s == nil || s.Name == "_") {
 			// invent a name so that we can refer to it in the trampoline
-			s = LookupNum(".anon", gen)
-			gen++
+			s = LookupNum(".anon", i)
 		} else if s != nil && s.Pkg != types.LocalPkg {
 			// TODO(mdempsky): Preserve original position, name, and package.
 			s = Lookup(s.Name)
 		}
-		a := ir.NewField(base.Pos, s, t.Type)
-		a.Pos = t.Pos
-		a.IsDDD = t.IsDDD()
-		args = append(args, a)
+		p := types.NewField(orig.Pos, s, orig.Type)
+		p.SetIsDDD(orig.IsDDD())
+		res[i] = p
 	}
-
-	return args
-}
-
-// NewName returns a new ONAME Node associated with symbol s.
-func NewName(s *types.Sym) *ir.Name {
-	n := ir.NewNameAt(base.Pos, s)
-	n.Curfn = ir.CurFunc
-	return n
+	return res
 }
 
 // NodAddr returns a node representing &n at base.Pos.
@@ -127,9 +116,7 @@ func LinksymAddr(pos src.XPos, lsym *obj.LSym, typ *types.Type) *ir.AddrExpr {
 }
 
 func NodNil() ir.Node {
-	n := ir.NewNilExpr(base.Pos)
-	n.SetType(types.Types[types.TNIL])
-	return n
+	return ir.NewNilExpr(base.Pos, types.Types[types.TNIL])
 }
 
 // AddImplicitDots finds missing fields in obj.field that
@@ -171,13 +158,13 @@ func AddImplicitDots(n *ir.SelectorExpr) *ir.SelectorExpr {
 // CalcMethods calculates all the methods (including embedding) of a non-interface
 // type t.
 func CalcMethods(t *types.Type) {
-	if t == nil || t.AllMethods().Len() != 0 {
+	if t == nil || len(t.AllMethods()) != 0 {
 		return
 	}
 
 	// mark top-level method symbols
 	// so that expand1 doesn't consider them.
-	for _, f := range t.Methods().Slice() {
+	for _, f := range t.Methods() {
 		f.Sym.SetUniq(true)
 	}
 
@@ -214,11 +201,11 @@ func CalcMethods(t *types.Type) {
 		ms = append(ms, f)
 	}
 
-	for _, f := range t.Methods().Slice() {
+	for _, f := range t.Methods() {
 		f.Sym.SetUniq(false)
 	}
 
-	ms = append(ms, t.Methods().Slice()...)
+	ms = append(ms, t.Methods()...)
 	sort.Sort(types.MethodsByName(ms))
 	t.SetAllMethods(ms)
 }
@@ -256,13 +243,13 @@ func adddot1(s *types.Sym, t *types.Type, d int, save **types.Field, ignorecase 
 		return c, false
 	}
 
-	var fields *types.Fields
+	var fields []*types.Field
 	if u.IsStruct() {
 		fields = u.Fields()
 	} else {
 		fields = u.AllMethods()
 	}
-	for _, f := range fields.Slice() {
+	for _, f := range fields {
 		if f.Embedded == 0 || f.Sym == nil {
 			continue
 		}
@@ -550,15 +537,7 @@ func Convertop(srcConstant bool, src, dst *types.Type) (ir.Op, string) {
 		return ir.OCONVNOP, ""
 	}
 
-	// 10. src is map and dst is a pointer to corresponding hmap.
-	// This rule is needed for the implementation detail that
-	// go gc maps are implemented as a pointer to a hmap struct.
-	if src.Kind() == types.TMAP && dst.IsPtr() &&
-		src.MapType().Hmap == dst.Elem() {
-		return ir.OCONVNOP, ""
-	}
-
-	// 11. src is a slice and dst is an array or pointer-to-array.
+	// 10. src is a slice and dst is an array or pointer-to-array.
 	// They must have same element type.
 	if src.IsSlice() {
 		if dst.IsArray() && types.Identical(src.Elem(), dst.Elem()) {
@@ -613,7 +592,7 @@ func expand0(t *types.Type) {
 	}
 
 	if u.IsInterface() {
-		for _, f := range u.AllMethods().Slice() {
+		for _, f := range u.AllMethods() {
 			if f.Sym.Uniq() {
 				continue
 			}
@@ -626,7 +605,7 @@ func expand0(t *types.Type) {
 
 	u = types.ReceiverBaseType(t)
 	if u != nil {
-		for _, f := range u.Methods().Slice() {
+		for _, f := range u.Methods() {
 			if f.Sym.Uniq() {
 				continue
 			}
@@ -652,13 +631,13 @@ func expand1(t *types.Type, top bool) {
 	}
 
 	if u.IsStruct() || u.IsInterface() {
-		var fields *types.Fields
+		var fields []*types.Field
 		if u.IsStruct() {
 			fields = u.Fields()
 		} else {
 			fields = u.AllMethods()
 		}
-		for _, f := range fields.Slice() {
+		for _, f := range fields {
 			if f.Embedded == 0 {
 				continue
 			}
@@ -737,8 +716,8 @@ func implements(t, iface *types.Type, m, samename **types.Field, ptr *int) bool 
 
 	if t.IsInterface() {
 		i := 0
-		tms := t.AllMethods().Slice()
-		for _, im := range iface.AllMethods().Slice() {
+		tms := t.AllMethods()
+		for _, im := range iface.AllMethods() {
 			for i < len(tms) && tms[i].Sym != im.Sym {
 				i++
 			}
@@ -764,10 +743,10 @@ func implements(t, iface *types.Type, m, samename **types.Field, ptr *int) bool 
 	var tms []*types.Field
 	if t != nil {
 		CalcMethods(t)
-		tms = t.AllMethods().Slice()
+		tms = t.AllMethods()
 	}
 	i := 0
-	for _, im := range iface.AllMethods().Slice() {
+	for _, im := range iface.AllMethods() {
 		for i < len(tms) && tms[i].Sym != im.Sym {
 			i++
 		}
@@ -784,12 +763,10 @@ func implements(t, iface *types.Type, m, samename **types.Field, ptr *int) bool 
 			*ptr = 0
 			return false
 		}
-		followptr := tm.Embedded == 2
 
 		// if pointer receiver in method,
 		// the method does not exist for value types.
-		rcvr := tm.Type.Recv().Type
-		if rcvr.IsPtr() && !t0.IsPtr() && !followptr && !types.IsInterfaceMethod(tm.Type) {
+		if !types.IsMethodApplicable(t0, tm) {
 			if false && base.Flag.LowerR != 0 {
 				base.Errorf("interface pointer mismatch")
 			}
@@ -832,13 +809,13 @@ func lookdot0(s *types.Sym, t *types.Type, save **types.Field, ignorecase bool) 
 
 	c := 0
 	if u.IsStruct() || u.IsInterface() {
-		var fields *types.Fields
+		var fields []*types.Field
 		if u.IsStruct() {
 			fields = u.Fields()
 		} else {
 			fields = u.AllMethods()
 		}
-		for _, f := range fields.Slice() {
+		for _, f := range fields {
 			if f.Sym == s || (ignorecase && f.IsMethod() && strings.EqualFold(f.Sym.Name, s.Name)) {
 				if save != nil {
 					*save = f
@@ -855,7 +832,7 @@ func lookdot0(s *types.Sym, t *types.Type, save **types.Field, ignorecase bool) 
 	}
 	u = types.ReceiverBaseType(u)
 	if u != nil {
-		for _, f := range u.Methods().Slice() {
+		for _, f := range u.Methods() {
 			if f.Embedded == 0 && (f.Sym == s || (ignorecase && strings.EqualFold(f.Sym.Name, s.Name))) {
 				if save != nil {
 					*save = f

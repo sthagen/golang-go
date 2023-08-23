@@ -342,7 +342,7 @@ type gobuf struct {
 	bp   uintptr // for framepointer-enabled architectures
 }
 
-// sudog represents a g in a wait list, such as for sending/receiving
+// sudog (pseudo-g) represents a g in a wait list, such as for sending/receiving
 // on a channel.
 //
 // sudog is necessary because the g ↔ synchronization object relation
@@ -381,6 +381,13 @@ type sudog struct {
 	// value was delivered over channel c, and false if awoken
 	// because c was closed.
 	success bool
+
+	// waiters is a count of semaRoot waiting list other than head of list,
+	// clamped to a uint16 to fit in unused space.
+	// Only meaningful at the head of the list.
+	// (If we wanted to be overly clever, we could store a high 16 bits
+	// in the second entry in the list.)
+	waiters uint16
 
 	parent   *sudog // semaRoot binary tree
 	waitlink *sudog // g.waiting list or semaRoot
@@ -576,7 +583,7 @@ type m struct {
 	alllink       *m // on allm
 	schedlink     muintptr
 	lockedg       guintptr
-	createstack   [32]uintptr // stack that created this thread.
+	createstack   [32]uintptr // stack that created this thread, it's used for StackRecord.Stack0, so it must align with it.
 	lockedExt     uint32      // tracking for external LockOSThread
 	lockedInt     uint32      // tracking for internal lockOSThread
 	nextwaitm     muintptr    // next m waiting for lock
@@ -610,6 +617,9 @@ type m struct {
 
 	// Whether this is a pending preemption signal on this M.
 	signalPending atomic.Uint32
+
+	// pcvalue lookup cache
+	pcvalueCache pcvalueCache
 
 	dlogPerM
 
@@ -1001,11 +1011,16 @@ func extendRandom(r []byte, n int) {
 // initialize them are not required. All defers must be manually scanned,
 // and for heap defers, marked.
 type _defer struct {
-	heap bool
-	sp   uintptr // sp at time of defer
-	pc   uintptr // pc at time of defer
-	fn   func()  // can be nil for open-coded defers
-	link *_defer // next defer on G; can point to either heap or stack!
+	heap      bool
+	rangefunc bool    // true for rangefunc list
+	sp        uintptr // sp at time of defer
+	pc        uintptr // pc at time of defer
+	fn        func()  // can be nil for open-coded defers
+	link      *_defer // next defer on G; can point to either heap or stack!
+
+	// If rangefunc is true, *head is the head of the atomic linked list
+	// during a range-over-func execution.
+	head *atomic.Pointer[_defer]
 }
 
 // A _panic holds information about an active panic.

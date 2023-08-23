@@ -195,14 +195,14 @@ func MapBucketType(t *types.Type) *types.Type {
 	return bucket
 }
 
-// MapType builds a type representing a Hmap structure for the given map type.
-// Make sure this stays in sync with runtime/map.go.
-func MapType(t *types.Type) *types.Type {
-	if t.MapType().Hmap != nil {
-		return t.MapType().Hmap
-	}
+var hmapType *types.Type
 
-	bmap := MapBucketType(t)
+// MapType returns a type interchangeable with runtime.hmap.
+// Make sure this stays in sync with runtime/map.go.
+func MapType() *types.Type {
+	if hmapType != nil {
+		return hmapType
+	}
 
 	// build a struct:
 	// type hmap struct {
@@ -211,8 +211,8 @@ func MapType(t *types.Type) *types.Type {
 	//    B          uint8
 	//    noverflow  uint16
 	//    hash0      uint32
-	//    buckets    *bmap
-	//    oldbuckets *bmap
+	//    buckets    unsafe.Pointer
+	//    oldbuckets unsafe.Pointer
 	//    nevacuate  uintptr
 	//    extra      unsafe.Pointer // *mapextra
 	// }
@@ -222,15 +222,19 @@ func MapType(t *types.Type) *types.Type {
 		makefield("flags", types.Types[types.TUINT8]),
 		makefield("B", types.Types[types.TUINT8]),
 		makefield("noverflow", types.Types[types.TUINT16]),
-		makefield("hash0", types.Types[types.TUINT32]), // Used in walk.go for OMAKEMAP.
-		makefield("buckets", types.NewPtr(bmap)),       // Used in walk.go for OMAKEMAP.
-		makefield("oldbuckets", types.NewPtr(bmap)),
+		makefield("hash0", types.Types[types.TUINT32]),      // Used in walk.go for OMAKEMAP.
+		makefield("buckets", types.Types[types.TUNSAFEPTR]), // Used in walk.go for OMAKEMAP.
+		makefield("oldbuckets", types.Types[types.TUNSAFEPTR]),
 		makefield("nevacuate", types.Types[types.TUINTPTR]),
 		makefield("extra", types.Types[types.TUNSAFEPTR]),
 	}
 
-	hmap := types.NewStruct(fields)
-	hmap.SetNoalg(true)
+	n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, ir.Pkgs.Runtime.Lookup("hmap"))
+	hmap := types.NewNamed(n)
+	n.SetType(hmap)
+	n.SetTypecheck(1)
+
+	hmap.SetUnderlying(types.NewStruct(fields))
 	types.CalcSize(hmap)
 
 	// The size of hmap should be 48 bytes on 64 bit
@@ -239,29 +243,29 @@ func MapType(t *types.Type) *types.Type {
 		base.Fatalf("hmap size not correct: got %d, want %d", hmap.Size(), size)
 	}
 
-	t.MapType().Hmap = hmap
-	hmap.StructType().Map = t
+	hmapType = hmap
 	return hmap
 }
 
-// MapIterType builds a type representing an Hiter structure for the given map type.
+var hiterType *types.Type
+
+// MapIterType returns a type interchangeable with runtime.hiter.
 // Make sure this stays in sync with runtime/map.go.
-func MapIterType(t *types.Type) *types.Type {
-	if t.MapType().Hiter != nil {
-		return t.MapType().Hiter
+func MapIterType() *types.Type {
+	if hiterType != nil {
+		return hiterType
 	}
 
-	hmap := MapType(t)
-	bmap := MapBucketType(t)
+	hmap := MapType()
 
 	// build a struct:
 	// type hiter struct {
-	//    key         *Key
-	//    elem        *Elem
+	//    key         unsafe.Pointer // *Key
+	//    elem        unsafe.Pointer // *Elem
 	//    t           unsafe.Pointer // *MapType
 	//    h           *hmap
-	//    buckets     *bmap
-	//    bptr        *bmap
+	//    buckets     unsafe.Pointer
+	//    bptr        unsafe.Pointer // *bmap
 	//    overflow    unsafe.Pointer // *[]*bmap
 	//    oldoverflow unsafe.Pointer // *[]*bmap
 	//    startBucket uintptr
@@ -274,12 +278,12 @@ func MapIterType(t *types.Type) *types.Type {
 	// }
 	// must match runtime/map.go:hiter.
 	fields := []*types.Field{
-		makefield("key", types.NewPtr(t.Key())),   // Used in range.go for TMAP.
-		makefield("elem", types.NewPtr(t.Elem())), // Used in range.go for TMAP.
+		makefield("key", types.Types[types.TUNSAFEPTR]),  // Used in range.go for TMAP.
+		makefield("elem", types.Types[types.TUNSAFEPTR]), // Used in range.go for TMAP.
 		makefield("t", types.Types[types.TUNSAFEPTR]),
 		makefield("h", types.NewPtr(hmap)),
-		makefield("buckets", types.NewPtr(bmap)),
-		makefield("bptr", types.NewPtr(bmap)),
+		makefield("buckets", types.Types[types.TUNSAFEPTR]),
+		makefield("bptr", types.Types[types.TUNSAFEPTR]),
 		makefield("overflow", types.Types[types.TUNSAFEPTR]),
 		makefield("oldoverflow", types.Types[types.TUNSAFEPTR]),
 		makefield("startBucket", types.Types[types.TUINTPTR]),
@@ -292,14 +296,18 @@ func MapIterType(t *types.Type) *types.Type {
 	}
 
 	// build iterator struct holding the above fields
-	hiter := types.NewStruct(fields)
-	hiter.SetNoalg(true)
+	n := ir.NewDeclNameAt(src.NoXPos, ir.OTYPE, ir.Pkgs.Runtime.Lookup("hiter"))
+	hiter := types.NewNamed(n)
+	n.SetType(hiter)
+	n.SetTypecheck(1)
+
+	hiter.SetUnderlying(types.NewStruct(fields))
 	types.CalcSize(hiter)
 	if hiter.Size() != int64(12*types.PtrSize) {
 		base.Fatalf("hash_iter size not correct %d %d", hiter.Size(), 12*types.PtrSize)
 	}
-	t.MapType().Hiter = hiter
-	hiter.StructType().Map = t
+
+	hiterType = hiter
 	return hiter
 }
 
@@ -321,7 +329,7 @@ func methods(t *types.Type) []*typeSig {
 	// make list of methods for t,
 	// generating code if necessary.
 	var ms []*typeSig
-	for _, f := range mt.AllMethods().Slice() {
+	for _, f := range mt.AllMethods() {
 		if f.Sym == nil {
 			base.Fatalf("method with no sym on %v", mt)
 		}
@@ -368,7 +376,7 @@ func methods(t *types.Type) []*typeSig {
 // imethods returns the methods of the interface type t, sorted by name.
 func imethods(t *types.Type) []*typeSig {
 	var methods []*typeSig
-	for _, f := range t.AllMethods().Slice() {
+	for _, f := range t.AllMethods() {
 		if f.Type.Kind() != types.TFUNC || f.Sym == nil {
 			continue
 		}
@@ -839,11 +847,6 @@ func TypeLinksym(t *types.Type) *obj.LSym {
 	return lsym
 }
 
-// Deprecated: Use TypePtrAt instead.
-func TypePtr(t *types.Type) *ir.AddrExpr {
-	return TypePtrAt(base.Pos, t)
-}
-
 // TypePtrAt returns an expression that evaluates to the
 // *runtime._type value for t.
 func TypePtrAt(pos src.XPos, t *types.Type) *ir.AddrExpr {
@@ -865,11 +868,6 @@ func ITabLsym(typ, iface *types.Type) *obj.LSym {
 		writeITab(lsym, typ, iface, true)
 	}
 	return lsym
-}
-
-// Deprecated: Use ITabAddrAt instead.
-func ITabAddr(typ, iface *types.Type) *ir.AddrExpr {
-	return ITabAddrAt(base.Pos, typ, iface)
 }
 
 // ITabAddrAt returns an expression that evaluates to the
@@ -903,7 +901,7 @@ func needkeyupdate(t *types.Type) bool {
 		return needkeyupdate(t.Elem())
 
 	case types.TSTRUCT:
-		for _, t1 := range t.Fields().Slice() {
+		for _, t1 := range t.Fields() {
 			if needkeyupdate(t1.Type) {
 				return true
 			}
@@ -926,7 +924,7 @@ func hashMightPanic(t *types.Type) bool {
 		return hashMightPanic(t.Elem())
 
 	case types.TSTRUCT:
-		for _, t1 := range t.Fields().Slice() {
+		for _, t1 := range t.Fields() {
 			if hashMightPanic(t1.Type) {
 				return true
 			}
@@ -957,22 +955,30 @@ func writeType(t *types.Type) *obj.LSym {
 
 	s := types.TypeSym(t)
 	lsym := s.Linksym()
-	if s.Siggen() {
-		return lsym
-	}
-	s.SetSiggen(true)
 
 	// special case (look for runtime below):
 	// when compiling package runtime,
 	// emit the type structures for int, float, etc.
 	tbase := t
-
 	if t.IsPtr() && t.Sym() == nil && t.Elem().Sym() != nil {
 		tbase = t.Elem()
 	}
 	if tbase.Kind() == types.TFORW {
 		base.Fatalf("unresolved defined type: %v", tbase)
 	}
+
+	// This is a fake type we generated for our builtin pseudo-runtime
+	// package. We'll emit a description for the real type while
+	// compiling package runtime, so we don't need or want to emit one
+	// from this fake type.
+	if sym := tbase.Sym(); sym != nil && sym.Pkg == ir.Pkgs.Runtime {
+		return lsym
+	}
+
+	if s.Siggen() {
+		return lsym
+	}
+	s.SetSiggen(true)
 
 	if !NeedEmit(tbase) {
 		if i := typecheck.BaseTypeIndex(t); i >= 0 {
@@ -1021,22 +1027,14 @@ func writeType(t *types.Type) *obj.LSym {
 		ot = dextratype(lsym, ot, t, 0)
 
 	case types.TFUNC:
-		for _, t1 := range t.Recvs().Fields().Slice() {
-			writeType(t1.Type)
-		}
-		isddd := false
-		for _, t1 := range t.Params().Fields().Slice() {
-			isddd = t1.IsDDD()
-			writeType(t1.Type)
-		}
-		for _, t1 := range t.Results().Fields().Slice() {
+		for _, t1 := range t.RecvParamsResults() {
 			writeType(t1.Type)
 		}
 
 		ot = dcommontype(lsym, t)
 		inCount := t.NumRecvs() + t.NumParams()
 		outCount := t.NumResults()
-		if isddd {
+		if t.IsVariadic() {
 			outCount |= 1 << 15
 		}
 		ot = objw.Uint16(lsym, ot, uint16(inCount))
@@ -1049,13 +1047,7 @@ func writeType(t *types.Type) *obj.LSym {
 		ot = dextratype(lsym, ot, t, dataAdd)
 
 		// Array of rtype pointers follows funcType.
-		for _, t1 := range t.Recvs().Fields().Slice() {
-			ot = objw.SymPtr(lsym, ot, writeType(t1.Type), 0)
-		}
-		for _, t1 := range t.Params().Fields().Slice() {
-			ot = objw.SymPtr(lsym, ot, writeType(t1.Type), 0)
-		}
-		for _, t1 := range t.Results().Fields().Slice() {
+		for _, t1 := range t.RecvParamsResults() {
 			ot = objw.SymPtr(lsym, ot, writeType(t1.Type), 0)
 		}
 
@@ -1163,7 +1155,7 @@ func writeType(t *types.Type) *obj.LSym {
 	// ../../../../runtime/type.go:/structType
 	// for security, only the exported fields.
 	case types.TSTRUCT:
-		fields := t.Fields().Slice()
+		fields := t.Fields()
 		for _, t1 := range fields {
 			writeType(t1.Type)
 		}
@@ -1299,7 +1291,7 @@ func writeITab(lsym *obj.LSym, typ, iface *types.Type, allowNonImplement bool) {
 		base.Fatalf("writeITab(%v, %v)", typ, iface)
 	}
 
-	sigs := iface.AllMethods().Slice()
+	sigs := iface.AllMethods()
 	entries := make([]*obj.LSym, 0, len(sigs))
 
 	// both sigs and methods are sorted by name,
@@ -1394,12 +1386,11 @@ func WriteImportStrings() {
 // WriteBasicTypes always writes pointer types; any pointer has been stripped off typ already.
 func writtenByWriteBasicTypes(typ *types.Type) bool {
 	if typ.Sym() == nil && typ.Kind() == types.TFUNC {
-		f := typ.FuncType()
 		// func(error) string
-		if f.Receiver.NumFields() == 0 &&
-			f.Params.NumFields() == 1 && f.Results.NumFields() == 1 &&
-			f.Params.FieldType(0) == types.ErrorType &&
-			f.Results.FieldType(0) == types.Types[types.TSTRING] {
+		if typ.NumRecvs() == 0 &&
+			typ.NumParams() == 1 && typ.NumResults() == 1 &&
+			typ.Param(0).Type == types.ErrorType &&
+			typ.Result(0).Type == types.Types[types.TSTRING] {
 			return true
 		}
 	}
@@ -1505,8 +1496,8 @@ func (a typesByString) Less(i, j int) bool {
 	// will be equal for the above checks, but different in DWARF output.
 	// Sort by source position to ensure deterministic order.
 	// See issues 27013 and 30202.
-	if a[i].t.Kind() == types.TINTER && a[i].t.AllMethods().Len() > 0 {
-		return a[i].t.AllMethods().Index(0).Pos.Before(a[j].t.AllMethods().Index(0).Pos)
+	if a[i].t.Kind() == types.TINTER && len(a[i].t.AllMethods()) > 0 {
+		return a[i].t.AllMethods()[0].Pos.Before(a[j].t.AllMethods()[0].Pos)
 	}
 	return false
 }
@@ -1730,7 +1721,7 @@ func (p *gcProg) emit(t *types.Type, offset int64) {
 		p.w.Repeat(elem.Size()/int64(types.PtrSize), count-1)
 
 	case types.TSTRUCT:
-		for _, t1 := range t.Fields().Slice() {
+		for _, t1 := range t.Fields() {
 			p.emit(t1.Type, offset+t1.Offset)
 		}
 	}
