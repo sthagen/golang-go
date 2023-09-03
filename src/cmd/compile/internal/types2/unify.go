@@ -311,7 +311,7 @@ func (u *unifier) nify(x, y Type, mode unifyMode, p *ifacePair) (result bool) {
 	// Ensure that if we have at least one
 	// - defined type, make sure one is in y
 	// - type parameter recorded with u, make sure one is in x
-	if _, ok := x.(*Named); ok || u.asTypeParam(y) != nil {
+	if asNamed(x) != nil || u.asTypeParam(y) != nil {
 		if traceInference {
 			u.tracef("%s ≡ %s\t// swap", y, x)
 		}
@@ -335,7 +335,7 @@ func (u *unifier) nify(x, y Type, mode unifyMode, p *ifacePair) (result bool) {
 	// we will fail at function instantiation or argument assignment time.
 	//
 	// If we have at least one defined type, there is one in y.
-	if ny, _ := y.(*Named); mode&exact == 0 && ny != nil && isTypeLit(x) && !(u.enableInterfaceInference && IsInterface(x)) {
+	if ny := asNamed(y); mode&exact == 0 && ny != nil && isTypeLit(x) && !(u.enableInterfaceInference && IsInterface(x)) {
 		if traceInference {
 			u.tracef("%s ≡ under %s", x, ny)
 		}
@@ -372,8 +372,8 @@ func (u *unifier) nify(x, y Type, mode unifyMode, p *ifacePair) (result bool) {
 				// We have a match, possibly through underlying types.
 				xi := asInterface(x)
 				yi := asInterface(y)
-				_, xn := x.(*Named)
-				_, yn := y.(*Named)
+				xn := asNamed(x) != nil
+				yn := asNamed(y) != nil
 				// If we have two interfaces, what to do depends on
 				// whether they are named and their method sets.
 				if xi != nil && yi != nil {
@@ -401,18 +401,40 @@ func (u *unifier) nify(x, y Type, mode unifyMode, p *ifacePair) (result bool) {
 					// Therefore, we must fail unification (go.dev/issue/60933).
 					return false
 				}
-				// If y is a defined type, make sure we record that type
-				// for type parameter x, which may have until now only
-				// recorded an underlying type (go.dev/issue/43056).
-				// Either both types are interfaces, or neither type is.
-				// If both are interfaces, they have the same methods.
+				// If we have inexact unification and one of x or y is a defined type, select the
+				// defined type. This ensures that in a series of types, all matching against the
+				// same type parameter, we infer a defined type if there is one, independent of
+				// order. Type inference or assignment may fail, which is ok.
+				// Selecting a defined type, if any, ensures that we don't lose the type name;
+				// and since we have inexact unification, a value of equally named or matching
+				// undefined type remains assignable (go.dev/issue/43056).
 				//
-				// Note: Changing the recorded type for a type parameter to
-				// a defined type is only ok when unification is inexact.
-				// But in exact unification, if we have a match, x and y must
-				// be identical, so changing the recorded type for x is a no-op.
-				if yn {
-					u.set(px, y)
+				// Similarly, if we have inexact unification and there are no defined types but
+				// channel types, select a directed channel, if any. This ensures that in a series
+				// of unnamed types, all matching against the same type parameter, we infer the
+				// directed channel if there is one, independent of order.
+				// Selecting a directional channel, if any, ensures that a value of another
+				// inexactly unifying channel type remains assignable (go.dev/issue/62157).
+				//
+				// If we have multiple defined channel types, they are either identical or we
+				// have assignment conflicts, so we can ignore directionality in this case.
+				//
+				// If we have defined and literal channel types, a defined type wins to avoid
+				// order dependencies.
+				if mode&exact == 0 {
+					switch {
+					case xn:
+						// x is a defined type: nothing to do.
+					case yn:
+						// x is not a defined type and y is a defined type: select y.
+						u.set(px, y)
+					default:
+						// Neither x nor y are defined types.
+						if yc, _ := under(y).(*Chan); yc != nil && yc.dir != SendRecv {
+							// y is a directed channel type: select y.
+							u.set(px, y)
+						}
+					}
 				}
 				return true
 			}
@@ -706,7 +728,7 @@ func (u *unifier) nify(x, y Type, mode unifyMode, p *ifacePair) (result bool) {
 	case *Named:
 		// Two named types unify if their type names originate in the same type declaration.
 		// If they are instantiated, their type argument lists must unify.
-		if y, ok := y.(*Named); ok {
+		if y := asNamed(y); y != nil {
 			// Check type arguments before origins so they unify
 			// even if the origins don't match; for better error
 			// messages (see go.dev/issue/53692).

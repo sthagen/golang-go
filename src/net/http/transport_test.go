@@ -6811,54 +6811,35 @@ func testRequestSanitization(t *testing.T, mode testMode) {
 	}
 }
 
-// Issue 61708
-func TestTransportAndServerSharedBodyReqCancelerCleanupOnConnectionClose(t *testing.T) {
-	run(t, testTransportAndServerSharedBodyReqCancelerCleanupOnConnectionClose, []testMode{http1Mode})
+func TestProxyAuthHeader(t *testing.T) {
+	// Not parallel: Sets an environment variable.
+	run(t, testProxyAuthHeader, []testMode{http1Mode}, testNotParallel)
 }
-func testTransportAndServerSharedBodyReqCancelerCleanupOnConnectionClose(t *testing.T, mode testMode) {
-	const bodySize = 1 << 20
-
-	backend := newClientServerTest(t, mode, HandlerFunc(func(rw ResponseWriter, req *Request) {
-		io.Copy(rw, req.Body)
-	}))
-	t.Logf("Backend address: %s", backend.ts.Listener.Addr().String())
-
-	var proxy *clientServerTest
-	proxy = newClientServerTest(t, mode, HandlerFunc(func(rw ResponseWriter, req *Request) {
-		breq, _ := NewRequest("POST", backend.ts.URL, req.Body)
-
-		bresp, err := backend.c.Do(breq)
-		if err != nil {
-			t.Fatalf("Unexpected proxy outbound request error: %v", err)
+func testProxyAuthHeader(t *testing.T, mode testMode) {
+	const username = "u"
+	const password = "@/?!"
+	cst := newClientServerTest(t, mode, HandlerFunc(func(rw ResponseWriter, req *Request) {
+		// Copy the Proxy-Authorization header to a new Request,
+		// since Request.BasicAuth only parses the Authorization header.
+		var r2 Request
+		r2.Header = Header{
+			"Authorization": req.Header["Proxy-Authorization"],
 		}
-		defer bresp.Body.Close()
-
-		_, err = io.Copy(rw, bresp.Body)
-		if err == nil {
-			t.Fatalf("Expected proxy copy error")
+		gotuser, gotpass, ok := r2.BasicAuth()
+		if !ok || gotuser != username || gotpass != password {
+			t.Errorf("req.BasicAuth() = %q, %q, %v; want %q, %q, true", gotuser, gotpass, ok, username, password)
 		}
-		t.Logf("Proxy copy error: %v", err)
 	}))
-	t.Logf("Proxy address: %s", proxy.ts.Listener.Addr().String())
-
-	req, _ := NewRequest("POST", proxy.ts.URL, io.LimitReader(neverEnding('a'), bodySize))
-	res, err := proxy.c.Do(req)
+	u, err := url.Parse(cst.ts.URL)
 	if err != nil {
-		t.Fatalf("Original request: %v", err)
+		t.Fatal(err)
 	}
-	// Close body without reading to trigger proxy copy error
-	res.Body.Close()
-
-	// Verify no outstanding requests after readLoop/writeLoop
-	// goroutines shut down.
-	waitCondition(t, 10*time.Millisecond, func(d time.Duration) bool {
-		n := backend.tr.NumPendingRequestsForTesting()
-		if n > 0 {
-			if d > 0 {
-				t.Logf("pending requests = %d after %v (want 0)", n, d)
-			}
-			return false
-		}
-		return true
-	})
+	u.User = url.UserPassword(username, password)
+	t.Setenv("HTTP_PROXY", u.String())
+	cst.tr.Proxy = ProxyURL(u)
+	resp, err := cst.c.Get("http://_/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
 }

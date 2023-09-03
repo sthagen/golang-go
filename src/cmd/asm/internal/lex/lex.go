@@ -60,8 +60,8 @@ func (t ScanToken) String() string {
 }
 
 // NewLexer returns a lexer for the named file and the given link context.
-func NewLexer(name string, compilingRuntime bool) TokenReader {
-	input := NewInput(name, compilingRuntime)
+func NewLexer(name string) TokenReader {
+	input := NewInput(name)
 	fd, err := os.Open(name)
 	if err != nil {
 		log.Fatalf("%s\n", err)
@@ -105,13 +105,9 @@ type Token struct {
 
 // Make returns a Token with the given rune (ScanToken) and text representation.
 func Make(token ScanToken, text string) Token {
-	// If the symbol starts with center dot, as in ·x, rewrite it as ""·x
-	if token == scanner.Ident && strings.HasPrefix(text, "\u00B7") {
-		text = `""` + text
-	}
 	// Substitute the substitutes for . and /.
-	text = strings.Replace(text, "\u00B7", ".", -1)
-	text = strings.Replace(text, "\u2215", "/", -1)
+	text = strings.ReplaceAll(text, "\u00B7", ".")
+	text = strings.ReplaceAll(text, "\u2215", "/")
 	return Token{ScanToken: token, text: text}
 }
 

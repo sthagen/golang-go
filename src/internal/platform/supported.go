@@ -38,7 +38,7 @@ func RaceDetectorSupported(goos, goarch string) bool {
 func MSanSupported(goos, goarch string) bool {
 	switch goos {
 	case "linux":
-		return goarch == "amd64" || goarch == "arm64"
+		return goarch == "amd64" || goarch == "arm64" || goarch == "loong64"
 	case "freebsd":
 		return goarch == "amd64"
 	default:
@@ -51,7 +51,7 @@ func MSanSupported(goos, goarch string) bool {
 func ASanSupported(goos, goarch string) bool {
 	switch goos {
 	case "linux":
-		return goarch == "arm64" || goarch == "amd64" || goarch == "riscv64" || goarch == "ppc64le"
+		return goarch == "arm64" || goarch == "amd64" || goarch == "loong64" || goarch == "riscv64" || goarch == "ppc64le"
 	default:
 		return false
 	}

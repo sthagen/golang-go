@@ -18,6 +18,7 @@ import (
 	"cmd/compile/internal/compare"
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/objw"
+	"cmd/compile/internal/staticdata"
 	"cmd/compile/internal/typebits"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
@@ -412,6 +413,10 @@ func dimportpath(p *types.Pkg) {
 		return
 	}
 
+	if p == types.LocalPkg && base.Ctxt.Pkgpath == "" {
+		panic("missing pkgpath")
+	}
+
 	// If we are compiling the runtime package, there are two runtime packages around
 	// -- localpkg and Pkgs.Runtime. We don't want to produce import path symbols for
 	// both of them, so just produce one for localpkg.
@@ -431,16 +436,6 @@ func dgopkgpath(s *obj.LSym, ot int, pkg *types.Pkg) int {
 		return objw.Uintptr(s, ot, 0)
 	}
 
-	if pkg == types.LocalPkg && base.Ctxt.Pkgpath == "" {
-		// If we don't know the full import path of the package being compiled
-		// (i.e. -p was not passed on the compiler command line), emit a reference to
-		// type:.importpath.""., which the linker will rewrite using the correct import path.
-		// Every package that imports this one directly defines the symbol.
-		// See also https://groups.google.com/forum/#!topic/golang-dev/myb9s53HxGQ.
-		ns := base.Ctxt.Lookup(`type:.importpath."".`)
-		return objw.SymPtr(s, ot, ns, 0)
-	}
-
 	dimportpath(pkg)
 	return objw.SymPtr(s, ot, pkg.Pathsym, 0)
 }
@@ -449,15 +444,6 @@ func dgopkgpath(s *obj.LSym, ot int, pkg *types.Pkg) int {
 func dgopkgpathOff(s *obj.LSym, ot int, pkg *types.Pkg) int {
 	if pkg == nil {
 		return objw.Uint32(s, ot, 0)
-	}
-	if pkg == types.LocalPkg && base.Ctxt.Pkgpath == "" {
-		// If we don't know the full import path of the package being compiled
-		// (i.e. -p was not passed on the compiler command line), emit a reference to
-		// type:.importpath.""., which the linker will rewrite using the correct import path.
-		// Every package that imports this one directly defines the symbol.
-		// See also https://groups.google.com/forum/#!topic/golang-dev/myb9s53HxGQ.
-		ns := base.Ctxt.Lookup(`type:.importpath."".`)
-		return objw.SymPtrOff(s, ot, ns)
 	}
 
 	dimportpath(pkg)
@@ -546,7 +532,9 @@ func dname(name, tag string, pkg *types.Pkg, exported, embedded bool) *obj.LSym 
 			}
 		}
 	} else {
-		sname = fmt.Sprintf(`%s"".%d`, sname, dnameCount)
+		// TODO(mdempsky): We should be able to share these too (except
+		// maybe when dynamic linking).
+		sname = fmt.Sprintf("%s%s.%d", sname, types.LocalPkg.Prefix, dnameCount)
 		dnameCount++
 	}
 	if embedded {
@@ -1266,7 +1254,9 @@ func WriteRuntimeTypes() {
 		}
 		signatslice = signatslice[len(signats):]
 	}
+}
 
+func WriteGCSymbols() {
 	// Emit GC data symbols.
 	gcsyms := make([]typeAndStr, 0, len(gcsymset))
 	for t := range gcsymset {
@@ -1375,13 +1365,6 @@ func WritePluginTable() {
 	objw.Global(lsym, int32(ot), int16(obj.RODATA))
 }
 
-func WriteImportStrings() {
-	// generate import strings for imported packages
-	for _, p := range types.ImportedPkgList() {
-		dimportpath(p)
-	}
-}
-
 // writtenByWriteBasicTypes reports whether typ is written by WriteBasicTypes.
 // WriteBasicTypes always writes pointer types; any pointer has been stripped off typ already.
 func writtenByWriteBasicTypes(typ *types.Type) bool {
@@ -1418,45 +1401,32 @@ func WriteBasicTypes() {
 	// another possible choice would be package main,
 	// but using runtime means fewer copies in object files.
 	// The code here needs to be in sync with writtenByWriteBasicTypes above.
-	if base.Ctxt.Pkgpath == "runtime" {
-		// Note: always write NewPtr(t) because NeedEmit's caller strips the pointer.
-		var list []*types.Type
-		for i := types.Kind(1); i <= types.TBOOL; i++ {
-			list = append(list, types.Types[i])
-		}
-		list = append(list,
-			types.Types[types.TSTRING],
-			types.Types[types.TUNSAFEPTR],
-			types.AnyType,
-			types.ErrorType)
-		for _, t := range list {
-			writeType(types.NewPtr(t))
-			writeType(types.NewPtr(types.NewSlice(t)))
-		}
-
-		// emit type for func(error) string,
-		// which is the type of an auto-generated wrapper.
-		writeType(types.NewPtr(types.NewSignature(nil, []*types.Field{
-			types.NewField(base.Pos, nil, types.ErrorType),
-		}, []*types.Field{
-			types.NewField(base.Pos, nil, types.Types[types.TSTRING]),
-		})))
-
-		// add paths for runtime and main, which 6l imports implicitly.
-		dimportpath(ir.Pkgs.Runtime)
-
-		if base.Flag.Race {
-			dimportpath(types.NewPkg("runtime/race", ""))
-		}
-		if base.Flag.MSan {
-			dimportpath(types.NewPkg("runtime/msan", ""))
-		}
-		if base.Flag.ASan {
-			dimportpath(types.NewPkg("runtime/asan", ""))
-		}
-
-		dimportpath(types.NewPkg("main", ""))
+	if base.Ctxt.Pkgpath != "runtime" {
+		return
 	}
+
+	// Note: always write NewPtr(t) because NeedEmit's caller strips the pointer.
+	var list []*types.Type
+	for i := types.Kind(1); i <= types.TBOOL; i++ {
+		list = append(list, types.Types[i])
+	}
+	list = append(list,
+		types.Types[types.TSTRING],
+		types.Types[types.TUNSAFEPTR],
+		types.AnyType,
+		types.ErrorType)
+	for _, t := range list {
+		writeType(types.NewPtr(t))
+		writeType(types.NewPtr(types.NewSlice(t)))
+	}
+
+	// emit type for func(error) string,
+	// which is the type of an auto-generated wrapper.
+	writeType(types.NewPtr(types.NewSignature(nil, []*types.Field{
+		types.NewField(base.Pos, nil, types.ErrorType),
+	}, []*types.Field{
+		types.NewField(base.Pos, nil, types.Types[types.TSTRING]),
+	})))
 }
 
 type typeAndStr struct {
@@ -1879,17 +1849,8 @@ func MarkUsedIfaceMethod(n *ir.CallExpr) {
 		// some sort of fuzzy shape matching. For now, only use the name
 		// of the method for matching.
 		r := obj.Addrel(ir.CurFunc.LSym)
-		// We use a separate symbol just to tell the linker the method name.
-		// (The symbol itself is not needed in the final binary. Do not use
-		// staticdata.StringSym, which creates a content addessable symbol,
-		// which may have trailing zero bytes. This symbol doesn't need to
-		// be deduplicated anyway.)
-		name := dot.Sel.Name
-		var nameSym obj.LSym
-		nameSym.WriteString(base.Ctxt, 0, len(name), name)
-		objw.Global(&nameSym, int32(len(name)), obj.RODATA)
-		r.Sym = &nameSym
-		r.Type = objabi.R_USEGENERICIFACEMETHOD
+		r.Sym = staticdata.StringSymNoCommon(dot.Sel.Name)
+		r.Type = objabi.R_USENAMEDMETHOD
 		return
 	}
 

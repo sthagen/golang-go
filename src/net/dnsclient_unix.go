@@ -17,6 +17,7 @@ package net
 import (
 	"context"
 	"errors"
+	"internal/bytealg"
 	"internal/itoa"
 	"io"
 	"os"
@@ -513,7 +514,7 @@ func (conf *dnsConfig) nameList(name string) []string {
 		return []string{name}
 	}
 
-	hasNdots := count(name, '.') >= conf.ndots
+	hasNdots := bytealg.CountString(name, '.') >= conf.ndots
 	name += "."
 	l++
 
@@ -605,8 +606,7 @@ func goLookupIPFiles(name string) (addrs []IPAddr, canonical string) {
 
 // goLookupIP is the native Go implementation of LookupIP.
 // The libc versions are in cgo_*.go.
-func (r *Resolver) goLookupIP(ctx context.Context, network, host string) (addrs []IPAddr, err error) {
-	order, conf := systemConf().hostLookupOrder(r, host)
+func (r *Resolver) goLookupIP(ctx context.Context, network, host string, order hostLookupOrder, conf *dnsConfig) (addrs []IPAddr, err error) {
 	addrs, _, err = r.goLookupIPCNAMEOrder(ctx, network, host, order, conf)
 	return
 }
