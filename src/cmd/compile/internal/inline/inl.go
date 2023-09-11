@@ -29,6 +29,7 @@ package inline
 import (
 	"fmt"
 	"go/constant"
+	"internal/goexperiment"
 	"sort"
 	"strconv"
 
@@ -169,7 +170,7 @@ func InlinePackage(p *pgo.Profile) {
 	garbageCollectUnreferencedHiddenClosures()
 
 	if base.Debug.DumpInlFuncProps != "" {
-		inlheur.DumpFuncProps(nil, base.Debug.DumpInlFuncProps)
+		inlheur.DumpFuncProps(nil, base.Debug.DumpInlFuncProps, nil)
 	}
 }
 
@@ -292,8 +293,10 @@ func CanInline(fn *ir.Func, profile *pgo.Profile) {
 		base.Fatalf("CanInline no nname %+v", fn)
 	}
 
-	if base.Debug.DumpInlFuncProps != "" {
-		defer inlheur.DumpFuncProps(fn, base.Debug.DumpInlFuncProps)
+	var funcProps *inlheur.FuncProps
+	if goexperiment.NewInliner || inlheur.UnitTesting() {
+		funcProps = inlheur.AnalyzeFunc(fn,
+			func(fn *ir.Func) { CanInline(fn, profile) })
 	}
 
 	var reason string // reason, if any, that the function was not inlined
@@ -359,6 +362,9 @@ func CanInline(fn *ir.Func, profile *pgo.Profile) {
 		HaveDcl: true,
 
 		CanDelayResults: canDelayResults(fn),
+	}
+	if goexperiment.NewInliner {
+		n.Func.Inl.Properties = funcProps.SerializeToString()
 	}
 
 	if base.Flag.LowerM > 1 {
@@ -792,6 +798,13 @@ func isBigFunc(fn *ir.Func) bool {
 // InlineCalls/inlnode walks fn's statements and expressions and substitutes any
 // calls made to inlineable functions. This is the external entry point.
 func InlineCalls(fn *ir.Func, profile *pgo.Profile) {
+	if goexperiment.NewInliner && !fn.Wrapper() {
+		inlheur.ScoreCalls(fn)
+	}
+	if base.Debug.DumpInlFuncProps != "" && !fn.Wrapper() {
+		inlheur.DumpFuncProps(fn, base.Debug.DumpInlFuncProps,
+			func(fn *ir.Func) { CanInline(fn, profile) })
+	}
 	savefn := ir.CurFunc
 	ir.CurFunc = fn
 	bigCaller := isBigFunc(fn)

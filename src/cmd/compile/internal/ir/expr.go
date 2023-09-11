@@ -133,16 +133,29 @@ type BasicLit struct {
 }
 
 func NewBasicLit(pos src.XPos, val constant.Value) Node {
+	if val == nil || val.Kind() == constant.Unknown {
+		base.FatalfAt(pos, "bad value: %v", val)
+	}
+
 	n := &BasicLit{val: val}
 	n.op = OLITERAL
 	n.pos = pos
-	n.SetType(idealType(val.Kind()))
+	n.SetType(types.UntypedTypes[val.Kind()])
 	n.SetTypecheck(1)
 	return n
 }
 
 func (n *BasicLit) Val() constant.Value       { return n.val }
 func (n *BasicLit) SetVal(val constant.Value) { n.val = val }
+
+// NewConstExpr returns an OLITERAL representing val, copying the
+// position and type from orig.
+func NewConstExpr(val constant.Value, orig Node) Node {
+	n := NewBasicLit(orig.Pos(), val)
+	n.SetType(orig.Type())
+	n.SetTypecheck(orig.Typecheck())
+	return n
+}
 
 // A BinaryExpr is a binary expression X Op Y,
 // or Op(X, Y) for builtin functions that do not become calls.
@@ -175,7 +188,6 @@ func (n *BinaryExpr) SetOp(op Op) {
 // A CallExpr is a function call X(Args).
 type CallExpr struct {
 	miniExpr
-	origNode
 	X         Node
 	Args      Nodes
 	RType     Node    `mknode:"-"` // see reflectdata/helpers.go
@@ -187,7 +199,6 @@ type CallExpr struct {
 func NewCallExpr(pos src.XPos, op Op, fun Node, args []Node) *CallExpr {
 	n := &CallExpr{X: fun}
 	n.pos = pos
-	n.orig = n
 	n.SetOp(op)
 	n.Args = args
 	return n
@@ -221,7 +232,6 @@ type ClosureExpr struct {
 // Before type-checking, the type is Ntype.
 type CompLitExpr struct {
 	miniExpr
-	origNode
 	List     Nodes // initialized values
 	RType    Node  `mknode:"-"` // *runtime._type for OMAPLIT map types
 	Prealloc *Name
@@ -238,7 +248,6 @@ func NewCompLitExpr(pos src.XPos, op Op, typ *types.Type, list []Node) *CompLitE
 	if typ != nil {
 		n.SetType(typ)
 	}
-	n.orig = n
 	return n
 }
 
@@ -253,25 +262,6 @@ func (n *CompLitExpr) SetOp(op Op) {
 		n.op = op
 	}
 }
-
-type ConstExpr struct {
-	miniExpr
-	origNode
-	val constant.Value
-}
-
-func NewConstExpr(val constant.Value, orig Node) Node {
-	n := &ConstExpr{val: val}
-	n.op = OLITERAL
-	n.pos = orig.Pos()
-	n.orig = orig
-	n.SetType(orig.Type())
-	n.SetTypecheck(orig.Typecheck())
-	return n
-}
-
-func (n *ConstExpr) Sym() *types.Sym     { return n.orig.Sym() }
-func (n *ConstExpr) Val() constant.Value { return n.val }
 
 // A ConvExpr is a conversion Type(X).
 // It may end up being a value or a type.
@@ -493,20 +483,6 @@ func NewParenExpr(pos src.XPos, x Node) *ParenExpr {
 
 func (n *ParenExpr) Implicit() bool     { return n.flags&miniExprImplicit != 0 }
 func (n *ParenExpr) SetImplicit(b bool) { n.flags.set(miniExprImplicit, b) }
-
-// A RawOrigExpr represents an arbitrary Go expression as a string value.
-// When printed in diagnostics, the string value is written out exactly as-is.
-type RawOrigExpr struct {
-	miniExpr
-	Raw string
-}
-
-func NewRawOrigExpr(pos src.XPos, op Op, raw string) *RawOrigExpr {
-	n := &RawOrigExpr{Raw: raw}
-	n.pos = pos
-	n.op = op
-	return n
-}
 
 // A ResultExpr represents a direct access to a result.
 type ResultExpr struct {

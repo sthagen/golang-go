@@ -29,6 +29,11 @@ TEXT runtime·asmstdcall(SB),NOSPLIT,$16
 
 	SUBQ	$(const_maxArgs*8), SP	// room for args
 
+	// Fast version, do not store args on the stack nor
+	// load them into registers.
+	CMPL	CX, $0
+	JE	docall
+
 	// Fast version, do not store args on the stack.
 	CMPL	CX, $4
 	JLE	loadregs
@@ -59,6 +64,7 @@ loadregs:
 	MOVQ	R8, X2
 	MOVQ	R9, X3
 
+docall:
 	// Call stdcall function.
 	CALL	AX
 
@@ -265,15 +271,10 @@ TEXT runtime·switchtothread(SB),NOSPLIT,$0
 	RET
 
 TEXT runtime·nanotime1(SB),NOSPLIT,$0-8
-	CMPB	runtime·useQPCTime(SB), $0
-	JNE	useQPC
 	MOVQ	$_INTERRUPT_TIME, DI
 	MOVQ	time_lo(DI), AX
 	IMULQ	$100, AX
 	MOVQ	AX, ret+0(FP)
-	RET
-useQPC:
-	JMP	runtime·nanotimeQPC(SB)
 	RET
 
 // func osSetupTLS(mp *m)

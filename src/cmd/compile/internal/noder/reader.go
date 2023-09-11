@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"go/constant"
 	"internal/buildcfg"
+	"internal/goexperiment"
 	"internal/pkgbits"
 	"path/filepath"
 	"strings"
@@ -1118,6 +1119,9 @@ func (r *reader) funcExt(name *ir.Name, method *types.Sym) {
 				Cost:            int32(r.Len()),
 				CanDelayResults: r.Bool(),
 			}
+			if goexperiment.NewInliner {
+				fn.Inl.Properties = r.String()
+			}
 		}
 	} else {
 		r.addBody(name.Func, method)
@@ -2172,9 +2176,7 @@ func (r *reader) expr() (res ir.Node) {
 		pos := r.pos()
 		typ := r.typ()
 		val := FixValue(typ, r.Value())
-		op := r.op()
-		orig := r.String()
-		return typecheck.Expr(OrigConst(pos, typ, val, op, orig))
+		return typed(typ, ir.NewBasicLit(pos, val))
 
 	case exprNil:
 		pos := r.pos()
@@ -3055,7 +3057,7 @@ func (r *reader) compLit() ir.Node {
 func wrapName(pos src.XPos, x ir.Node) ir.Node {
 	// These nodes do not carry line numbers.
 	// Introduce a wrapper node to give them the correct line.
-	switch ir.Orig(x).Op() {
+	switch x.Op() {
 	case ir.OTYPE, ir.OLITERAL:
 		if x.Sym() == nil {
 			break

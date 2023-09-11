@@ -70,6 +70,12 @@ func (c *Conf) Frontend() Frontend {
 	return c.fe
 }
 
+func (c *Conf) Temp(typ *types.Type) *ir.Name {
+	n := ir.NewNameAt(src.NoXPos, &types.Sym{Name: "aFakeAuto"}, typ)
+	n.Class = ir.PAUTO
+	return n
+}
+
 // TestFrontend is a test-only frontend.
 // It assumes 64 bit integers and pointers.
 type TestFrontend struct {
@@ -81,15 +87,8 @@ type TestFrontend struct {
 func (TestFrontend) StringData(s string) *obj.LSym {
 	return nil
 }
-func (TestFrontend) Auto(pos src.XPos, t *types.Type) *ir.Name {
-	n := ir.NewNameAt(pos, &types.Sym{Name: "aFakeAuto"}, t)
-	n.Class = ir.PAUTO
-	return n
-}
 func (d TestFrontend) SplitSlot(parent *LocalSlot, suffix string, offset int64, t *types.Type) LocalSlot {
 	return LocalSlot{N: parent.N, Type: t, Off: offset}
-}
-func (TestFrontend) AllocFrame(f *Func) {
 }
 func (d TestFrontend) Syslook(s string) *obj.LSym {
 	return d.ctxt.Lookup(s)
@@ -105,9 +104,6 @@ func (d TestFrontend) Fatalf(_ src.XPos, msg string, args ...interface{}) { d.t.
 func (d TestFrontend) Warnl(_ src.XPos, msg string, args ...interface{})  { d.t.Logf(msg, args...) }
 func (d TestFrontend) Debug_checknil() bool                               { return false }
 
-func (d TestFrontend) MyImportPath() string {
-	return d.f.Sym().Pkg.Path
-}
 func (d TestFrontend) Func() *ir.Func {
 	return d.f
 }
@@ -122,11 +118,4 @@ func init() {
 
 	typecheck.InitUniverse()
 	testTypes.SetTypPtrs()
-}
-
-func (d TestFrontend) DerefItab(sym *obj.LSym, off int64) *obj.LSym { return nil }
-
-func (d TestFrontend) CanSSA(t *types.Type) bool {
-	// There are no un-SSAable types in test land.
-	return true
 }

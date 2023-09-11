@@ -14,13 +14,18 @@
 // void runtime·asmstdcall(void *c);
 TEXT runtime·asmstdcall(SB),NOSPLIT,$0
 	MOVL	fn+0(FP), BX
+	MOVL	SP, BP	// save stack pointer
 
 	// SetLastError(0).
 	MOVL	$0, 0x34(FS)
 
+	MOVL	libcall_n(BX), CX
+
+	// Fast version, do not store args on the stack.
+	CMPL	CX, $0
+	JE	docall
+
 	// Copy args to the stack.
-	MOVL	SP, BP
-	MOVL	libcall_n(BX), CX	// words
 	MOVL	CX, AX
 	SALL	$2, AX
 	SUBL	AX, SP			// room for args
@@ -29,6 +34,7 @@ TEXT runtime·asmstdcall(SB),NOSPLIT,$0
 	CLD
 	REP; MOVSL
 
+docall:
 	// Call stdcall or cdecl function.
 	// DI SI BP BX are preserved, SP is not
 	CALL	libcall_fn(BX)
@@ -251,8 +257,6 @@ TEXT runtime·switchtothread(SB),NOSPLIT,$0
 	RET
 
 TEXT runtime·nanotime1(SB),NOSPLIT,$0-8
-	CMPB	runtime·useQPCTime(SB), $0
-	JNE	useQPC
 loop:
 	MOVL	(_INTERRUPT_TIME+time_hi1), AX
 	MOVL	(_INTERRUPT_TIME+time_lo), CX
@@ -268,9 +272,6 @@ loop:
 	// wintime*100 = DX:AX
 	MOVL	AX, ret_lo+0(FP)
 	MOVL	DX, ret_hi+4(FP)
-	RET
-useQPC:
-	JMP	runtime·nanotimeQPC(SB)
 	RET
 
 // This is called from rt0_go, which runs on the system stack

@@ -75,8 +75,8 @@ type SysProcAttr struct {
 	// in the child process: an index into ProcAttr.Files.
 	// This is only meaningful if Setsid is true.
 	Setctty bool
-	Noctty  bool // Detach fd 0 from controlling terminal
-	Ctty    int  // Controlling TTY fd
+	Noctty  bool // Detach fd 0 from controlling terminal.
+	Ctty    int  // Controlling TTY fd.
 	// Foreground places the child process group in the foreground.
 	// This implies Setpgid. The Ctty field must be set to
 	// the descriptor of the controlling TTY.
@@ -89,8 +89,8 @@ type SysProcAttr struct {
 	// is sent on thread termination, which may happen before process termination.
 	// There are more details at https://go.dev/issue/27505.
 	Pdeathsig    Signal
-	Cloneflags   uintptr        // Flags for clone calls (Linux only)
-	Unshareflags uintptr        // Flags for unshare calls (Linux only)
+	Cloneflags   uintptr        // Flags for clone calls.
+	Unshareflags uintptr        // Flags for unshare calls.
 	UidMappings  []SysProcIDMap // User ID mappings for user namespaces.
 	GidMappings  []SysProcIDMap // Group ID mappings for user namespaces.
 	// GidMappingsEnableSetgroups enabling setgroups syscall.
@@ -98,14 +98,20 @@ type SysProcAttr struct {
 	// This parameter is no-op if GidMappings == nil. Otherwise for unprivileged
 	// users this should be set to false for mappings work.
 	GidMappingsEnableSetgroups bool
-	AmbientCaps                []uintptr // Ambient capabilities (Linux only)
+	AmbientCaps                []uintptr // Ambient capabilities.
 	UseCgroupFD                bool      // Whether to make use of the CgroupFD field.
 	CgroupFD                   int       // File descriptor of a cgroup to put the new process into.
+	// PidFD, if not nil, is used to store the pidfd of a child, if the
+	// functionality is supported by the kernel, or -1. Note *PidFD is
+	// changed only if the process starts successfully.
+	PidFD *int
 }
 
 var (
 	none  = [...]byte{'n', 'o', 'n', 'e', 0}
 	slash = [...]byte{'/', 0}
+
+	forceClone3 = false // Used by unit tests only.
 )
 
 // Implemented in runtime package.
@@ -235,6 +241,7 @@ func forkAndExecInChild1(argv0 *byte, argv, envv []*byte, chroot, dir *byte, att
 		uidmap, setgroups, gidmap []byte
 		clone3                    *cloneArgs
 		pgrp                      int32
+		pidfd                     _C_int = -1
 		dirfd                     int
 		cred                      *Credential
 		ngroups, groups           uintptr
@@ -289,17 +296,21 @@ func forkAndExecInChild1(argv0 *byte, argv, envv []*byte, chroot, dir *byte, att
 	if sys.Cloneflags&CLONE_NEWUSER == 0 && sys.Unshareflags&CLONE_NEWUSER == 0 {
 		flags |= CLONE_VFORK | CLONE_VM
 	}
+	if sys.PidFD != nil {
+		flags |= CLONE_PIDFD
+	}
 	// Whether to use clone3.
-	if sys.UseCgroupFD {
-		clone3 = &cloneArgs{
-			flags:      uint64(flags) | CLONE_INTO_CGROUP,
-			exitSignal: uint64(SIGCHLD),
-			cgroup:     uint64(sys.CgroupFD),
-		}
-	} else if flags&CLONE_NEWTIME != 0 {
+	if sys.UseCgroupFD || flags&CLONE_NEWTIME != 0 || forceClone3 {
 		clone3 = &cloneArgs{
 			flags:      uint64(flags),
 			exitSignal: uint64(SIGCHLD),
+		}
+		if sys.UseCgroupFD {
+			clone3.flags |= CLONE_INTO_CGROUP
+			clone3.cgroup = uint64(sys.CgroupFD)
+		}
+		if sys.PidFD != nil {
+			clone3.pidFD = uint64(uintptr(unsafe.Pointer(&pidfd)))
 		}
 	}
 
@@ -308,14 +319,14 @@ func forkAndExecInChild1(argv0 *byte, argv, envv []*byte, chroot, dir *byte, att
 	runtime_BeforeFork()
 	locked = true
 	if clone3 != nil {
-		pid, err1 = rawVforkSyscall(_SYS_clone3, uintptr(unsafe.Pointer(clone3)), unsafe.Sizeof(*clone3))
+		pid, err1 = rawVforkSyscall(_SYS_clone3, uintptr(unsafe.Pointer(clone3)), unsafe.Sizeof(*clone3), 0)
 	} else {
 		flags |= uintptr(SIGCHLD)
 		if runtime.GOARCH == "s390x" {
 			// On Linux/s390, the first two arguments of clone(2) are swapped.
-			pid, err1 = rawVforkSyscall(SYS_CLONE, 0, flags)
+			pid, err1 = rawVforkSyscall(SYS_CLONE, 0, flags, uintptr(unsafe.Pointer(&pidfd)))
 		} else {
-			pid, err1 = rawVforkSyscall(SYS_CLONE, flags, 0)
+			pid, err1 = rawVforkSyscall(SYS_CLONE, flags, 0, uintptr(unsafe.Pointer(&pidfd)))
 		}
 	}
 	if err1 != 0 || pid != 0 {
@@ -329,6 +340,10 @@ func forkAndExecInChild1(argv0 *byte, argv, envv []*byte, chroot, dir *byte, att
 	}
 
 	// Fork succeeded, now in child.
+
+	if sys.PidFD != nil {
+		*sys.PidFD = int(pidfd)
+	}
 
 	// Enable the "keep capabilities" flag to set ambient capabilities later.
 	if len(sys.AmbientCaps) > 0 {

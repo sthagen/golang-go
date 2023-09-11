@@ -913,8 +913,9 @@ func stacksplit(ctxt *obj.Link, p *obj.Prog, cursym *obj.LSym, newprog obj.ProgA
 	}
 	jalToSym(ctxt, p, REG_X5)
 
-	p = cursym.Func().UnspillRegisterArgs(p, newprog)
+	// The instructions which unspill regs should be preemptible.
 	p = ctxt.EndUnsafePoint(p, newprog, -1)
+	p = cursym.Func().UnspillRegisterArgs(p, newprog)
 
 	// JMP start
 	p = obj.Appendp(p, newprog)
@@ -973,7 +974,7 @@ func Split32BitImmediate(imm int64) (low, high int64, err error) {
 
 func regVal(r, min, max uint32) uint32 {
 	if r < min || r > max {
-		panic(fmt.Sprintf("register out of range, want %d < %d < %d", min, r, max))
+		panic(fmt.Sprintf("register out of range, want %d <= %d <= %d", min, r, max))
 	}
 	return r - min
 }
@@ -1722,10 +1723,10 @@ func (ins *instruction) encode() (uint32, error) {
 	if err != nil {
 		return 0, err
 	}
-	if enc.length > 0 {
-		return enc.encode(ins), nil
+	if enc.length <= 0 {
+		return 0, fmt.Errorf("%v: encoding called for a pseudo instruction", ins.as)
 	}
-	return 0, fmt.Errorf("fixme")
+	return enc.encode(ins), nil
 }
 
 func (ins *instruction) length() int {
@@ -1992,20 +1993,15 @@ func instructionsForMOV(p *obj.Prog) []*instruction {
 		ins.as, ins.rs1, ins.rs2, ins.imm = AADDI, REG_ZERO, obj.REG_NONE, low
 
 		// LUI is only necessary if the constant does not fit in 12 bits.
-		if high == 0 {
-			if insSLLI != nil {
-				inss = append(inss, insSLLI)
+		if high != 0 {
+			// LUI top20bits(c), R
+			// ADD bottom12bits(c), R, R
+			insLUI := &instruction{as: ALUI, rd: ins.rd, imm: high}
+			inss = []*instruction{insLUI}
+			if low != 0 {
+				ins.as, ins.rs1 = AADDIW, ins.rd
+				inss = append(inss, ins)
 			}
-			break
-		}
-
-		// LUI top20bits(c), R
-		// ADD bottom12bits(c), R, R
-		insLUI := &instruction{as: ALUI, rd: ins.rd, imm: high}
-		inss = []*instruction{insLUI}
-		if low != 0 {
-			ins.as, ins.rs1 = AADDIW, ins.rd
-			inss = append(inss, ins)
 		}
 		if insSLLI != nil {
 			inss = append(inss, insSLLI)
