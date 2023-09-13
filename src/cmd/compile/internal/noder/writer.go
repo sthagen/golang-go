@@ -1752,7 +1752,7 @@ func (w *writer) expr(expr syntax.Expr) {
 		}
 
 		if _, isNil := obj.(*types2.Nil); isNil {
-			w.Code(exprNil)
+			w.Code(exprZero)
 			w.pos(expr)
 			w.typ(tv.Type)
 			return
@@ -1963,6 +1963,39 @@ func (w *writer) expr(expr syntax.Expr) {
 				w.Code(exprNew)
 				w.pos(expr)
 				w.exprType(nil, expr.ArgList[0])
+				return
+
+			case "Sizeof":
+				assert(len(expr.ArgList) == 1)
+				assert(!expr.HasDots)
+
+				w.Code(exprSizeof)
+				w.pos(expr)
+				w.typ(w.p.typeOf(expr.ArgList[0]))
+				return
+
+			case "Alignof":
+				assert(len(expr.ArgList) == 1)
+				assert(!expr.HasDots)
+
+				w.Code(exprAlignof)
+				w.pos(expr)
+				w.typ(w.p.typeOf(expr.ArgList[0]))
+				return
+
+			case "Offsetof":
+				assert(len(expr.ArgList) == 1)
+				assert(!expr.HasDots)
+				selector := syntax.Unparen(expr.ArgList[0]).(*syntax.SelectorExpr)
+				index := w.p.info.Selections[selector].Index()
+
+				w.Code(exprOffsetof)
+				w.pos(expr)
+				w.typ(deref2(w.p.typeOf(selector.X)))
+				w.Len(len(index) - 1)
+				for _, idx := range index {
+					w.Len(idx)
+				}
 				return
 
 			case "append":

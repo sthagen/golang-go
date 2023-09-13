@@ -123,7 +123,7 @@ func walkExpr1(n ir.Node, init *ir.Nodes) ir.Node {
 		n.X = walkExpr(n.X, init)
 		return n
 
-	case ir.OEFACE, ir.OAND, ir.OANDNOT, ir.OSUB, ir.OMUL, ir.OADD, ir.OOR, ir.OXOR, ir.OLSH, ir.ORSH,
+	case ir.OMAKEFACE, ir.OAND, ir.OANDNOT, ir.OSUB, ir.OMUL, ir.OADD, ir.OOR, ir.OXOR, ir.OLSH, ir.ORSH,
 		ir.OUNSAFEADD:
 		n := n.(*ir.BinaryExpr)
 		n.X = walkExpr(n.X, init)
@@ -223,10 +223,6 @@ func walkExpr1(n ir.Node, init *ir.Nodes) ir.Node {
 	case ir.OCONVIFACE:
 		n := n.(*ir.ConvExpr)
 		return walkConvInterface(n, init)
-
-	case ir.OCONVIDATA:
-		n := n.(*ir.ConvExpr)
-		return walkConvIData(n, init)
 
 	case ir.OCONV, ir.OCONVNOP:
 		n := n.(*ir.ConvExpr)
@@ -549,7 +545,7 @@ func walkCall(n *ir.CallExpr, init *ir.Nodes) ir.Node {
 		directClosureCall(n)
 	}
 
-	if isFuncPCIntrinsic(n) {
+	if ir.IsFuncPCIntrinsic(n) {
 		// For internal/abi.FuncPCABIxxx(fn), if fn is a defined function, rewrite
 		// it to the address of the function of the ABI fn is defined.
 		name := n.X.(*ir.Name).Sym().Name

@@ -538,7 +538,7 @@ func (o *orderState) call(nn ir.Node) {
 	n := nn.(*ir.CallExpr)
 	typecheck.AssertFixedCall(n)
 
-	if isFuncPCIntrinsic(n) && isIfaceOfFunc(n.Args[0]) {
+	if ir.IsFuncPCIntrinsic(n) && isIfaceOfFunc(n.Args[0]) {
 		// For internal/abi.FuncPCABIxxx(fn), if fn is a defined function,
 		// do not introduce temporaries here, so it is easier to rewrite it
 		// to symbol address reference later in walk.
@@ -1164,7 +1164,7 @@ func (o *orderState) expr1(n, lhs ir.Node) ir.Node {
 
 	// concrete type (not interface) argument might need an addressable
 	// temporary to pass to the runtime conversion routine.
-	case ir.OCONVIFACE, ir.OCONVIDATA:
+	case ir.OCONVIFACE:
 		n := n.(*ir.ConvExpr)
 		n.X = o.expr(n.X, nil)
 		if n.X.Type().IsInterface() {
@@ -1173,7 +1173,7 @@ func (o *orderState) expr1(n, lhs ir.Node) ir.Node {
 		if _, _, needsaddr := dataWordFuncName(n.X.Type()); needsaddr || isStaticCompositeLiteral(n.X) {
 			// Need a temp if we need to pass the address to the conversion function.
 			// We also process static composite literal node here, making a named static global
-			// whose address we can put directly in an interface (see OCONVIFACE/OCONVIDATA case in walk).
+			// whose address we can put directly in an interface (see OCONVIFACE case in walk).
 			n.X = o.addrTemp(n.X)
 		}
 		return n
@@ -1498,16 +1498,6 @@ func (o *orderState) as2ok(n *ir.AssignListStmt) {
 
 	o.out = append(o.out, n)
 	o.stmt(typecheck.Stmt(as))
-}
-
-// isFuncPCIntrinsic returns whether n is a direct call of internal/abi.FuncPCABIxxx functions.
-func isFuncPCIntrinsic(n *ir.CallExpr) bool {
-	if n.Op() != ir.OCALLFUNC || n.X.Op() != ir.ONAME {
-		return false
-	}
-	fn := n.X.(*ir.Name).Sym()
-	return (fn.Name == "FuncPCABI0" || fn.Name == "FuncPCABIInternal") &&
-		fn.Pkg.Path == "internal/abi"
 }
 
 // isIfaceOfFunc returns whether n is an interface conversion from a direct reference of a func.
