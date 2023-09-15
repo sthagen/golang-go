@@ -7,6 +7,7 @@ package inlheur
 import (
 	"cmd/compile/internal/base"
 	"cmd/compile/internal/ir"
+	"cmd/compile/internal/types"
 	"encoding/json"
 	"fmt"
 	"internal/goexperiment"
@@ -76,6 +77,7 @@ func AnalyzeFunc(fn *ir.Func, canInline func(*ir.Func)) *FuncProps {
 	if err := cstab.merge(fcstab); err != nil {
 		base.FatalfAt(fn.Pos(), "%v", err)
 	}
+	fn.SetNeverReturns(entry.props.Flags&FuncPropNeverReturns != 0)
 	fpmap[fn] = entry
 	if fn.Inl != nil && fn.Inl.Properties == "" {
 		fn.Inl.Properties = entry.props.SerializeToString()
@@ -149,8 +151,8 @@ func UnitTesting() bool {
 // primarily in unit testing.
 func DumpFuncProps(fn *ir.Func, dumpfile string, canInline func(*ir.Func)) {
 	if fn != nil {
+		enableDebugTraceIfEnv()
 		dmp := func(fn *ir.Func) {
-
 			if !goexperiment.NewInliner {
 				ScoreCalls(fn)
 			}
@@ -163,6 +165,7 @@ func DumpFuncProps(fn *ir.Func, dumpfile string, canInline func(*ir.Func)) {
 				dmp(clo.Func)
 			}
 		})
+		disableDebugTrace()
 	} else {
 		emitDumpToFile(dumpfile)
 	}
@@ -173,7 +176,18 @@ func DumpFuncProps(fn *ir.Func, dumpfile string, canInline func(*ir.Func)) {
 // definition line, and due to generics we need to account for the
 // possibility that several ir.Func's will have the same def line.
 func emitDumpToFile(dumpfile string) {
-	outf, err := os.OpenFile(dumpfile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	mode := os.O_WRONLY | os.O_CREATE | os.O_TRUNC
+	if dumpfile[0] == '+' {
+		dumpfile = dumpfile[1:]
+		mode = os.O_WRONLY | os.O_APPEND | os.O_CREATE
+	}
+	if dumpfile[0] == '%' {
+		dumpfile = dumpfile[1:]
+		d, b := filepath.Dir(dumpfile), filepath.Base(dumpfile)
+		ptag := strings.ReplaceAll(types.LocalPkg.Path, "/", ":")
+		dumpfile = d + "/" + ptag + "." + b
+	}
+	outf, err := os.OpenFile(dumpfile, mode, 0644)
 	if err != nil {
 		base.Fatalf("opening function props dump file %q: %v\n", dumpfile, err)
 	}
@@ -208,22 +222,14 @@ func emitDumpToFile(dumpfile string) {
 // "-d=dumpinlfuncprops=..." command line flag, intended for use
 // primarily in unit testing.
 func captureFuncDumpEntry(fn *ir.Func, canInline func(*ir.Func)) {
-	if debugTrace&debugTraceFuncs != 0 {
-		fmt.Fprintf(os.Stderr, "=-= capturing dump for %v:\n",
-			fn.Sym().Name)
-	}
-
 	// avoid capturing compiler-generated equality funcs.
 	if strings.HasPrefix(fn.Sym().Name, ".eq.") {
 		return
 	}
 	fih, ok := fpmap[fn]
-	if goexperiment.NewInliner {
-		// Props object should already be present.
-		if !ok {
-			panic("unexpected missing props")
-		}
-	} else {
+	// Props object should already be present, unless this is a
+	// directly recursive routine.
+	if !ok {
 		AnalyzeFunc(fn, canInline)
 		fih = fpmap[fn]
 		if fn.Inl != nil && fn.Inl.Properties == "" {
@@ -237,6 +243,9 @@ func captureFuncDumpEntry(fn *ir.Func, canInline func(*ir.Func)) {
 		// we can wind up seeing closures multiple times here,
 		// so don't add them more than once.
 		return
+	}
+	if debugTrace&debugTraceFuncs != 0 {
+		fmt.Fprintf(os.Stderr, "=-= capturing dump for %v:\n", fn)
 	}
 	dumpBuffer[fn] = fih
 }

@@ -56,18 +56,11 @@ type Func struct {
 	Nname    *Name        // ONAME node
 	OClosure *ClosureExpr // OCLOSURE node
 
-	// Extra entry code for the function. For example, allocate and initialize
-	// memory for escaping parameters.
-	Enter Nodes
-	Exit  Nodes
-
 	// ONAME nodes for all params/locals for this func/closure, does NOT
 	// include closurevars until transforming closures during walk.
 	// Names must be listed PPARAMs, PPARAMOUTs, then PAUTOs,
 	// with PPARAMs and PPARAMOUTs in order corresponding to the function signature.
-	// However, as anonymous or blank PPARAMs are not actually declared,
-	// they are omitted from Dcl.
-	// Anonymous and blank PPARAMOUTs are declared as ~rNN and ~bNN Names, respectively.
+	// Anonymous and blank params are declared as ~pNN (for PPARAMs) and ~rNN (for PPARAMOUTs).
 	Dcl []*Name
 
 	// ClosureVars lists the free variables that are used within a
@@ -224,11 +217,10 @@ type Mark struct {
 type ScopeID int32
 
 const (
-	funcDupok         = 1 << iota // duplicate definitions ok
-	funcWrapper                   // hide frame from users (elide in tracebacks, don't count as a frame for recover())
-	funcABIWrapper                // is an ABI wrapper (also set flagWrapper)
-	funcNeedctxt                  // function uses context register (has closure variables)
-	funcReflectMethod             // function calls reflect.Type.Method or MethodByName
+	funcDupok      = 1 << iota // duplicate definitions ok
+	funcWrapper                // hide frame from users (elide in tracebacks, don't count as a frame for recover())
+	funcABIWrapper             // is an ABI wrapper (also set flagWrapper)
+	funcNeedctxt               // function uses context register (has closure variables)
 	// true if closure inside a function; false if a simple function or a
 	// closure in a global variable initialization
 	funcIsHiddenClosure
@@ -237,7 +229,6 @@ const (
 	funcNilCheckDisabled         // disable nil checks when compiling this function
 	funcInlinabilityChecked      // inliner has already determined whether the function is inlinable
 	funcNeverReturns             // function never returns (in most cases calls panic(), os.Exit(), or equivalent)
-	funcInstrumentBody           // add race/msan/asan instrumentation during SSA construction
 	funcOpenCodedDeferDisallowed // can't do open-coded defers
 	funcClosureResultsLost       // closure is called indirectly and we lost track of its results; used by escape analysis
 	funcPackageInit              // compiler emitted .init func for package
@@ -252,14 +243,12 @@ func (f *Func) Dupok() bool                    { return f.flags&funcDupok != 0 }
 func (f *Func) Wrapper() bool                  { return f.flags&funcWrapper != 0 }
 func (f *Func) ABIWrapper() bool               { return f.flags&funcABIWrapper != 0 }
 func (f *Func) Needctxt() bool                 { return f.flags&funcNeedctxt != 0 }
-func (f *Func) ReflectMethod() bool            { return f.flags&funcReflectMethod != 0 }
 func (f *Func) IsHiddenClosure() bool          { return f.flags&funcIsHiddenClosure != 0 }
 func (f *Func) IsDeadcodeClosure() bool        { return f.flags&funcIsDeadcodeClosure != 0 }
 func (f *Func) HasDefer() bool                 { return f.flags&funcHasDefer != 0 }
 func (f *Func) NilCheckDisabled() bool         { return f.flags&funcNilCheckDisabled != 0 }
 func (f *Func) InlinabilityChecked() bool      { return f.flags&funcInlinabilityChecked != 0 }
 func (f *Func) NeverReturns() bool             { return f.flags&funcNeverReturns != 0 }
-func (f *Func) InstrumentBody() bool           { return f.flags&funcInstrumentBody != 0 }
 func (f *Func) OpenCodedDeferDisallowed() bool { return f.flags&funcOpenCodedDeferDisallowed != 0 }
 func (f *Func) ClosureResultsLost() bool       { return f.flags&funcClosureResultsLost != 0 }
 func (f *Func) IsPackageInit() bool            { return f.flags&funcPackageInit != 0 }
@@ -268,14 +257,12 @@ func (f *Func) SetDupok(b bool)                    { f.flags.set(funcDupok, b) }
 func (f *Func) SetWrapper(b bool)                  { f.flags.set(funcWrapper, b) }
 func (f *Func) SetABIWrapper(b bool)               { f.flags.set(funcABIWrapper, b) }
 func (f *Func) SetNeedctxt(b bool)                 { f.flags.set(funcNeedctxt, b) }
-func (f *Func) SetReflectMethod(b bool)            { f.flags.set(funcReflectMethod, b) }
 func (f *Func) SetIsHiddenClosure(b bool)          { f.flags.set(funcIsHiddenClosure, b) }
 func (f *Func) SetIsDeadcodeClosure(b bool)        { f.flags.set(funcIsDeadcodeClosure, b) }
 func (f *Func) SetHasDefer(b bool)                 { f.flags.set(funcHasDefer, b) }
 func (f *Func) SetNilCheckDisabled(b bool)         { f.flags.set(funcNilCheckDisabled, b) }
 func (f *Func) SetInlinabilityChecked(b bool)      { f.flags.set(funcInlinabilityChecked, b) }
 func (f *Func) SetNeverReturns(b bool)             { f.flags.set(funcNeverReturns, b) }
-func (f *Func) SetInstrumentBody(b bool)           { f.flags.set(funcInstrumentBody, b) }
 func (f *Func) SetOpenCodedDeferDisallowed(b bool) { f.flags.set(funcOpenCodedDeferDisallowed, b) }
 func (f *Func) SetClosureResultsLost(b bool)       { f.flags.set(funcClosureResultsLost, b) }
 func (f *Func) SetIsPackageInit(b bool)            { f.flags.set(funcPackageInit, b) }
@@ -454,4 +441,41 @@ func IsFuncPCIntrinsic(n *CallExpr) bool {
 	fn := n.X.(*Name).Sym()
 	return (fn.Name == "FuncPCABI0" || fn.Name == "FuncPCABIInternal") &&
 		fn.Pkg.Path == "internal/abi"
+}
+
+// DeclareParams creates Names for all of the parameters in fn's
+// signature and adds them to fn.Dcl.
+//
+// If setNname is true, then it also sets types.Field.Nname for each
+// parameter.
+func (fn *Func) DeclareParams(setNname bool) {
+	if fn.Dcl != nil {
+		base.FatalfAt(fn.Pos(), "%v already has Dcl", fn)
+	}
+
+	declareParams := func(params []*types.Field, ctxt Class, prefix string, offset int) {
+		for i, param := range params {
+			sym := param.Sym
+			if sym == nil || sym.IsBlank() {
+				sym = fn.Sym().Pkg.LookupNum(prefix, i)
+			}
+
+			name := NewNameAt(param.Pos, sym, param.Type)
+			name.Class = ctxt
+			name.Curfn = fn
+			fn.Dcl[offset+i] = name
+
+			if setNname {
+				param.Nname = name
+			}
+		}
+	}
+
+	sig := fn.Type()
+	params := sig.RecvParams()
+	results := sig.Results()
+
+	fn.Dcl = make([]*Name, len(params)+len(results))
+	declareParams(params, PPARAM, "~p", 0)
+	declareParams(results, PPARAMOUT, "~r", len(params))
 }
