@@ -9,6 +9,7 @@ package http
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"unicode"
 )
@@ -141,6 +142,7 @@ func parsePattern(s string) (_ *pattern, err error) {
 		seg, rest = rest[:i], rest[i:]
 		if i := strings.IndexByte(seg, '{'); i < 0 {
 			// Literal.
+			seg = pathUnescape(seg)
 			p.segments = append(p.segments, segment{s: seg})
 		} else {
 			// Wildcard.
@@ -178,19 +180,6 @@ func parsePattern(s string) (_ *pattern, err error) {
 	return p, nil
 }
 
-func isValidHTTPToken(s string) bool {
-	if s == "" {
-		return false
-	}
-	// See https://www.rfc-editor.org/rfc/rfc9110#section-5.6.2.
-	for _, r := range s {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && !strings.ContainsRune("!#$%&'*+.^_`|~-", r) {
-			return false
-		}
-	}
-	return true
-}
-
 func isValidWildcardName(s string) bool {
 	if s == "" {
 		return false
@@ -202,6 +191,15 @@ func isValidWildcardName(s string) bool {
 		}
 	}
 	return true
+}
+
+func pathUnescape(path string) string {
+	u, err := url.PathUnescape(path)
+	if err != nil {
+		// Invalidly escaped path; use the original
+		return path
+	}
+	return u
 }
 
 // relationship is a relationship between two patterns, p1 and p2.
