@@ -95,12 +95,12 @@ var runtimeDecls = [...]struct {
 	{"convTstring", funcTag, 65},
 	{"convTslice", funcTag, 68},
 	{"assertE2I", funcTag, 69},
-	{"assertE2I2", funcTag, 70},
-	{"assertI2I", funcTag, 69},
-	{"assertI2I2", funcTag, 70},
-	{"panicdottypeE", funcTag, 71},
-	{"panicdottypeI", funcTag, 71},
-	{"panicnildottype", funcTag, 72},
+	{"assertE2I2", funcTag, 69},
+	{"panicdottypeE", funcTag, 70},
+	{"panicdottypeI", funcTag, 70},
+	{"panicnildottype", funcTag, 71},
+	{"typeAssert", funcTag, 69},
+	{"interfaceSwitch", funcTag, 72},
 	{"ifaceeq", funcTag, 73},
 	{"efaceeq", funcTag, 73},
 	{"deferrangefunc", funcTag, 74},
@@ -306,9 +306,9 @@ func runtimeTypes() []*types.Type {
 	typs[67] = types.NewSlice(typs[66])
 	typs[68] = newSig(params(typs[67]), params(typs[7]))
 	typs[69] = newSig(params(typs[1], typs[1]), params(typs[1]))
-	typs[70] = newSig(params(typs[1], typs[2]), params(typs[2]))
-	typs[71] = newSig(params(typs[1], typs[1], typs[1]), nil)
-	typs[72] = newSig(params(typs[1]), nil)
+	typs[70] = newSig(params(typs[1], typs[1], typs[1]), nil)
+	typs[71] = newSig(params(typs[1]), nil)
+	typs[72] = newSig(params(typs[1], typs[1]), params(typs[15], typs[1]))
 	typs[73] = newSig(params(typs[57], typs[7], typs[7]), params(typs[6]))
 	typs[74] = newSig(nil, params(typs[10]))
 	typs[75] = newSig(nil, params(typs[62]))
