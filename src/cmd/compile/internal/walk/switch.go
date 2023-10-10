@@ -15,6 +15,7 @@ import (
 	"cmd/compile/internal/ir"
 	"cmd/compile/internal/objw"
 	"cmd/compile/internal/reflectdata"
+	"cmd/compile/internal/rttype"
 	"cmd/compile/internal/ssagen"
 	"cmd/compile/internal/typecheck"
 	"cmd/compile/internal/types"
@@ -546,7 +547,7 @@ func walkSwitchType(sw *ir.SwitchStmt) {
 				typeArg = itabType(srcItab)
 			}
 			caseVar := typecheck.TempAt(base.Pos, ir.CurFunc, types.Types[types.TINT])
-			isw := ir.NewInterfaceSwitchStmt(base.Pos, caseVar, s.itabName, typeArg, lsym)
+			isw := ir.NewInterfaceSwitchStmt(base.Pos, caseVar, s.itabName, typeArg, dotHash, lsym)
 			sw.Compiled.Append(isw)
 
 			// Switch on the result of the call (or cache lookup).
@@ -691,7 +692,7 @@ func typeHashFieldOf(pos src.XPos, itab *ir.UnaryExpr) *ir.SelectorExpr {
 	if itab.X.Type().IsEmptyInterface() {
 		// runtime._type's hash field
 		if rtypeHashField == nil {
-			rtypeHashField = runtimeField("hash", int64(2*types.PtrSize), types.Types[types.TUINT32])
+			rtypeHashField = runtimeField("hash", rttype.Type.Offset("Hash"), types.Types[types.TUINT32])
 		}
 		hashField = rtypeHashField
 	} else {
