@@ -1147,7 +1147,7 @@ loop:
 			}
 
 			// x[i:...
-			// For better error message, don't simply use p.want(_Colon) here (issue #47704).
+			// For better error message, don't simply use p.want(_Colon) here (go.dev/issue/47704).
 			if !p.got(_Colon) {
 				p.syntaxError("expected comma, : or ]")
 				p.advance(_Comma, _Colon, _Rbrack)
@@ -2057,7 +2057,11 @@ func (p *parser) paramList(name *Name, typ Expr, close token, requireNames bool)
 					pos = end // position error at closing ]
 					msg = "missing type constraint"
 				} else {
-					msg = "type parameters must be named"
+					msg = "missing type parameter name"
+					// go.dev/issue/60812
+					if len(list) == 1 {
+						msg += " or invalid array length"
+					}
 				}
 			} else {
 				msg = "mixed named and unnamed parameters"
@@ -2322,7 +2326,7 @@ func (p *parser) header(keyword token) (init SimpleStmt, cond Expr, post SimpleS
 			// asking for a '{' rather than a ';' here leads to a better error message
 			p.want(_Lbrace)
 			if p.tok != _Lbrace {
-				p.advance(_Lbrace, _Rbrace) // for better synchronization (e.g., issue #22581)
+				p.advance(_Lbrace, _Rbrace) // for better synchronization (e.g., go.dev/issue/22581)
 			}
 		}
 		if keyword == _For {
