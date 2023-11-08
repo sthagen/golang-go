@@ -164,7 +164,7 @@ var depsRules = `
 
 	unicode, fmt !< net, os, os/signal;
 
-	os/signal, STR
+	os/signal, internal/safefilepath, STR
 	< path/filepath
 	< io/ioutil;
 
@@ -270,6 +270,8 @@ var depsRules = `
 
 	# go parser and friends.
 	FMT
+	< internal/gover
+	< go/version
 	< go/token
 	< go/scanner
 	< go/ast
