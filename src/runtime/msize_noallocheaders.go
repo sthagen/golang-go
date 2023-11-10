@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build !goexperiment.allocheaders
+
 // Malloc small size classes.
 //
 // See malloc.go for overview.
@@ -10,7 +12,9 @@
 package runtime
 
 // Returns size of the memory block that mallocgc will allocate if you ask for the size.
-func roundupsize(size uintptr) uintptr {
+//
+// The noscan argument is purely for compatibility with goexperiment.AllocHeaders.
+func roundupsize(size uintptr, noscan bool) uintptr {
 	if size < _MaxSmallSize {
 		if size <= smallSizeMax-8 {
 			return uintptr(class_to_size[size_to_class8[divRoundUp(size, smallSizeDiv)]])
