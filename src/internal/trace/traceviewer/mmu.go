@@ -1,4 +1,4 @@
-// Copyright 2017 The Go Authors. All rights reserved.
+// Copyright 2023 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -23,7 +23,7 @@
 // could potentially put confidence intervals on these estimates and
 // render this progressively as we refine the distributions.
 
-package main
+package traceviewer
 
 import (
 	"encoding/json"
@@ -38,10 +38,25 @@ import (
 	"time"
 )
 
-func init() {
-	http.HandleFunc("/mmu", httpMMU)
-	http.HandleFunc("/mmuPlot", httpMMUPlot)
-	http.HandleFunc("/mmuDetails", httpMMUDetails)
+type MutatorUtilFunc func(trace.UtilFlags) ([][]trace.MutatorUtil, error)
+
+func MMUHandlerFunc(ranges []Range, f MutatorUtilFunc) http.HandlerFunc {
+	mmu := &mmu{
+		cache:  make(map[trace.UtilFlags]*mmuCacheEntry),
+		f:      f,
+		ranges: ranges,
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.FormValue("mode") {
+		case "plot":
+			mmu.HandlePlot(w, r)
+			return
+		case "details":
+			mmu.HandleDetails(w, r)
+			return
+		}
+		http.ServeContent(w, r, "", time.Time{}, strings.NewReader(templMMU))
+	}
 }
 
 var utilFlagNames = map[string]trace.UtilFlags{
@@ -52,6 +67,14 @@ var utilFlagNames = map[string]trace.UtilFlags{
 	"sweep":      trace.UtilSweep,
 }
 
+func requestUtilFlags(r *http.Request) trace.UtilFlags {
+	var flags trace.UtilFlags
+	for _, flagStr := range strings.Split(r.FormValue("flags"), "|") {
+		flags |= utilFlagNames[flagStr]
+	}
+	return flags
+}
+
 type mmuCacheEntry struct {
 	init     sync.Once
 	util     [][]trace.MutatorUtil
@@ -59,51 +82,39 @@ type mmuCacheEntry struct {
 	err      error
 }
 
-var mmuCache struct {
-	m    map[trace.UtilFlags]*mmuCacheEntry
-	lock sync.Mutex
+type mmu struct {
+	mu     sync.Mutex
+	cache  map[trace.UtilFlags]*mmuCacheEntry
+	f      MutatorUtilFunc
+	ranges []Range
 }
 
-func init() {
-	mmuCache.m = make(map[trace.UtilFlags]*mmuCacheEntry)
-}
-
-func getMMUCurve(r *http.Request) ([][]trace.MutatorUtil, *trace.MMUCurve, error) {
-	var flags trace.UtilFlags
-	for _, flagStr := range strings.Split(r.FormValue("flags"), "|") {
-		flags |= utilFlagNames[flagStr]
+func (m *mmu) get(flags trace.UtilFlags) ([][]trace.MutatorUtil, *trace.MMUCurve, error) {
+	m.mu.Lock()
+	entry := m.cache[flags]
+	if entry == nil {
+		entry = new(mmuCacheEntry)
+		m.cache[flags] = entry
 	}
+	m.mu.Unlock()
 
-	mmuCache.lock.Lock()
-	c := mmuCache.m[flags]
-	if c == nil {
-		c = new(mmuCacheEntry)
-		mmuCache.m[flags] = c
-	}
-	mmuCache.lock.Unlock()
-
-	c.init.Do(func() {
-		events, err := parseEvents()
+	entry.init.Do(func() {
+		util, err := m.f(flags)
 		if err != nil {
-			c.err = err
+			entry.err = err
 		} else {
-			c.util = trace.MutatorUtilization(events, flags)
-			c.mmuCurve = trace.NewMMUCurve(c.util)
+			entry.util = util
+			entry.mmuCurve = trace.NewMMUCurve(util)
 		}
 	})
-	return c.util, c.mmuCurve, c.err
+	return entry.util, entry.mmuCurve, entry.err
 }
 
-// httpMMU serves the MMU plot page.
-func httpMMU(w http.ResponseWriter, r *http.Request) {
-	http.ServeContent(w, r, "", time.Time{}, strings.NewReader(templMMU))
-}
-
-// httpMMUPlot serves the JSON data for the MMU plot.
-func httpMMUPlot(w http.ResponseWriter, r *http.Request) {
-	mu, mmuCurve, err := getMMUCurve(r)
+// HandlePlot serves the JSON data for the MMU plot.
+func (m *mmu) HandlePlot(w http.ResponseWriter, r *http.Request) {
+	mu, mmuCurve, err := m.get(requestUtilFlags(r))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to parse events: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("failed to produce MMU data: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -202,7 +213,7 @@ var templMMU = `<!doctype html>
         container.css('opacity', '.5');
         refreshChart.count++;
         var seq = refreshChart.count;
-        $.getJSON('/mmuPlot?flags=' + mmuFlags())
+        $.getJSON('?mode=plot&flags=' + mmuFlags())
          .fail(function(xhr, status, error) {
            alert('failed to load plot: ' + status);
          })
@@ -275,7 +286,7 @@ var templMMU = `<!doctype html>
         var details = $('#details');
         details.empty();
         var windowNS = curve[items[0].row][0];
-        var url = '/mmuDetails?window=' + windowNS + '&flags=' + mmuFlags();
+        var url = '?mode=details&window=' + windowNS + '&flags=' + mmuFlags();
         $.getJSON(url)
          .fail(function(xhr, status, error) {
             details.text(status + ': ' + url + ' could not be loaded');
@@ -357,11 +368,11 @@ var templMMU = `<!doctype html>
 </html>
 `
 
-// httpMMUDetails serves details of an MMU graph at a particular window.
-func httpMMUDetails(w http.ResponseWriter, r *http.Request) {
-	_, mmuCurve, err := getMMUCurve(r)
+// HandleDetails serves details of an MMU graph at a particular window.
+func (m *mmu) HandleDetails(w http.ResponseWriter, r *http.Request) {
+	_, mmuCurve, err := m.get(requestUtilFlags(r))
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to parse events: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("failed to produce MMU data: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -376,7 +387,7 @@ func httpMMUDetails(w http.ResponseWriter, r *http.Request) {
 	// Construct a link for each window.
 	var links []linkedUtilWindow
 	for _, ui := range worst {
-		links = append(links, newLinkedUtilWindow(ui, time.Duration(window)))
+		links = append(links, m.newLinkedUtilWindow(ui, time.Duration(window)))
 	}
 
 	err = json.NewEncoder(w).Encode(links)
@@ -391,13 +402,13 @@ type linkedUtilWindow struct {
 	URL string
 }
 
-func newLinkedUtilWindow(ui trace.UtilWindow, window time.Duration) linkedUtilWindow {
+func (m *mmu) newLinkedUtilWindow(ui trace.UtilWindow, window time.Duration) linkedUtilWindow {
 	// Find the range containing this window.
 	var r Range
-	for _, r = range ranges {
+	for _, r = range m.ranges {
 		if r.EndTime > ui.Time {
 			break
 		}
 	}
-	return linkedUtilWindow{ui, fmt.Sprintf("%s#%v:%v", r.URL(), float64(ui.Time)/1e6, float64(ui.Time+int64(window))/1e6)}
+	return linkedUtilWindow{ui, fmt.Sprintf("%s#%v:%v", r.URL(ViewProc), float64(ui.Time)/1e6, float64(ui.Time+int64(window))/1e6)}
 }
