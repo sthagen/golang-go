@@ -140,11 +140,6 @@ Do not send CLs removing the interior tags from such phrases.
   TODO: <a href="https://go.dev/issue/62577">https://go.dev/issue/62577</a>: cmd/link, cmd/go: emit split DWARF on darwin
 </p>
 
-<!-- CL 461697 -->
-<p>
-  <!-- cmd/go: default to PIE linking on darwin/amd64 -->
-</p>
-
 <p>
   TODO: complete this section, or delete if not needed
 </p>
@@ -329,72 +324,108 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="encoding"><dt><a href="/pkg/encoding/">encoding</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/53693 -->
-      TODO: <a href="https://go.dev/issue/53693">https://go.dev/issue/53693</a>: provide append-like variants
+    <p><!-- https://go.dev/issue/53693, https://go.dev/cl/504884 -->
+      The new methods <code>AppendEncode</code> and <code>AppendDecode</code> added to
+      each of the <code>Encoding</code> types in the packages
+      <a href="/pkg/encoding/base32"><code>encoding/base32</code></a>,
+      <a href="/pkg/encoding/base64"><code>encoding/base64</code></a>, and
+      <a href="/pkg/encoding/hex"><code>encoding/hex</code></a>
+      simplify encoding and decoding from and to byte slices by taking care of byte slice buffer management.
     </p>
 
-    <p><!-- CL 504884 -->
-      TODO: <a href="https://go.dev/cl/504884">https://go.dev/cl/504884</a>: encoding: add AppendEncode and AppendDecode; modified api/next/53693.txt
-    </p>
-
-    <p><!-- CL 505236 -->
-      TODO: <a href="https://go.dev/cl/505236">https://go.dev/cl/505236</a>: encoding: reject negative runes in Encoding.WithPadding; Providing a negative rune to Encoding.WithPadding other than NoPadding made no semantic sense, and will now panic.
+    <p><!-- https://go.dev/cl/505236 -->
+      The methods
+      <a href="/pkg/encoding/base32#Encoding.WithPadding"><code>base32.Encoding.WithPadding</code></a> and
+      <a href="/pkg/encoding/base64#Encoding.WithPadding"><code>base64.Encoding.WithPadding</code></a>
+      now panic if the <code>padding</code> argument is a negative value other than
+      <code>NoPadding</code>.
     </p>
   </dd>
 </dl><!-- encoding -->
 
 <dl id="go/ast"><dt><a href="/pkg/go/ast/">go/ast</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/52463 -->
-      TODO: <a href="https://go.dev/issue/52463">https://go.dev/issue/52463</a>: formally deprecate Object
+    <p><!-- https://go.dev/issue/52463, https://go/dev/cl/504915 -->
+      The following declarations related to
+      <a href='https://pkg.go.dev/go/ast#Object'>syntactic identifier resolution</a>
+      are now <a href="https://go.dev/issue/52463">deprecated</a>:
+      <code>Ident.Obj</code>,
+      <code>Object</code>,
+      <code>Scope</code>,
+      <code>File.Scope</code>,
+      <code>File.Unresolved</code>,
+      <code>Importer</code>,
+      <code>Package</code>,
+      <code>NewPackage</code>.
     </p>
-
-    <p><!-- CL 504915 -->
-      TODO: <a href="https://go.dev/cl/504915">https://go.dev/cl/504915</a>: go/ast: deprecate Object; modified api/go1.21.txt
+    <p>
+      Identifiers cannot be accurately resolved without type information.
+      Consider, for example, the identifier <code>K</code>
+      in <code>T{K: ""}</code>: it could be the name of a local variable
+      if T is a map type, or the name of a field if T is a struct type.
+    </p>
+    <p>
+      New programs should use the <a href='/pkg/go/types'>go/types</a>
+      package to resolve identifiers;
+      see <code>Object</code>, <code>Info.Uses</code>,
+      and <code>Info.Defs</code> for details.
     </p>
   </dd>
 </dl><!-- go/ast -->
 
 <dl id="go/types"><dt><a href="/pkg/go/types/">go/types</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/62037 -->
-      TODO: <a href="https://go.dev/issue/62037">https://go.dev/issue/62037</a>: add Info.PkgName method
+    <p><!-- https://go.dev/issue/63223, CL 521956, CL 541737 -->
+      The new <a href="/pkg/go/types#Alias"><code>Alias</code></a> type represents type aliases.
+      Previously, type aliases were not represented explicitly, so a reference to a type alias was equivalent
+      to spelling out the aliased type, and the name of the alias was lost.
+      The new representation retains the intermediate Alias.
+      This enables improved error reporting (the name of an alias can be reported), and allows for better handling
+      of cyclic type declarations involving type aliases.
+      In a future release, <code>Alias</code> types will also carry <a href="https://go.dev/issue/46477">type parameter information</a>.
+      The new function <a href="/pkg/go/types#Unalias"><code>Unalias</code></a> returns the actual type denoted by an
+      <code>Alias</code> type (or any other <a href="/pkg/go/types#Type"><code>Type</code></a> for that matter).
+      Because <code>Alias</code> types may break existing type switches that do not know to check for them,
+      this functionality is controlled by a <a href="/doc/godebug"><code>GODEBUG</code></a> field named <code>gotypesalias</code>.
+      With <code>gotypesalias=0</code>, everything behaves as before, and <code>Alias</code> types are never created.
+      With <code>gotypesalias=1</code>, <code>Alias</code> types are created and clients must expect them.
+      The default is <code>gotypesalias=0</code>.
+      In a future release, the default will be changed to <code>gotypesalias=1</code>.
     </p>
 
-    <p><!-- https://go.dev/issue/62605 -->
-      TODO: <a href="https://go.dev/issue/62605">https://go.dev/issue/62605</a>: Export Info.FileVersions for access to file-specific version information
+    <p><!-- https://go.dev/issue/62605, CL 540056 -->
+      The <a href="/pkg/go/types#Info"><code>Info</code></a> struct now exports the
+      <a href="/pkg/go/types#Info.FileVersions"><code>FileVersions</code></a> map
+      which provides per-file Go version information.
     </p>
 
-    <p><!-- https://go.dev/issue/63223 -->
-      TODO: <a href="https://go.dev/issue/63223">https://go.dev/issue/63223</a>: API changes to support explicit Alias nodes
+    <p><!-- https://go.dev/issue/62037, CL 541575 -->
+      The new helper method <a href="/pkg/go/types#Info.PkgNameOf"><code>PkgNameOf</code></a> returns the local package name
+      for the given import declaration.
     </p>
 
-    <p><!-- CL 540056 -->
-      TODO: <a href="https://go.dev/cl/540056">https://go.dev/cl/540056</a>: go/types: export Info.FileVersions; modified api/next/62605.txt
+    <p><!-- https://go.dev/issue/61035, multiple CLs, see issue for details -->
+      The implementation of <a href="/pkg/go/types#SizesFor"><code>SizesFor</code></a> has been adjusted to compute
+      the same type sizes as the compiler when the compiler argument for <code>SizesFor</code> is <code>"gc"</code>.
+      The default <a href="/pkg/go/types#Sizes"><code>Sizes</code></a> implementation used by the type checker is now
+      <code>types.SizesFor("gc", "amd64")</code>.
     </p>
 
-    <p><!-- https://go.dev/issue/61035 -->
-      TODO: <a href="https://go.dev/issue/61035">https://go.dev/issue/61035</a>: go/types, types2: fix SizesFor(&#34;gc&#34;, ...) to match actual gc behavior
-    </p>
-
-    <p><!-- CL 541575 -->
-      TODO: <a href="https://go.dev/cl/541575">https://go.dev/cl/541575</a>: go/types, types2: implement Info.PkgNameOf; modified api/next/62037.txt
-    </p>
-
-    <p><!-- CL 541737 -->
-      TODO: <a href="https://go.dev/cl/541737">https://go.dev/cl/541737</a>: go/types, types2: implement Alias proposal (export API); modified api/next/63223.txt
+    <p><!-- https://go.dev/issue/64295, CL 544035 -->
+      The start position (<a href="/pkg/go/types#Scope.Pos"><code>Pos</code></a>)
+      of the lexical environment block (<a href="/pkg/go/types#Scope"><code>Scope</code></a>)
+      that represents a function body has changed:
+      it used to start at the opening curly brace of the function body,
+      but now starts at the function's <code>func</code> token.
     </p>
   </dd>
-</dl><!-- go/types -->
+</dl>
 
 <dl id="go/version"><dt><a href="/pkg/go/version/">go/version</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/62039 -->
-      TODO: <a href="https://go.dev/issue/62039">https://go.dev/issue/62039</a>: package for handling Go version strings
-    </p>
-
-    <p><!-- CL 538895 -->
-      TODO: <a href="https://go.dev/cl/538895">https://go.dev/cl/538895</a>: go/version: add new package; modified api/next/62039.txt
+    <p><!-- https://go.dev/issue/62039, https://go.dev/cl/538895 -->
+      The new <a href="/pkg/go/version/"><code>go/version</code></a> package implements functions
+      for validating and comparing Go version strings.
     </p>
   </dd>
 </dl><!-- go/version -->
@@ -437,12 +468,10 @@ Do not send CLs removing the interior tags from such phrases.
 
 <dl id="math/big"><dt><a href="/pkg/math/big/">math/big</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/50489 -->
-      TODO: <a href="https://go.dev/issue/50489">https://go.dev/issue/50489</a>: Rat: add FloatPrec() (int, bool)
-    </p>
-
-    <p><!-- CL 539299 -->
-      TODO: <a href="https://go.dev/cl/539299">https://go.dev/cl/539299</a>: math/big: implement Rat.FloatPrec; modified api/next/50489.txt
+    <p><!-- https://go.dev/issue/50489, CL 539299 -->
+      The new method <a href="/pkg/math/big#Rat.FloatPrec">Rat.FloatPrec</a> computes the number of fractional decimal digits
+      required to represent a rational number accurately as a floating-point number, and whether accurate decimal representation
+      is possible in the first place.
     </p>
   </dd>
 </dl><!-- math/big -->
@@ -526,18 +555,6 @@ Do not send CLs removing the interior tags from such phrases.
     </p>
   </dd>
 </dl><!-- os/exec -->
-
-<dl id="go/types"><dt><a href="/pkg/go/types/">go/types</a></dt>
-  <dd>
-    <p><!-- https://go.dev/issue/64295, CL 544035 -->
-      The start position (<a href="/pkg/go/types#Scope.Pos">Pos</a>)
-      of the lexical environment block (<a href="/pkg/go/types#Scope">Scope</a>)
-      that represents a function body has changed:
-      it used to start at the opening curly brace of the function body,
-      but now starts at the function's <code>func</code> token.
-    </p>
-  </dd>
-</dl>
 
 <dl id="reflect"><dt><a href="/pkg/reflect/">reflect</a></dt>
   <dd>
@@ -652,6 +669,16 @@ Do not send CLs removing the interior tags from such phrases.
 </dl><!-- testing/slogtest -->
 
 <h2 id="ports">Ports</h2>
+
+<h3 id="darwin">Darwin</h3>
+<p><!-- CL 461697 -->
+  On macOS on 64-bit x86 architecture (the <code>darwin/amd64</code> port),
+  the Go toolchain now generates position-independent executables (PIE) by default.
+  Non-PIE binaries can be generated by specifying the <code>-buildmode=exe</code>
+  build flag.
+  On 64-bit ARM-based macOS (the <code>darwin/arm64</code> port),
+  the Go toolchain already generates PIE by default.
+</p>
 
 <h3 id="arm">Arm</h3>
 <p><!-- CL 514907 -->
