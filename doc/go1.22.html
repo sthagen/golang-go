@@ -26,7 +26,39 @@ Do not send CLs removing the interior tags from such phrases.
 <h2 id="language">Changes to the language</h2>
 
 <p>
-  TODO: complete this section
+<!-- loop variable scope --><!-- range over int -->
+Go 1.22 makes two changes to "for" loops.
+<ul>
+  <li>
+    Previously, the variables declared by a "for" loop were created once and updated by each iteration. In Go 1.22, each iteration of the loop creates new variables, to avoid accidental sharing bugs.
+    The <a href="https://go.dev/wiki/LoopvarExperiment#my-test-fails-with-the-change-how-can-i-debug-it">transition support tooling</a>
+    described in the proposal continues to work in the same way it did in Go 1.21.
+  </li>
+  <li>
+    "For" loops may now range over integers.
+    For <a href="https://go.dev/play/p/ky02zZxgk_r?v=gotip">example</a>:
+<pre>
+package main
+
+import "fmt"
+
+func main() {
+  for i := range 10 {
+    fmt.Println(10 - i)
+  }
+  fmt.Println("go1.22 has lift-off!")
+}
+</pre>
+    See the spec for <a href="/ref/spec#For_range">details</a>.
+  </li>
+</ul>
+
+<!-- range over func GOEXPERIMENT; https://go.dev/issue/61405, https://go.dev/issue/61897, CLs 510541,539277,540263,543319 -->
+</p>
+<p>
+  Go 1.22 includes a preview of a language change we are considering
+  for a future version of Go: <a href="https://go.dev/wiki/RangefuncExperiment">range-over-function iterators</a>.
+  Building with <code>GOEXPERIMENT=rangefunc</code> enables this feature.
 </p>
 
 <h2 id="tools">Tools</h2>
@@ -55,9 +87,9 @@ Do not send CLs removing the interior tags from such phrases.
 
 <!-- CL 495447 -->
 <p>
-`go` `test` `-cover` now prints coverage summaries for covered
+<code>go</code> <code>test</code> <code>-cover</code> now prints coverage summaries for covered
 packages that do not have their own test files. Prior to Go 1.22 a
-`go` `test` `-cover` run for such a package would report
+<code>go</code> <code>test</code> <code>-cover</code> run for such a package would report
 </p>
 
 <p>
@@ -100,23 +132,6 @@ packages that do not have their own test files. Prior to Go 1.22 a
 <p><!-- CL 539016 -->
   TODO: <a href="https://go.dev/cl/539016">https://go.dev/cl/539016</a>: go/analysis/passes/loopclosure: disable checker after go1.22.; loopclosure was modified to only not report in files with GoVersion after 1.22.
 </p>
-
-<!-- CL 527095 -->
-<p>
-  <!-- cmd/vet: add defers analysis pass; Add a release note that there is a new defers checker in cmd/vet. -->
-</p>
-
-<!-- https://go.dev/issue/60048 -->
-<p>
-  <!-- time.Since should not be used in defer statement -->
-</p>
-
-<!-- https://go.dev/issue/60448 -->
-<p>
-  <!-- add a new analyzer  for check missing values after append -->
-</p>
-
-<h3 id="vet">Vet</h3>
 
 <h4 id="vet-appends">New warnings for missing values after append</h4>
 
@@ -303,14 +318,6 @@ defer func() {
   </dd>
 </dl><!-- bufio -->
 
-<dl id="cmd"><dt><a href="/pkg/cmd/">cmd</a></dt>
-  <dd>
-    <p><!-- CL 498416 -->
-      TODO: <a href="https://go.dev/cl/498416">https://go.dev/cl/498416</a>: cmd: add a new analyzer for check missing values after append
-    </p>
-  </dd>
-</dl><!-- cmd -->
-
 <dl id="cmp"><dt><a href="/pkg/cmp/">cmp</a></dt>
   <dd>
     <p><!-- https://go.dev/issue/60204 --><!-- CL 504883 -->
@@ -387,6 +394,19 @@ defer func() {
     </p>
   </dd>
 </dl><!-- database/sql -->
+
+<dl id="debug/elf"><dt><a href="/pkg/debug/elf/">debug/elf</a></dt>
+  <dd>
+    <p><!-- https://go.dev/issue/61974, CL 469395 -->
+      Constant <code>R_MIPS_PC32</code> is defined for use with MIPS64 systems.
+    </p>
+  </dd>
+  <dd>
+    <p><!-- https://go.dev/issue/63725, CL 537615 -->
+      Additional <code>R_LARCH_*</code> constants are defined for use with LoongArch systems.
+    </p>
+  </dd>
+</dl><!-- debug/elf -->
 
 <dl id="encoding"><dt><a href="/pkg/encoding/">encoding</a></dt>
   <dd>
@@ -645,6 +665,12 @@ defer func() {
       a value to zero using the language <code>==</code> operator.
     </p>
   </dd>
+  <dd>
+    <p><!-- https://go.dev/issue/59599, CL 511035 -->
+      The <a href="/pkg/reflect/#PtrTo"><code>PtrTo</code></a> function is deprecated,
+      in favor of <a href="/pkg/reflect/#PointerTo"><code>PointerTo</code></a>.
+    </p>
+  </dd>
 </dl><!-- reflect -->
 
 <dl id="runtime/metrics"><dt><a href="/pkg/runtime/metrics/">runtime/metrics</a></dt>
@@ -809,9 +835,4 @@ defer func() {
 <p><!-- CL 517935 -->
   Go 1.22 adds an experimental port to OpenBSD on big-endian 64-bit PowerPC
   (<code>openbsd/ppc64</code>).
-</p>
-
-
-<p><!-- CL 469395 -->
-  TODO: <a href="https://go.dev/cl/469395">https://go.dev/cl/469395</a>: debug/elf,cmd/link: add additional MIPS64 relocation type; modified api/next/61974.txt
 </p>
