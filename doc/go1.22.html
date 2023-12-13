@@ -117,13 +117,6 @@ packages that do not have their own test files. Prior to Go 1.22 a
   <code>mymod/mypack    coverage: 0.0% of statements</code>
 </p>
 
-<h3 id="cgo">Cgo</h3>
-
-<!-- https://go.dev/issue/56378 -->
-<p>
-  <!-- add #cgo noescape/nocallback annotations -->
-</p>
-
 <h3 id="trace">Trace</h3>
 
 <!-- https://go.dev/issue/63960 -->
@@ -208,6 +201,13 @@ defer func() {
   to the old metadata layout and restore the previous alignment behavior, but package
   owners should update their assembly code to avoid the alignment assumption, as this
   workaround will be removed in a future release.
+</p>
+
+<p><!-- CL 525475 -->
+  On the <code>windows/amd64 port</code>, programs linking or loading Go libraries built with
+  <code>-buildmode=c-archive</code> or <code>-buildmode=c-shared</code> can now use
+  the <code>SetUnhandledExceptionFilter</code> Win32 function to catch exceptions not handled
+  by the Go runtime. Note that this was already supported on the <code>windows/386</code> port.
 </p>
 
 <h2 id="compiler">Compiler</h2>
@@ -313,36 +313,30 @@ defer func() {
 
 <dl id="archive/tar"><dt><a href="/pkg/archive/tar/">archive/tar</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/50102 -->
-      TODO: <a href="https://go.dev/issue/50102">https://go.dev/issue/50102</a>: add FileInfoNames interface
+    <p><!-- https://go.dev/issue/58000, CL 513316 -->
+      The new method <a href="/pkg/archive/tar#Writer.AddFS"<code>Writer.AddFS</code></a> adds all of the files from an <a href="/pkg/io/fs#FS"><code>fs.FS</code></a> to the archive.
     </p>
 
-    <p><!-- https://go.dev/issue/58000 -->
-      TODO: <a href="https://go.dev/issue/58000">https://go.dev/issue/58000</a>: add (*Writer).AddFS
-    </p>
-
-    <p><!-- CL 513316 -->
-      TODO: <a href="https://go.dev/cl/513316">https://go.dev/cl/513316</a>: archive/tar: add AddFS method to Writer; modified api/next/58000.txt
-    </p>
-
-    <p><!-- CL 514235 -->
-      TODO: <a href="https://go.dev/cl/514235">https://go.dev/cl/514235</a>: archive/tar: add FileInfoNames interface; modified api/next/50102.txt
+    <p><!-- https://go.dev/issue/50102, CL 514235 -->
+      If the argument to <a href="/pkg/archive/tar#FileInfoHeader"><code>FileInfoHeader</code></a> implements the new <a href="/pkg/archive/tar#FileInfoNames"><code>FileInfoNames</code></a> interface, then the interface methods will be used to set the UID/GID of the file header. This allows applications to override the default UID/GID resolution.
     </p>
   </dd>
 </dl><!-- archive/tar -->
 
 <dl id="archive/zip"><dt><a href="/pkg/archive/zip/">archive/zip</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/54898 -->
-      TODO: <a href="https://go.dev/issue/54898">https://go.dev/issue/54898</a>: archive/zip: add (*Writer).AddFS
+    <p><!-- https://go.dev/issue/54898, CL 513438 -->
+      The new method <a href="/pkg/archive/zip#Writer.AddFS"<code>Writer.AddFS</code></a> adds all of the files from an <a href="/pkg/io/fs#FS"><code>fs.FS</code></a> to the archive.
     </p>
   </dd>
 </dl><!-- archive/zip -->
 
 <dl id="bufio"><dt><a href="/pkg/bufio/">bufio</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/56381 -->
-      TODO: <a href="https://go.dev/issue/56381">https://go.dev/issue/56381</a>: allow terminating Scanner early cleanly without a final token or an error
+    <p><!-- https://go.dev/issue/56381, CL 498117 -->
+      When a <a href="/pkg/bufio#SplitFunc"><code>SplitFunc</code></a> returns <a href="/pkg/bufio#ErrFinalToken"><code>ErrFinalToken</code></a> with a <code>nil</code> token, <a href="/pkg/bufio#Scanner"><code>Scanner</code></a> will now stop immediately.
+      Previously, it would report a final empty token before stopping, which was usually not desired.
+      Callers that do want to report a final empty token can do so by returning <code>[]byte{}</code> rather than <code>nil</code>.
     </p>
   </dd>
 </dl><!-- bufio -->
@@ -359,10 +353,6 @@ defer func() {
   <dd>
     <p><!-- https://go.dev/issue/43922 -->
       TODO: <a href="https://go.dev/issue/43922">https://go.dev/issue/43922</a>: implement RFC7627
-    </p>
-
-    <p><!-- https://go.dev/issue/60107 -->
-      TODO: <a href="https://go.dev/issue/60107">https://go.dev/issue/60107</a>: QUIC 0-RTT APIs
     </p>
 
     <p><!-- https://go.dev/issue/62459 -->
@@ -498,7 +488,10 @@ defer func() {
     </p>
 
     <p><!-- https://go.dev/issue/60061 -->
-      TODO: <a href="https://go.dev/issue/60061">https://go.dev/issue/60061</a>: go/ast: add func Unparen(Expr) Expr
+      The new <a href='https://pkg.go.dev/go/ast#Unparen'><code>ast.Unparen</code></a>
+      function removes any enclosing
+      <a href='https://pkg.go.dev/go/ast#ParenExpr'>parentheses</a> from
+      an <a href='https://pkg.go.dev/go/ast#Expr'>expression</a>.
     </p>
   </dd>
 </dl><!-- go/ast -->
@@ -509,18 +502,22 @@ defer func() {
       The new <a href="/pkg/go/types#Alias"><code>Alias</code></a> type represents type aliases.
       Previously, type aliases were not represented explicitly, so a reference to a type alias was equivalent
       to spelling out the aliased type, and the name of the alias was lost.
-      The new representation retains the intermediate Alias.
-      This enables improved error reporting (the name of an alias can be reported), and allows for better handling
+      The new representation retains the intermediate <code>Alias</code>.
+      This enables improved error reporting (the name of a type alias can be reported), and allows for better handling
       of cyclic type declarations involving type aliases.
       In a future release, <code>Alias</code> types will also carry <a href="https://go.dev/issue/46477">type parameter information</a>.
       The new function <a href="/pkg/go/types#Unalias"><code>Unalias</code></a> returns the actual type denoted by an
       <code>Alias</code> type (or any other <a href="/pkg/go/types#Type"><code>Type</code></a> for that matter).
+    </p>
+    <p>
       Because <code>Alias</code> types may break existing type switches that do not know to check for them,
       this functionality is controlled by a <a href="/doc/godebug"><code>GODEBUG</code></a> field named <code>gotypesalias</code>.
       With <code>gotypesalias=0</code>, everything behaves as before, and <code>Alias</code> types are never created.
       With <code>gotypesalias=1</code>, <code>Alias</code> types are created and clients must expect them.
       The default is <code>gotypesalias=0</code>.
       In a future release, the default will be changed to <code>gotypesalias=1</code>.
+      <em>Clients of <a href="/pkg/go/types"><code>go/types</code></a> are urged to adjust their code as soon as possible
+      to work with <code>gotypesalias=1</code> to eliminate problems early.</em>
     </p>
 
     <p><!-- https://go.dev/issue/62605, CL 540056 -->
@@ -574,12 +571,8 @@ defer func() {
 
 <dl id="io"><dt><a href="/pkg/io/">io</a></dt>
   <dd>
-    <p><!-- https://go.dev/issue/61870 -->
-      TODO: <a href="https://go.dev/issue/61870">https://go.dev/issue/61870</a>: add SectionReader.Outer method
-    </p>
-
-    <p><!-- CL 526855 -->
-      TODO: <a href="https://go.dev/cl/526855">https://go.dev/cl/526855</a>: io: add (*SectionReader).Outer(); modified api/next/61870.txt
+    <p><!-- https://go.dev/issue/61870, CL 526855 -->
+      The new <a href="/pkg/io#SectionReader.Outer"><code>SectionReader.Outer</code></a> method returns the <a href="/pkg/io#ReaderAt"><code>ReaderAt</code></a>, offset, and size passed to <a href="/pkg/io#NewSectionReader"><code>NewSectionReader</code></a>.
     </p>
   </dd>
 </dl><!-- io -->
@@ -609,7 +602,10 @@ defer func() {
 <dl id="net"><dt><a href="/pkg/net/">net</a></dt>
   <dd>
     <p><!-- https://go.dev/issue/58808 -->
-      TODO: <a href="https://go.dev/issue/58808">https://go.dev/issue/58808</a>: arrange zero-copy of os.File and TCPConn to UnixConn
+      When <a href="/pkg/io#Copy"><code>io.Copy</code></a> copies
+      from a <code>TCPConn</code> to a <code>UnixConn</code>,
+      it will now use Linux's <code>sendfile(2)</code> system call if possible,
+      using the new method <a href="/pkg/net#TCPConn.WriteTo"><code>TCPConn.WriteTo</code></a>.
     </p>
 
     <p><!-- CL 467335 -->
@@ -624,19 +620,24 @@ defer func() {
 <dl id="net/http"><dt><a href="/pkg/net/http/">net/http</a></dt>
   <dd>
     <p><!-- https://go.dev/issue/51971 -->
-      TODO: <a href="https://go.dev/issue/51971">https://go.dev/issue/51971</a>: add ServeFileFS, FileServerFS, NewFileTransportFS
+      The new functions
+      <a href="/pkg/net/http#ServeFileFS"><code>ServeFileFS</code></a>,
+      <a href="/pkg/net/http#FileServerFS"><code>FileServerFS</code></a>, and
+      <a href="/pkg/net/http#NewFileTransportFS"><code>NewFileTransportFS</code></a>
+      are versions of the existing
+      <code>ServeFile</code>, <code>FileServer</code>, and <code>NewFileTransport</code>,
+      operating on an <code>fs.FS</code>.
     </p>
 
     <p><!-- https://go.dev/issue/61410 -->
       TODO: <a href="https://go.dev/issue/61410">https://go.dev/issue/61410</a>: enhanced ServeMux routing
     </p>
 
-    <p><!-- CL 513956 -->
-      TODO: <a href="https://go.dev/cl/513956">https://go.dev/cl/513956</a>: net/http: add ServeFileFS, FileServerFS, NewFileTransportFS; modified api/next/51971.txt
-    </p>
-
-    <p><!-- CL 517336 -->
-      TODO: <a href="https://go.dev/cl/517336">https://go.dev/cl/517336</a>: net/http: disallow empty Content-Length header
+    <p><!-- https://go.dev/issue/61679 -->
+      The HTTP server and client now reject requests and responses containing
+      an invalid empty <code>Content-Length</code> header.
+      The previous behavior may be restored by setting
+      <a href="/doc/godebug"><code>GODEBUG</code></a> field <code>httplaxcontentlength=1</code>.
     </p>
 
     <p><!-- CL 528355 -->
@@ -679,7 +680,10 @@ defer func() {
     </p>
 
     <p><!-- https://go.dev/issue/58808 -->
-      TODO: <a href="https://go.dev/issue/58808">https://go.dev/issue/58808</a>: arrange zero-copy of os.File and TCPConn to UnixConn
+      When <a href="/pkg/io#Copy"><code>io.Copy</code></a> copies
+      from a <code>File</code> to a <code>net.UnixConn</code>,
+      it will now use Linux's <code>sendfile(2)</code> system call if possible,
+      using the new method <a href="/pkg/os#File.WriteTo"><code>File.WriteTo</code></a>.
     </p>
   </dd>
 </dl><!-- os -->
@@ -724,8 +728,13 @@ defer func() {
       in favor of <a href="/pkg/reflect/#PointerTo"><code>PointerTo</code></a>.
     </p>
 
-    <p><!-- https://go.dev/issue/60088 -->
-      TODO: <a href="https://go.dev/issue/60088">https://go.dev/issue/60088</a>: reflect: add TypeFor
+    <p><!-- https://go.dev/issue/60088, CL 513478 -->
+      The new function <a href="/pkg/reflect/#TypeFor"><code>TypeFor</code></a>
+      returns the <a href="/pkg/reflect/#Type"><code>Type</code></a> that represents
+      the type argument T.
+      Previously, to get the <code>reflect.Type</code> value for a type, one had to use
+      <code>reflect.TypeOf((*T)(nil)).Elem()</code>.
+      This may now be written as <code>reflect.TypeFor[T]()</code>.
     </p>
   </dd>
 </dl><!-- reflect -->
