@@ -219,6 +219,18 @@ defer func() {
   14% improvement from enabling PGO.
 </p>
 
+<p><!-- https://go.dev/cl/528321 -->
+  The compiler now interleaves devirtualization and inlining, so interface
+  method calls are better optimized.
+</p>
+
+<p><!-- https://go.dev/issue/61502 -->
+  Go 1.22 also includes a preview of an enhanced implementation of the compiler's inlining phase that uses heuristics to boost inlinability at call sites deemed "important" (for example, in loops) and discourage inlining at call sites deemed "unimportant" (for example, on panic paths).
+  Building with <code>GOEXPERIMENT=newinliner</code> enables the new call-site
+  heuristics; see <a href="https://go.dev/issue/61502">issue #61502</a> for
+  more info and to provide feedback.
+</p>
+
 <h2 id="linker">Linker</h2>
 
 <p><!-- CL 493136 -->
@@ -314,7 +326,7 @@ defer func() {
 <dl id="archive/tar"><dt><a href="/pkg/archive/tar/">archive/tar</a></dt>
   <dd>
     <p><!-- https://go.dev/issue/58000, CL 513316 -->
-      The new method <a href="/pkg/archive/tar#Writer.AddFS"<code>Writer.AddFS</code></a> adds all of the files from an <a href="/pkg/io/fs#FS"><code>fs.FS</code></a> to the archive.
+      The new method <a href="/pkg/archive/tar#Writer.AddFS"><code>Writer.AddFS</code></a> adds all of the files from an <a href="/pkg/io/fs#FS"><code>fs.FS</code></a> to the archive.
     </p>
 
     <p><!-- https://go.dev/issue/50102, CL 514235 -->
@@ -326,7 +338,7 @@ defer func() {
 <dl id="archive/zip"><dt><a href="/pkg/archive/zip/">archive/zip</a></dt>
   <dd>
     <p><!-- https://go.dev/issue/54898, CL 513438 -->
-      The new method <a href="/pkg/archive/zip#Writer.AddFS"<code>Writer.AddFS</code></a> adds all of the files from an <a href="/pkg/io/fs#FS"><code>fs.FS</code></a> to the archive.
+      The new method <a href="/pkg/archive/zip#Writer.AddFS"><code>Writer.AddFS</code></a> adds all of the files from an <a href="/pkg/io/fs#FS"><code>fs.FS</code></a> to the archive.
     </p>
   </dd>
 </dl><!-- archive/zip -->
@@ -604,13 +616,13 @@ defer func() {
     <p><!-- https://go.dev/issue/58808 -->
       When <a href="/pkg/io#Copy"><code>io.Copy</code></a> copies
       from a <code>TCPConn</code> to a <code>UnixConn</code>,
-      it will now use Linux's <code>sendfile(2)</code> system call if possible,
+      it will now use Linux's <code>splice(2)</code> system call if possible,
       using the new method <a href="/pkg/net#TCPConn.WriteTo"><code>TCPConn.WriteTo</code></a>.
     </p>
 
     <p><!-- CL 467335 -->
-      The Go DNS Resolver, used when building the binary with "-tags=netgo",
-      now searches a matching name in the Windows hosts file,
+      The Go DNS Resolver, used when building with "-tags=netgo",
+      now searches for a matching name in the Windows hosts file,
       located at <code>%SystemRoot%\System32\drivers\etc\hosts</code>,
       before making a DNS query.
     </p>
@@ -679,6 +691,15 @@ defer func() {
       On Windows, passing <a href="/pkg/os#O_SYNC"><code>O_SYNC</code></a> to <a href="/pkg/os#OpenFile"><code>OpenFile</code></a> now causes write operations to go directly to disk, equivalent to <code>O_SYNC</code> on Unix platforms.
     </p>
 
+    <p><!-- CL 452995 -->
+      On Windows, the <a href="/pkg/os#ReadDir"><code>ReadDir</code></a>,
+      <a href="/pkg/os#File.ReadDir"><code>File.ReadDir</code></a>,
+      <a href="/pkg/os#File.Readdir"><code>File.Readdir</code></a>,
+      and <a href="/pkg/os#File.Readdirnames"><code>File.Readdirnames</code></a> functions
+      now read directory entries in batches to reduce the number of system calls,
+      improving performance up to 30%.
+    </p>
+
     <p><!-- https://go.dev/issue/58808 -->
       When <a href="/pkg/io#Copy"><code>io.Copy</code></a> copies
       from a <code>File</code> to a <code>net.UnixConn</code>,
@@ -691,7 +712,7 @@ defer func() {
 <dl id="os/exec"><dt><a href="/pkg/os/exec/">os/exec</a></dt>
   <dd>
     <p><!-- CL 528037 -->
-      On Windows, <a href="/pkg/os/exec#LookPath"><code>LookPath</code> now
+      On Windows, <a href="/pkg/os/exec#LookPath"><code>LookPath</code></a> now
       ignores empty entries in <code>%PATH%</code>, and returns
       <code>ErrNotFound</code> (instead of <code>ErrNotExist</code>) if
       no executable file extension is found to resolve an otherwise-unambiguous
@@ -882,6 +903,9 @@ defer func() {
   build flag.
   On 64-bit ARM-based macOS (the <code>darwin/arm64</code> port),
   the Go toolchain already generates PIE by default.
+</p>
+<p><!-- go.dev/issue/64207 -->
+  Go 1.22 is the last release that will run on macOS 10.15 Catalina. Go 1.23 will require macOS 11 Big Sur or later.
 </p>
 
 <h3 id="arm">Arm</h3>
