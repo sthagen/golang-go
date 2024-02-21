@@ -14,6 +14,8 @@ import (
 	"go/token"
 )
 
+const isTypes2 = false
+
 // cmpPos compares the positions p and q and returns a result r as follows:
 //
 // r <  0: p is before q
@@ -26,3 +28,13 @@ func cmpPos(p, q token.Pos) int { return int(p - q) }
 
 // hasDots reports whether the last argument in the call is followed by ...
 func hasDots(call *ast.CallExpr) bool { return call.Ellipsis.IsValid() }
+
+// dddErrPos returns the positioner for reporting an invalid ... use in a call.
+func dddErrPos(call *ast.CallExpr) positioner {
+	return atPos(call.Ellipsis)
+}
+
+// argErrPos returns positioner for reportign an invalid argument count.
+func argErrPos(call *ast.CallExpr) positioner {
+	return inNode(call, call.Rparen)
+}
