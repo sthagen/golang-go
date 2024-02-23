@@ -117,10 +117,11 @@ var filemap = map[string]action{
 		renameIdents(f, "syntax->ast")
 	},
 	"chan.go":         nil,
-	"const.go":        func(f *ast.File) { fixTokenPos(f) },
+	"const.go":        fixTokenPos,
 	"context.go":      nil,
 	"context_test.go": nil,
 	"conversions.go":  nil,
+	"errors_test.go":  func(f *ast.File) { renameIdents(f, "nopos->noposn") },
 	"errsupport.go":   nil,
 	"gccgosizes.go":   nil,
 	"gcsizes.go":      func(f *ast.File) { renameIdents(f, "IsSyncAtomicAlign64->_IsSyncAtomicAlign64") },
@@ -353,8 +354,8 @@ func fixInferSig(f *ast.File) {
 						n.Args[0] = arg
 						return false
 					}
-				case "errorf":
-					// rewrite check.errorf(pos, ...) to check.errorf(posn, ...)
+				case "addf":
+					// rewrite err.addf(pos, ...) to err.addf(posn, ...)
 					if isIdent(n.Args[0], "pos") {
 						pos := n.Args[0].Pos()
 						arg := newIdent(pos, "posn")
@@ -400,7 +401,7 @@ func fixAtPosCall(f *ast.File) {
 	})
 }
 
-// fixErrErrorfCall updates calls of the form err.errorf(obj, ...) to err.errorf(obj.Pos(), ...).
+// fixErrErrorfCall updates calls of the form err.addf(obj, ...) to err.addf(obj.Pos(), ...).
 func fixErrErrorfCall(f *ast.File) {
 	ast.Inspect(f, func(n ast.Node) bool {
 		switch n := n.(type) {
@@ -409,7 +410,7 @@ func fixErrErrorfCall(f *ast.File) {
 				if isIdent(selx.X, "err") {
 					switch selx.Sel.Name {
 					case "errorf":
-						// rewrite err.errorf(obj, ... ) to err.errorf(obj.Pos(), ... )
+						// rewrite err.addf(obj, ... ) to err.addf(obj.Pos(), ... )
 						if ident, _ := n.Args[0].(*ast.Ident); ident != nil && ident.Name == "obj" {
 							pos := n.Args[0].Pos()
 							fun := &ast.SelectorExpr{X: ident, Sel: newIdent(pos, "Pos")}
