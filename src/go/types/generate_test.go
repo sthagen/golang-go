@@ -165,6 +165,7 @@ var filemap = map[string]action{
 	"termlist_test.go": nil,
 	"tuple.go":         nil,
 	"typelists.go":     nil,
+	"typeset.go":       func(f *ast.File) { fixTokenPos(f); renameSelectors(f, "Trace->_Trace") },
 	"typeparam.go":     nil,
 	"typeterm_test.go": nil,
 	"typeterm.go":      nil,
@@ -173,7 +174,7 @@ var filemap = map[string]action{
 	"unify.go":         fixSprintf,
 	"universe.go":      fixGlobalTypVarDecl,
 	"util_test.go":     fixTokenPos,
-	"validtype.go":     nil,
+	"validtype.go":     func(f *ast.File) { fixTokenPos(f); renameSelectors(f, "Trace->_Trace") },
 }
 
 // TODO(gri) We should be able to make these rewriters more configurable/composable.

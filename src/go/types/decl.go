@@ -12,15 +12,6 @@ import (
 	. "internal/types/errors"
 )
 
-func (check *Checker) reportAltDecl(obj Object) {
-	if pos := obj.Pos(); pos.IsValid() {
-		// We use "other" rather than "previous" here because
-		// the first declaration seen may not be textually
-		// earlier in the source.
-		check.errorf(obj, DuplicateDecl, "\tother declaration of %s", obj.Name()) // secondary error, \t indented
-	}
-}
-
 func (check *Checker) declare(scope *Scope, id *ast.Ident, obj Object, pos token.Pos) {
 	// spec: "The blank identifier, represented by the underscore
 	// character _, may be used in a declaration like any other
@@ -28,8 +19,10 @@ func (check *Checker) declare(scope *Scope, id *ast.Ident, obj Object, pos token
 	// binding."
 	if obj.Name() != "_" {
 		if alt := scope.Insert(obj); alt != nil {
-			check.errorf(obj, DuplicateDecl, "%s redeclared in this block", obj.Name())
-			check.reportAltDecl(alt)
+			err := check.newError(DuplicateDecl)
+			err.addf(obj, "%s redeclared in this block", obj.Name())
+			err.addAltDecl(alt)
+			err.report()
 			return
 		}
 		obj.setScopePos(pos)
@@ -300,13 +293,12 @@ loop:
 		}
 	}
 
-	check.cycleError(cycle)
+	check.cycleError(cycle, firstInSrc(cycle))
 	return false
 }
 
-// cycleError reports a declaration cycle starting with
-// the object in cycle that is "first" in the source.
-func (check *Checker) cycleError(cycle []Object) {
+// cycleError reports a declaration cycle starting with the object at cycle[start].
+func (check *Checker) cycleError(cycle []Object, start int) {
 	// name returns the (possibly qualified) object name.
 	// This is needed because with generic types, cycles
 	// may refer to imported types. See go.dev/issue/50788.
@@ -315,11 +307,7 @@ func (check *Checker) cycleError(cycle []Object) {
 		return packagePrefix(obj.Pkg(), check.qualifier) + obj.Name()
 	}
 
-	// TODO(gri) Should we start with the last (rather than the first) object in the cycle
-	//           since that is the earliest point in the source where we start seeing the
-	//           cycle? That would be more consistent with other error messages.
-	i := firstInSrc(cycle)
-	obj := cycle[i]
+	obj := cycle[start]
 	objName := name(obj)
 	// If obj is a type alias, mark it as valid (not broken) in order to avoid follow-on errors.
 	tname, _ := obj.(*TypeName)
@@ -341,13 +329,15 @@ func (check *Checker) cycleError(cycle []Object) {
 		return
 	}
 
+	err := check.newError(InvalidDeclCycle)
 	if tname != nil {
-		check.errorf(obj, InvalidDeclCycle, "invalid recursive type %s", objName)
+		err.addf(obj, "invalid recursive type %s", objName)
 	} else {
-		check.errorf(obj, InvalidDeclCycle, "invalid cycle in declaration of %s", objName)
+		err.addf(obj, "invalid cycle in declaration of %s", objName)
 	}
+	i := start
 	for range cycle {
-		check.errorf(obj, InvalidDeclCycle, "\t%s refers to", objName) // secondary error, \t indented
+		err.addf(obj, "%s refers to", objName)
 		i++
 		if i >= len(cycle) {
 			i = 0
@@ -355,7 +345,8 @@ func (check *Checker) cycleError(cycle []Object) {
 		obj = cycle[i]
 		objName = name(obj)
 	}
-	check.errorf(obj, InvalidDeclCycle, "\t%s", objName)
+	err.addf(obj, "%s", objName)
+	err.report()
 }
 
 // firstInSrc reports the index of the object with the "smallest"
@@ -833,8 +824,10 @@ func (check *Checker) checkFieldUniqueness(base *Named) {
 
 					// For historical consistency, we report the primary error on the
 					// method, and the alt decl on the field.
-					check.errorf(alt, DuplicateFieldAndMethod, "field and method with the same name %s", fld.name)
-					check.reportAltDecl(fld)
+					err := check.newError(DuplicateFieldAndMethod)
+					err.addf(alt, "field and method with the same name %s", fld.name)
+					err.addAltDecl(fld)
+					err.report()
 				}
 			}
 		}
