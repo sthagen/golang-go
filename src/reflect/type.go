@@ -313,58 +313,6 @@ type rtype struct {
 	t abi.Type
 }
 
-// OverflowComplex reports whether the complex128 x cannot be represented by type t.
-// It panics if t's Kind is not Complex64 or Complex128.
-func (t *rtype) OverflowComplex(x complex128) bool {
-	k := t.Kind()
-	switch k {
-	case Complex64:
-		return overflowFloat32(real(x)) || overflowFloat32(imag(x))
-	case Complex128:
-		return false
-	}
-	panic("reflect: OverflowComplex of non-complex type " + t.String())
-}
-
-// OverflowFloat reports whether the float64 x cannot be represented by type t.
-// It panics if t's Kind is not Float32 or Float64.
-func (t *rtype) OverflowFloat(x float64) bool {
-	k := t.Kind()
-	switch k {
-	case Float32:
-		return overflowFloat32(x)
-	case Float64:
-		return false
-	}
-	panic("reflect: OverflowFloat of non-float type " + t.String())
-}
-
-// OverflowInt reports whether the int64 x cannot be represented by type t.
-// It panics if t's Kind is not Int, Int8, Int16, Int32, or Int64.
-func (t *rtype) OverflowInt(x int64) bool {
-	k := t.Kind()
-	switch k {
-	case Int, Int8, Int16, Int32, Int64:
-		bitSize := t.Size() * 8
-		trunc := (x << (64 - bitSize)) >> (64 - bitSize)
-		return x != trunc
-	}
-	panic("reflect: OverflowInt of non-int type " + t.String())
-}
-
-// OverflowUint reports whether the uint64 x cannot be represented by type t.
-// It panics if t's Kind is not Uint, Uintptr, Uint8, Uint16, Uint32, or Uint64.
-func (t *rtype) OverflowUint(x uint64) bool {
-	k := t.Kind()
-	switch k {
-	case Uint, Uintptr, Uint8, Uint16, Uint32, Uint64:
-		bitSize := t.Size() * 8
-		trunc := (x << (64 - bitSize)) >> (64 - bitSize)
-		return x != trunc
-	}
-	panic("reflect: OverflowUint of non-uint type " + t.String())
-}
-
 func (t *rtype) common() *abi.Type {
 	return &t.t
 }
@@ -878,6 +826,50 @@ func (t *rtype) IsVariadic() bool {
 	}
 	tt := (*abi.FuncType)(unsafe.Pointer(t))
 	return tt.IsVariadic()
+}
+
+func (t *rtype) OverflowComplex(x complex128) bool {
+	k := t.Kind()
+	switch k {
+	case Complex64:
+		return overflowFloat32(real(x)) || overflowFloat32(imag(x))
+	case Complex128:
+		return false
+	}
+	panic("reflect: OverflowComplex of non-complex type " + t.String())
+}
+
+func (t *rtype) OverflowFloat(x float64) bool {
+	k := t.Kind()
+	switch k {
+	case Float32:
+		return overflowFloat32(x)
+	case Float64:
+		return false
+	}
+	panic("reflect: OverflowFloat of non-float type " + t.String())
+}
+
+func (t *rtype) OverflowInt(x int64) bool {
+	k := t.Kind()
+	switch k {
+	case Int, Int8, Int16, Int32, Int64:
+		bitSize := t.Size() * 8
+		trunc := (x << (64 - bitSize)) >> (64 - bitSize)
+		return x != trunc
+	}
+	panic("reflect: OverflowInt of non-int type " + t.String())
+}
+
+func (t *rtype) OverflowUint(x uint64) bool {
+	k := t.Kind()
+	switch k {
+	case Uint, Uintptr, Uint8, Uint16, Uint32, Uint64:
+		bitSize := t.Size() * 8
+		trunc := (x << (64 - bitSize)) >> (64 - bitSize)
+		return x != trunc
+	}
+	panic("reflect: OverflowUint of non-uint type " + t.String())
 }
 
 // add returns p+x.
@@ -2043,7 +2035,7 @@ func bucketOf(ktyp, etyp *abi.Type) *abi.Type {
 		panic("reflect: bad size computation in MapOf")
 	}
 
-	if ktyp.PtrBytes != 0 || etyp.PtrBytes != 0 {
+	if ktyp.Pointers() || etyp.Pointers() {
 		nptr := (abi.MapBucketCount*(1+ktyp.Size_+etyp.Size_) + goarch.PtrSize) / goarch.PtrSize
 		n := (nptr + 7) / 8
 
@@ -2052,12 +2044,12 @@ func bucketOf(ktyp, etyp *abi.Type) *abi.Type {
 		mask := make([]byte, n)
 		base := uintptr(abi.MapBucketCount / goarch.PtrSize)
 
-		if ktyp.PtrBytes != 0 {
+		if ktyp.Pointers() {
 			emitGCMask(mask, base, ktyp, abi.MapBucketCount)
 		}
 		base += abi.MapBucketCount * ktyp.Size_ / goarch.PtrSize
 
-		if etyp.PtrBytes != 0 {
+		if etyp.Pointers() {
 			emitGCMask(mask, base, etyp, abi.MapBucketCount)
 		}
 		base += abi.MapBucketCount * etyp.Size_ / goarch.PtrSize
@@ -2737,7 +2729,7 @@ func ArrayOf(length int, elem Type) Type {
 		}
 	}
 	array.Size_ = typ.Size_ * uintptr(length)
-	if length > 0 && typ.PtrBytes != 0 {
+	if length > 0 && typ.Pointers() {
 		array.PtrBytes = typ.Size_*uintptr(length-1) + typ.PtrBytes
 	}
 	array.Align_ = typ.Align_
@@ -2746,7 +2738,7 @@ func ArrayOf(length int, elem Type) Type {
 	array.Slice = &(SliceOf(elem).(*rtype).t)
 
 	switch {
-	case typ.PtrBytes == 0 || array.Size_ == 0:
+	case !typ.Pointers() || array.Size_ == 0:
 		// No pointers.
 		array.GCData = nil
 		array.PtrBytes = 0
@@ -2946,7 +2938,7 @@ func (bv *bitVector) append(bit uint8) {
 }
 
 func addTypeBits(bv *bitVector, offset uintptr, t *abi.Type) {
-	if t.PtrBytes == 0 {
+	if !t.Pointers() {
 		return
 	}
 
