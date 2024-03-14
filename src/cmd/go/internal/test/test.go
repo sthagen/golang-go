@@ -79,7 +79,7 @@ and its test source files to identify significant problems. If go vet
 finds any problems, go test reports those and does not run the test
 binary. Only a high-confidence subset of the default go vet checks are
 used. That subset is: atomic, bool, buildtags, directive, errorsas,
-ifaceassert, nilfunc, printf, stringintconv, and tests. You can see
+ifaceassert, nilfunc, printf, and stringintconv. You can see
 the documentation for these and other vet tests via "go doc cmd/vet".
 To disable the running of go vet, use the -vet=off flag. To run all
 checks, use the -vet=all flag.
@@ -353,6 +353,7 @@ profile the tests during execution:
 
 	-benchmem
 	    Print memory allocation statistics for benchmarks.
+	    Allocations made in C or using C.malloc are not counted.
 
 	-blockprofile block.out
 	    Write a goroutine blocking profile to the specified file
@@ -667,7 +668,7 @@ var defaultVetFlags = []string{
 	"-slog",
 	"-stringintconv",
 	// "-structtags",
-	"-tests",
+	// "-tests",
 	// "-unreachable",
 	// "-unsafeptr",
 	// "-unusedresult",
