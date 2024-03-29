@@ -239,12 +239,8 @@ func (t *timer) updateHeap(ts *timers) (updated bool) {
 		assertLockHeld(&ts.mu)
 	}
 	if t.state&timerZombie != 0 {
-		// Take timer out of heap, applying final t.whenHeap update first.
-		t.state &^= timerHeaped | timerZombie
-		if t.state&timerModified != 0 {
-			t.state &^= timerModified
-			t.whenHeap = t.when
-		}
+		// Take timer out of heap.
+		t.state &^= timerHeaped | timerZombie | timerModified
 		if ts != nil {
 			ts.zombies.Add(-1)
 			ts.deleteMin()
@@ -530,6 +526,9 @@ func (t *timer) modify(when, period int64, f func(arg any, seq uintptr, delay in
 		// See comment in type timer above and in timers.adjust below.
 		if when < t.whenHeap {
 			wake = true
+			// Force timerModified bit out to t.astate before updating t.minWhenModified,
+			// to synchronize with t.ts.adjust. See comment in adjust.
+			t.astate.Store(t.state)
 			t.ts.updateMinWhenModified(when)
 		}
 	}
@@ -607,15 +606,18 @@ func (t *timer) maybeAdd() {
 	t.lock()
 	t.trace("maybeAdd")
 	when := int64(0)
+	wake := false
 	if t.needsAdd() {
 		t.state |= timerHeaped
 		when = t.when
+		wakeTime := ts.wakeTime()
+		wake = wakeTime == 0 || when < wakeTime
 		ts.addHeap(t)
 	}
 	t.unlock()
 	ts.unlock()
 	releasem(mp)
-	if when > 0 {
+	if wake {
 		wakeNetPoller(when)
 	}
 }
@@ -646,6 +648,24 @@ func (ts *timers) cleanHead() {
 		// We can clean the timers later.
 		if gp.preemptStop {
 			return
+		}
+
+		// Delete zombies from tail of heap. It requires no heap adjustments at all,
+		// and doing so increases the chances that when we swap out a zombie
+		// in heap[0] for the tail of the heap, we'll get a non-zombie timer,
+		// shortening this loop.
+		n := len(ts.heap)
+		if t := ts.heap[n-1]; t.astate.Load()&timerZombie != 0 {
+			t.lock()
+			if t.state&timerZombie != 0 {
+				t.state &^= timerHeaped | timerZombie | timerModified
+				t.ts = nil
+				ts.zombies.Add(-1)
+				ts.heap[n-1] = nil
+				ts.heap = ts.heap[:n-1]
+			}
+			t.unlock()
+			continue
 		}
 
 		t := ts.heap[0]
@@ -768,6 +788,15 @@ func (ts *timers) adjust(now int64, force bool) {
 	// The wakeTime method implementation reads minWhenModified *before* minWhenHeap,
 	// so that if the minWhenModified is observed to be 0, that means the minWhenHeap that
 	// follows will include the information that was zeroed out of it.
+	//
+	// Originally Step 3 locked every timer, which made sure any timer update that was
+	// already in progress during Steps 1+2 completed and was observed by Step 3.
+	// All that locking was too expensive, so now we do an atomic load of t.astate to
+	// decide whether we need to do a full lock. To make sure that we still observe any
+	// timer update already in progress during Steps 1+2, t.modify sets timerModified
+	// in t.astate *before* calling t.updateMinWhenModified. That ensures that the
+	// overwrite in Step 2 cannot lose an update: if it does overwrite an update, Step 3
+	// will see the timerModified and do a full lock.
 	ts.minWhenHeap.Store(ts.wakeTime())
 	ts.minWhenModified.Store(0)
 
@@ -874,7 +903,7 @@ func (ts *timers) check(now int64) (rnow, pollUntil int64, ran bool) {
 
 	ts.lock()
 	if len(ts.heap) > 0 {
-		ts.adjust(now, force)
+		ts.adjust(now, false)
 		for len(ts.heap) > 0 {
 			// Note that runtimer may temporarily unlock ts.
 			if tw := ts.run(now); tw != 0 {
@@ -884,6 +913,16 @@ func (ts *timers) check(now int64) (rnow, pollUntil int64, ran bool) {
 				break
 			}
 			ran = true
+		}
+
+		// Note: Delaying the forced adjustment until after the ts.run
+		// (as opposed to calling ts.adjust(now, force) above)
+		// is significantly faster under contention, such as in
+		// package time's BenchmarkTimerAdjust10000,
+		// though we do not fully understand why.
+		force = ts == &getg().m.p.ptr().timers && int(ts.zombies.Load()) > int(ts.len.Load())/4
+		if force {
+			ts.adjust(now, true)
 		}
 	}
 	ts.unlock()
