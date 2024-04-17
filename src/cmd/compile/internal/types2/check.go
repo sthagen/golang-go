@@ -21,7 +21,10 @@ var nopos syntax.Pos
 const debug = false // leave on during development
 
 // gotypesalias controls the use of Alias types.
-var gotypesalias = godebug.New("#gotypesalias")
+// As of Apr 16 2024 they are used by default.
+// To disable their use, set GODEBUG to gotypesalias=0.
+// This GODEBUG flag will be removed in the near future (tentatively Go 1.24).
+var gotypesalias = godebug.New("gotypesalias")
 
 // exprInfo stores information about an untyped expression.
 type exprInfo struct {
@@ -99,6 +102,12 @@ type Checker struct {
 	// If enableAlias is set, alias declarations produce an Alias type.
 	// Otherwise the alias information is only in the type name, which
 	// points directly to the actual (aliased) type.
+	// Starting with Go 1.23, enableAlias is set by default.
+	// Non-default behavior is tracked with gotypesalias.IncNonDefault()
+	// for each declaration of an alias type where enableAlias is not set.
+	//
+	// TODO(gri) Testing runs tests in both modes. Do we need to exclude
+	//           tracking of non-default behavior for tests?
 	enableAlias bool
 
 	conf *Config
@@ -255,7 +264,7 @@ func NewChecker(conf *Config, pkg *Package, info *Info) *Checker {
 	// (previously, pkg.goVersion was mutated here: go.dev/issue/61212)
 
 	return &Checker{
-		enableAlias: gotypesalias.Value() == "1",
+		enableAlias: gotypesalias.Value() != "0",
 		conf:        conf,
 		ctxt:        conf.Context,
 		pkg:         pkg,
