@@ -1105,6 +1105,8 @@ var casgstatusAlwaysTrack = false
 func casgstatus(gp *g, oldval, newval uint32) {
 	if (oldval&_Gscan != 0) || (newval&_Gscan != 0) || oldval == newval {
 		systemstack(func() {
+			// Call on the systemstack to prevent print and throw from counting
+			// against the nosplit stack reservation.
 			print("runtime: casgstatus: oldval=", hex(oldval), " newval=", hex(newval), "\n")
 			throw("casgstatus: bad incoming values")
 		})
@@ -1120,7 +1122,11 @@ func casgstatus(gp *g, oldval, newval uint32) {
 	// GC time to finish and change the state to oldval.
 	for i := 0; !gp.atomicstatus.CompareAndSwap(oldval, newval); i++ {
 		if oldval == _Gwaiting && gp.atomicstatus.Load() == _Grunnable {
-			throw("casgstatus: waiting for Gwaiting but is Grunnable")
+			systemstack(func() {
+				// Call on the systemstack to prevent throw from counting
+				// against the nosplit stack reservation.
+				throw("casgstatus: waiting for Gwaiting but is Grunnable")
+			})
 		}
 		if i == 0 {
 			nextYield = nanotime() + yieldDelay
@@ -4428,6 +4434,7 @@ func entersyscallblock() {
 	save(pc, sp, bp)
 	gp.syscallsp = gp.sched.sp
 	gp.syscallpc = gp.sched.pc
+	gp.syscallbp = gp.sched.bp
 	if gp.syscallsp < gp.stack.lo || gp.stack.hi < gp.syscallsp {
 		sp1 := sp
 		sp2 := gp.sched.sp
@@ -6023,8 +6030,8 @@ func sysmon() {
 
 type sysmontick struct {
 	schedtick   uint32
-	schedwhen   int64
 	syscalltick uint32
+	schedwhen   int64
 	syscallwhen int64
 }
 
