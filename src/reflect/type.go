@@ -3031,3 +3031,10 @@ func TypeFor[T any]() Type {
 	}
 	return TypeOf((*T)(nil)).Elem() // only for an interface kind
 }
+
+// ifaceIndir reports whether t is stored indirectly in an interface value.
+// This function is no longer called by the reflect package,
+// and https://go.dev/issue/67279 tracks its deletion.
+func ifaceIndir(t *abi.Type) bool {
+	return t.Kind_&abi.KindDirectIface == 0
+}
