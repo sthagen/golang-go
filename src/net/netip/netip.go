@@ -14,13 +14,12 @@ package netip
 import (
 	"cmp"
 	"errors"
+	"internal/bytealg"
 	"internal/byteorder"
+	"internal/itoa"
 	"math"
 	"strconv"
 	"unique"
-
-	"internal/bytealg"
-	"internal/itoa"
 )
 
 // Sizes: (64-bit)
@@ -61,7 +60,7 @@ type Addr struct {
 // addrDetail represents the details of an Addr, like address family and IPv6 zone.
 type addrDetail struct {
 	IsV6   bool   // IPv4 is false, IPv6 is true.
-	ZoneV6 string // != nil only if IsV6 is true.
+	ZoneV6 string // != "" only if IsV6 is true.
 }
 
 // z0, z4, and z6noz are sentinel Addr.z values.
