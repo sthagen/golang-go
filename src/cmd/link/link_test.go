@@ -1440,6 +1440,7 @@ func TestCheckLinkname(t *testing.T) {
 		{"coro2.go", false},
 		// legacy bad linkname is ok, for now
 		{"fastrand.go", true},
+		{"badlinkname.go", true},
 	}
 	for _, test := range tests {
 		test := test
@@ -1447,7 +1448,7 @@ func TestCheckLinkname(t *testing.T) {
 			t.Parallel()
 			src := filepath.Join("testdata", "linkname", test.src)
 			exe := filepath.Join(tmpdir, test.src+".exe")
-			cmd := testenv.Command(t, testenv.GoToolPath(t), "build", "-ldflags=-checklinkname=1", "-o", exe, src)
+			cmd := testenv.Command(t, testenv.GoToolPath(t), "build", "-o", exe, src)
 			out, err := cmd.CombinedOutput()
 			if test.ok && err != nil {
 				t.Errorf("build failed unexpectedly: %v:\n%s", err, out)
