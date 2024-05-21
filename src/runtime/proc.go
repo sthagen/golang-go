@@ -818,6 +818,9 @@ func schedinit() {
 		MemProfileRate = 0
 	}
 
+	// mcommoninit runs before parsedebugvars, so init profstacks again.
+	mProfStackInit(gp.m)
+
 	lock(&sched.lock)
 	sched.lastpoll.Store(nanotime())
 	procs := ncpu
@@ -930,9 +933,34 @@ func mcommoninit(mp *m, id int64) {
 // malloc and runtime locks for mLockProfile.
 // TODO(mknyszek): Implement lazy allocation if this becomes a problem.
 func mProfStackInit(mp *m) {
-	mp.profStack = make([]uintptr, maxStack)
-	mp.mLockProfile.stack = make([]uintptr, maxStack)
+	if debug.profstackdepth == 0 {
+		// debug.profstack is set to 0 by the user, or we're being called from
+		// schedinit before parsedebugvars.
+		return
+	}
+	mp.profStack = makeProfStackFP()
+	mp.mLockProfile.stack = makeProfStackFP()
 }
+
+// makeProfStackFP creates a buffer large enough to hold a maximum-sized stack
+// trace as well as any additional frames needed for frame pointer unwinding
+// with delayed inline expansion.
+func makeProfStackFP() []uintptr {
+	// The "1" term is to account for the first stack entry being
+	// taken up by a "skip" sentinel value for profilers which
+	// defer inline frame expansion until the profile is reported.
+	// The "maxSkip" term is for frame pointer unwinding, where we
+	// want to end up with debug.profstackdebth frames but will discard
+	// some "physical" frames to account for skipping.
+	return make([]uintptr, 1+maxSkip+debug.profstackdepth)
+}
+
+// makeProfStack returns a buffer large enough to hold a maximum-sized stack
+// trace.
+func makeProfStack() []uintptr { return make([]uintptr, debug.profstackdepth) }
+
+//go:linkname pprof_makeProfStack
+func pprof_makeProfStack() []uintptr { return makeProfStack() }
 
 func (mp *m) becomeSpinning() {
 	mp.spinning = true
@@ -3132,7 +3160,7 @@ func execute(gp *g, inheritTime bool) {
 		// Make sure that gp has had its stack written out to the goroutine
 		// profile, exactly as it was when the goroutine profiler first stopped
 		// the world.
-		tryRecordGoroutineProfile(gp, osyield)
+		tryRecordGoroutineProfile(gp, nil, osyield)
 	}
 
 	// Assign gp.m before entering _Grunning so running Gs have an
