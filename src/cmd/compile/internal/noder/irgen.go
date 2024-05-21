@@ -29,12 +29,18 @@ func checkFiles(m posMap, noders []*noder) (*types2.Package, *types2.Info) {
 
 	// setup and syntax error reporting
 	files := make([]*syntax.File, len(noders))
-	// posBaseMap maps all file pos bases back to *syntax.File
+	// fileBaseMap maps all file pos bases back to *syntax.File
 	// for checking Go version mismatched.
-	posBaseMap := make(map[*syntax.PosBase]*syntax.File)
+	fileBaseMap := make(map[*syntax.PosBase]*syntax.File)
 	for i, p := range noders {
 		files[i] = p.file
-		posBaseMap[p.file.Pos().Base()] = p.file
+		// The file.Pos() is the position of the package clause.
+		// If there's a //line directive before that, file.Pos().Base()
+		// refers to that directive, not the file itself.
+		// Make sure to consistently map back to file base, here and
+		// when we look for a file in the conf.Error handler below,
+		// otherwise the file may not be found (was go.dev/issue/67141).
+		fileBaseMap[p.file.Pos().FileBase()] = p.file
 	}
 
 	// typechecking
@@ -69,13 +75,12 @@ func checkFiles(m posMap, noders []*noder) (*types2.Package, *types2.Info) {
 		terr := err.(types2.Error)
 		msg := terr.Msg
 		if versionErrorRx.MatchString(msg) {
-			posBase := terr.Pos.Base()
-			for !posBase.IsFileBase() { // line directive base
-				posBase = posBase.Pos().Base()
-			}
-			fileVersion := info.FileVersions[posBase]
-			file := posBaseMap[posBase]
-			if file.GoVersion == fileVersion {
+			fileBase := terr.Pos.FileBase()
+			fileVersion := info.FileVersions[fileBase]
+			file := fileBaseMap[fileBase]
+			if file == nil {
+				// This should never happen, but be careful and don't crash.
+			} else if file.GoVersion == fileVersion {
 				// If we have a version error caused by //go:build, report it.
 				msg = fmt.Sprintf("%s (file declares //go:build %s)", msg, fileVersion)
 			} else {
