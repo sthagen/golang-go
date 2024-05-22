@@ -179,6 +179,24 @@ Previous versions default to `winreadlinkvolume=0`.
 Go 1.23 corrected the semantics of contention reports for runtime-internal locks,
 and so removed the [`runtimecontentionstacks` setting](/pkg/runtime#hdr-Environment_Variable).
 
+Go 1.23 enabled the experimental post-quantum key exchange mechanism
+X25519Kyber768Draft00 by default. The default can be reverted using the
+[`tlskyber` setting](/pkg/crypto/tls/#Config.CurvePreferences).
+
+Go 1.23 changed the behavior of
+[crypto/x509.ParseCertificate](/pkg/crypto/x509/#ParseCertificate) to reject
+serial numbers that are negative. This change can be reverted with
+the the [`x509negativeserial` setting](/pkg/crypto/x509/#ParseCertificate).
+
+Go 1.23 changed the behavior of
+[crypto/x509.ParseCertificate](/pkg/crypto/x509/#ParseCertificate) to reject
+serial numbers that are longer than 20 octets. This change can be reverted with
+the the [`x509seriallength` setting](/pkg/crypto/x509/#ParseCertificate).
+
+Go 1.23 re-enabled support in html/template for ECMAScript 6 template literals by default.
+The [`jstmpllitinterp` setting](/pkg/html/template#hdr-Security_Model) no longer has
+any effect.
+
 ### Go 1.22
 
 Go 1.22 adds a configurable limit to control the maximum acceptable RSA key size

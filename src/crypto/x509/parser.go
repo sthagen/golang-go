@@ -16,6 +16,7 @@ import (
 	"encoding/asn1"
 	"errors"
 	"fmt"
+	"internal/godebug"
 	"math/big"
 	"net"
 	"net/url"
@@ -815,6 +816,9 @@ func processExtensions(out *Certificate) error {
 	return nil
 }
 
+var x509negativeserial = godebug.New("x509negativeserial")
+var x509seriallength = godebug.New("x509seriallength")
+
 func parseCertificate(der []byte) (*Certificate, error) {
 	cert := &Certificate{}
 
@@ -854,15 +858,34 @@ func parseCertificate(der []byte) (*Certificate, error) {
 		return nil, errors.New("x509: invalid version")
 	}
 
-	serial := new(big.Int)
-	if !tbs.ReadASN1Integer(serial) {
+	var serialBytes cryptobyte.String
+	if !tbs.ReadASN1Element(&serialBytes, cryptobyte_asn1.INTEGER) {
 		return nil, errors.New("x509: malformed serial number")
 	}
-	// we ignore the presence of negative serial numbers because
-	// of their prevalence, despite them being invalid
-	// TODO(rolandshoemaker): revisit this decision, there are currently
-	// only 10 trusted certificates with negative serial numbers
-	// according to censys.io.
+	// We add two bytes for the tag and length (if the length was multi-byte,
+	// which is possible, the length of the serial would be more than 256 bytes,
+	// so this condition would trigger anyway).
+	if len(serialBytes) > 20+2 {
+		if x509seriallength.Value() != "1" {
+			return nil, errors.New("x509: serial number too long (>20 octets)")
+		} else {
+			x509seriallength.IncNonDefault()
+		}
+	}
+	serial := new(big.Int)
+	if !serialBytes.ReadASN1Integer(serial) {
+		return nil, errors.New("x509: malformed serial number")
+	}
+	// We do not reject zero serials, because they are unfortunately common
+	// in important root certificates which will not expire for a number of
+	// years.
+	if serial.Sign() == -1 {
+		if x509negativeserial.Value() != "1" {
+			return nil, errors.New("x509: negative serial number")
+		} else {
+			x509negativeserial.IncNonDefault()
+		}
+	}
 	cert.SerialNumber = serial
 
 	var sigAISeq cryptobyte.String
@@ -999,6 +1022,14 @@ func parseCertificate(der []byte) (*Certificate, error) {
 }
 
 // ParseCertificate parses a single certificate from the given ASN.1 DER data.
+//
+// Before Go 1.23, ParseCertificate accepted certificates with negative serial
+// numbers. This behavior can be restored by including "x509negativeserial=1" in
+// the GODEBUG environment variable.
+//
+// Before Go 1.23, ParseCertificate accepted certificates with serial numbers
+// longer than 20 octets. This behavior can be restored by including
+// "x509seriallength=1" in the GODEBUG environment variable.
 func ParseCertificate(der []byte) (*Certificate, error) {
 	cert, err := parseCertificate(der)
 	if err != nil {
