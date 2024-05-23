@@ -297,28 +297,21 @@ func deferproc(fn func()) {
 	// been set and must not be clobbered.
 }
 
-var rangeDoneError = error(errorString("range function continued iteration after loop body exit"))
+var rangeDoneError = error(errorString("range function continued iteration after function for loop body returned false"))
 var rangePanicError = error(errorString("range function continued iteration after loop body panic"))
 var rangeExhaustedError = error(errorString("range function continued iteration after whole loop exit"))
 var rangeMissingPanicError = error(errorString("range function recovered a loop body panic and did not resume panicking"))
 
 //go:noinline
 func panicrangestate(state int) {
-	const (
-		// These duplicate magic numbers in cmd/compile/internal/rangefunc
-		DONE          = 0 // body of loop has exited in a non-panic way
-		PANIC         = 2 // body of loop is either currently running, or has panicked
-		EXHAUSTED     = 3 // iterator function return, i.e., sequence is "exhausted"
-		MISSING_PANIC = 4 // body of loop panicked but iterator function defer-recovered it away
-	)
-	switch state {
-	case DONE:
+	switch abi.RF_State(state) {
+	case abi.RF_DONE:
 		panic(rangeDoneError)
-	case PANIC:
+	case abi.RF_PANIC:
 		panic(rangePanicError)
-	case EXHAUSTED:
+	case abi.RF_EXHAUSTED:
 		panic(rangeExhaustedError)
-	case MISSING_PANIC:
+	case abi.RF_MISSING_PANIC:
 		panic(rangeMissingPanicError)
 	}
 	throw("unexpected state passed to panicrangestate")
@@ -1034,6 +1027,19 @@ func sync_fatal(s string) {
 // NOTE: temporarily marked "go:noinline" pending investigation/fix of
 // issue #67274, so as to fix longtest builders.
 //
+// throw should be an internal detail,
+// but widely used packages access it using linkname.
+// Notable members of the hall of shame include:
+//   - github.com/bytedance/sonic
+//   - github.com/cockroachdb/pebble
+//   - github.com/dgraph-io/ristretto
+//   - github.com/outcaste-io/ristretto
+//   - gvisor.dev/gvisor
+//
+// Do not remove or change the type signature.
+// See go.dev/issue/67401.
+//
+//go:linkname throw
 //go:nosplit
 func throw(s string) {
 	// Everything throw does should be recursively nosplit so it

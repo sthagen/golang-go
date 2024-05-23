@@ -12,33 +12,22 @@ import _ "unsafe"
 // This may change in the future. Please do not depend on them
 // in new code.
 
+// These should be an internal details
+// but widely used packages access them using linkname.
+// Do not remove or change the type signature.
+// See go.dev/issue/67401.
+
 //go:linkname add
-//go:linkname atomicwb
 //go:linkname callers
-//go:linkname chanbuf
-//go:linkname cputicks
-//go:linkname entersyscallblock
 //go:linkname fastexprand
 //go:linkname gopanic
-//go:linkname gopark
-//go:linkname goready
-//go:linkname goyield
-//go:linkname mapassign
-//go:linkname mapassign_faststr
-//go:linkname mapiterinit
-//go:linkname mapiternext
-//go:linkname newarray
-//go:linkname nilinterhash
-//go:linkname noescape
-//go:linkname procPin
-//go:linkname procUnpin
 //go:linkname sched
 //go:linkname startTheWorld
 //go:linkname stopTheWorld
 //go:linkname stringHash
-//go:linkname traceAdvance
-//go:linkname traceClockNow
-//go:linkname typedmemmove
-//go:linkname typedslicecopy
-//go:linkname typehash
-//go:linkname wakep
+
+// Notable members of the hall of shame include:
+//   - github.com/dgraph-io/ristretto
+//   - github.com/outcaste-io/ristretto
+//   - github.com/clubpay/ronykit
+//go:linkname cputicks

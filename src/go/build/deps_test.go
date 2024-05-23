@@ -17,7 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -58,6 +58,7 @@ var depsRules = `
 	  internal/nettrace,
 	  internal/platform,
 	  internal/profilerecord,
+	  internal/runtime/exithook,
 	  internal/trace/traceviewer/format,
 	  log/internal,
 	  math/bits,
@@ -78,6 +79,7 @@ var depsRules = `
 	internal/goexperiment,
 	internal/goos,
 	internal/profilerecord,
+	internal/runtime/exithook,
 	math/bits
 	< internal/bytealg
 	< internal/stringslite
@@ -140,7 +142,7 @@ var depsRules = `
 	< context
 	< TIME;
 
-	TIME, io, path, sort
+	TIME, io, path, slices
 	< io/fs;
 
 	# MATH is RUNTIME plus the basic math packages.
@@ -264,7 +266,7 @@ var depsRules = `
 	< math/big;
 
 	# compression
-	FMT, encoding/binary, hash/adler32, hash/crc32
+	FMT, encoding/binary, hash/adler32, hash/crc32, sort
 	< compress/bzip2, compress/flate, compress/lzw, internal/zstd
 	< archive/zip, compress/gzip, compress/zlib;
 
@@ -277,7 +279,7 @@ var depsRules = `
 	< internal/lazytemplate;
 
 	# regexp
-	FMT
+	FMT, sort
 	< regexp/syntax
 	< regexp
 	< internal/lazyregexp;
@@ -290,7 +292,7 @@ var depsRules = `
 	< index/suffixarray;
 
 	# executable parsing
-	FMT, encoding/binary, compress/zlib, internal/saferio, internal/zstd
+	FMT, encoding/binary, compress/zlib, internal/saferio, internal/zstd, sort
 	< runtime/debug
 	< debug/dwarf
 	< debug/elf, debug/gosym, debug/macho, debug/pe, debug/plan9obj, internal/xcoff
@@ -298,7 +300,7 @@ var depsRules = `
 	< DEBUG;
 
 	# go parser and friends.
-	FMT
+	FMT, sort
 	< internal/gover
 	< go/version
 	< go/token
@@ -307,7 +309,10 @@ var depsRules = `
 	< go/internal/typeparams;
 
 	FMT
-	< go/build/constraint, go/doc/comment;
+	< go/build/constraint;
+
+	FMT, sort
+	< go/doc/comment;
 
 	go/internal/typeparams, go/build/constraint
 	< go/parser;
@@ -384,7 +389,7 @@ var depsRules = `
 	  golang.org/x/net/lif,
 	  golang.org/x/net/route;
 
-	internal/bytealg, internal/itoa, math/bits, sort, strconv, unique
+	internal/bytealg, internal/itoa, math/bits, slices, strconv, unique
 	< net/netip;
 
 	# net is unavoidable when doing any networking,
@@ -400,7 +405,8 @@ var depsRules = `
 	internal/poll,
 	internal/singleflight,
 	net/netip,
-	os
+	os,
+	sort
 	< net;
 
 	fmt, unicode !< net;
@@ -511,6 +517,7 @@ var depsRules = `
 	< golang.org/x/crypto/internal/poly1305
 	< golang.org/x/crypto/chacha20poly1305
 	< golang.org/x/crypto/hkdf
+	< crypto/internal/hpke
 	< crypto/x509/internal/macos
 	< crypto/x509/pkix;
 
@@ -579,7 +586,7 @@ var depsRules = `
 	< net/http/fcgi;
 
 	# Profiling
-	FMT, compress/gzip, encoding/binary, text/tabwriter
+	FMT, compress/gzip, encoding/binary, sort, text/tabwriter
 	< runtime/pprof;
 
 	OS, compress/gzip, internal/lazyregexp
@@ -630,8 +637,11 @@ var depsRules = `
 	syscall
 	< os/exec/internal/fdtest;
 
+	FMT, sort
+	< internal/diff;
+
 	FMT
-	< internal/diff, internal/txtar;
+	< internal/txtar;
 
 	# v2 execution trace parser.
 	FMT
@@ -749,7 +759,7 @@ func TestDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sort.Strings(all)
+	slices.Sort(all)
 
 	sawImport := map[string]map[string]bool{} // from package => to package => true
 	policy := depsPolicy(t)
@@ -830,7 +840,7 @@ func findImports(pkg string) ([]string, error) {
 			}
 		}
 	}
-	sort.Strings(imports)
+	slices.Sort(imports)
 	return imports, nil
 }
 

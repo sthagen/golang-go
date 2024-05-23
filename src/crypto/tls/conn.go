@@ -71,6 +71,7 @@ type Conn struct {
 	// resumptionSecret is the resumption_master_secret for handling
 	// or sending NewSessionTicket messages.
 	resumptionSecret []byte
+	echAccepted      bool
 
 	// ticketKeys is the set of active session ticket keys for this
 	// connection. The first one is used to encrypt new tickets and
@@ -1089,10 +1090,22 @@ func (c *Conn) readHandshake(transcript transcriptHash) (any, error) {
 		return nil, err
 	}
 	data := c.hand.Bytes()
+
+	maxHandshakeSize := maxHandshake
+	// hasVers indicates we're past the first message, forcing someone trying to
+	// make us just allocate a large buffer to at least do the initial part of
+	// the handshake first.
+	if c.haveVers && data[0] == typeCertificate {
+		// Since certificate messages are likely to be the only messages that
+		// can be larger than maxHandshake, we use a special limit for just
+		// those messages.
+		maxHandshakeSize = maxHandshakeCertificateMsg
+	}
+
 	n := int(data[1])<<16 | int(data[2])<<8 | int(data[3])
-	if n > maxHandshake {
+	if n > maxHandshakeSize {
 		c.sendAlertLocked(alertInternalError)
-		return nil, c.in.setErrorLocked(fmt.Errorf("tls: handshake message of length %d bytes exceeds maximum of %d bytes", n, maxHandshake))
+		return nil, c.in.setErrorLocked(fmt.Errorf("tls: handshake message of length %d bytes exceeds maximum of %d bytes", n, maxHandshakeSize))
 	}
 	if err := c.readHandshakeBytes(4 + n); err != nil {
 		return nil, err
@@ -1640,6 +1653,7 @@ func (c *Conn) connectionStateLocked() ConnectionState {
 	} else {
 		state.ekm = c.ekm
 	}
+	state.ECHAccepted = c.echAccepted
 	return state
 }
 
