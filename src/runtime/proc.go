@@ -398,6 +398,7 @@ func goschedIfBusy() {
 // but widely used packages access it using linkname.
 // Notable members of the hall of shame include:
 //   - gvisor.dev/gvisor
+//   - github.com/sagernet/gvisor
 //
 // Do not remove or change the type signature.
 // See go.dev/issue/67401.
@@ -433,6 +434,7 @@ func goparkunlock(lock *mutex, reason waitReason, traceReason traceBlockReason, 
 // but widely used packages access it using linkname.
 // Notable members of the hall of shame include:
 //   - gvisor.dev/gvisor
+//   - github.com/sagernet/gvisor
 //
 // Do not remove or change the type signature.
 // See go.dev/issue/67401.
@@ -2577,6 +2579,16 @@ func cgoBindM() {
 }
 
 // A helper function for EnsureDropM.
+//
+// getm should be an internal detail,
+// but widely used packages access it using linkname.
+// Notable members of the hall of shame include:
+//   - fortio.org/log
+//
+// Do not remove or change the type signature.
+// See go.dev/issue/67401.
+//
+//go:linkname getm
 func getm() uintptr {
 	return uintptr(unsafe.Pointer(getg().m))
 }
@@ -4208,6 +4220,7 @@ func preemptPark(gp *g) {
 // but widely used packages access it using linkname.
 // Notable members of the hall of shame include:
 //   - gvisor.dev/gvisor
+//   - github.com/sagernet/gvisor
 //
 // Do not remove or change the type signature.
 // See go.dev/issue/67401.
@@ -7051,6 +7064,7 @@ func setMaxThreads(in int) (out int) {
 // Notable members of the hall of shame include:
 //   - github.com/bytedance/gopkg
 //   - github.com/choleraehyq/pid
+//   - github.com/songzhibin97/gkit
 //
 // Do not remove or change the type signature.
 // See go.dev/issue/67401.
@@ -7070,6 +7084,7 @@ func procPin() int {
 // Notable members of the hall of shame include:
 //   - github.com/bytedance/gopkg
 //   - github.com/choleraehyq/pid
+//   - github.com/songzhibin97/gkit
 //
 // Do not remove or change the type signature.
 // See go.dev/issue/67401.
@@ -7111,6 +7126,7 @@ func sync_atomic_runtime_procUnpin() {
 // but widely used packages access it using linkname.
 // Notable members of the hall of shame include:
 //   - github.com/livekit/protocol
+//   - github.com/sagernet/gvisor
 //   - gvisor.dev/gvisor
 //
 // Do not remove or change the type signature.
@@ -7137,6 +7153,7 @@ func sync_runtime_canSpin(i int) bool {
 // but widely used packages access it using linkname.
 // Notable members of the hall of shame include:
 //   - github.com/livekit/protocol
+//   - github.com/sagernet/gvisor
 //   - gvisor.dev/gvisor
 //
 // Do not remove or change the type signature.
