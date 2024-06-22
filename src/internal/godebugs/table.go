@@ -25,7 +25,7 @@ type Info struct {
 // Note: After adding entries to this table, update the list in doc/godebug.md as well.
 // (Otherwise the test in this package will fail.)
 var All = []Info{
-	{Name: "asynctimerchan", Package: "time", Changed: 23, Old: "1", Opaque: true},
+	{Name: "asynctimerchan", Package: "time", Changed: 23, Old: "1"},
 	{Name: "execerrdot", Package: "os/exec"},
 	{Name: "gocachehash", Package: "cmd/go"},
 	{Name: "gocachetest", Package: "cmd/go"},
@@ -36,7 +36,7 @@ var All = []Info{
 	{Name: "http2server", Package: "net/http"},
 	{Name: "httplaxcontentlength", Package: "net/http", Changed: 22, Old: "1"},
 	{Name: "httpmuxgo121", Package: "net/http", Changed: 22, Old: "1"},
-	{Name: "httpservecontentkeepheaders", Package: "net/http", Changed: 23, Old: "0"},
+	{Name: "httpservecontentkeepheaders", Package: "net/http", Changed: 23, Old: "1"},
 	{Name: "installgoroot", Package: "go/build"},
 	{Name: "jstmpllitinterp", Package: "html/template", Opaque: true}, // bug #66217: remove Opaque
 	//{Name: "multipartfiles", Package: "mime/multipart"},
