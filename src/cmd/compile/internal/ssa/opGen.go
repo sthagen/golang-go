@@ -1071,8 +1071,14 @@ const (
 	OpAMD64CMPXCHGQlock
 	OpAMD64ANDBlock
 	OpAMD64ANDLlock
+	OpAMD64ANDQlock
 	OpAMD64ORBlock
 	OpAMD64ORLlock
+	OpAMD64ORQlock
+	OpAMD64LoweredAtomicAnd64
+	OpAMD64LoweredAtomicAnd32
+	OpAMD64LoweredAtomicOr64
+	OpAMD64LoweredAtomicOr32
 	OpAMD64PrefetchT0
 	OpAMD64PrefetchNTA
 	OpAMD64ANDNQ
@@ -3231,22 +3237,26 @@ const (
 	OpAtomicCompareAndSwapRel32
 	OpAtomicAnd8
 	OpAtomicOr8
-	OpAtomicAnd64
 	OpAtomicAnd32
-	OpAtomicOr64
 	OpAtomicOr32
+	OpAtomicAnd64value
+	OpAtomicAnd32value
+	OpAtomicAnd8value
+	OpAtomicOr64value
+	OpAtomicOr32value
+	OpAtomicOr8value
 	OpAtomicAdd32Variant
 	OpAtomicAdd64Variant
 	OpAtomicExchange32Variant
 	OpAtomicExchange64Variant
 	OpAtomicCompareAndSwap32Variant
 	OpAtomicCompareAndSwap64Variant
-	OpAtomicAnd8Variant
-	OpAtomicOr8Variant
-	OpAtomicAnd64Variant
-	OpAtomicOr64Variant
-	OpAtomicAnd32Variant
-	OpAtomicOr32Variant
+	OpAtomicAnd64valueVariant
+	OpAtomicOr64valueVariant
+	OpAtomicAnd32valueVariant
+	OpAtomicOr32valueVariant
+	OpAtomicAnd8valueVariant
+	OpAtomicOr8valueVariant
 	OpPubBarrier
 	OpClobber
 	OpClobberReg
@@ -14125,6 +14135,22 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:           "ANDQlock",
+		auxType:        auxSymOff,
+		argLen:         3,
+		clobberFlags:   true,
+		faultOnNilArg0: true,
+		hasSideEffects: true,
+		symEffect:      SymRdWr,
+		asm:            x86.AANDQ,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{1, 49151},      // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 R15
+				{0, 4295032831}, // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 g R15 SB
+			},
+		},
+	},
+	{
 		name:           "ORBlock",
 		auxType:        auxSymOff,
 		argLen:         3,
@@ -14153,6 +14179,114 @@ var opcodeTable = [...]opInfo{
 			inputs: []inputInfo{
 				{1, 49151},      // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 R15
 				{0, 4295032831}, // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 g R15 SB
+			},
+		},
+	},
+	{
+		name:           "ORQlock",
+		auxType:        auxSymOff,
+		argLen:         3,
+		clobberFlags:   true,
+		faultOnNilArg0: true,
+		hasSideEffects: true,
+		symEffect:      SymRdWr,
+		asm:            x86.AORQ,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{1, 49151},      // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 R15
+				{0, 4295032831}, // AX CX DX BX SP BP SI DI R8 R9 R10 R11 R12 R13 g R15 SB
+			},
+		},
+	},
+	{
+		name:            "LoweredAtomicAnd64",
+		auxType:         auxSymOff,
+		argLen:          3,
+		resultNotInArgs: true,
+		clobberFlags:    true,
+		needIntTemp:     true,
+		faultOnNilArg0:  true,
+		hasSideEffects:  true,
+		unsafePoint:     true,
+		symEffect:       SymRdWr,
+		asm:             x86.AANDQ,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 49134}, // CX DX BX BP SI DI R8 R9 R10 R11 R12 R13 R15
+				{1, 49134}, // CX DX BX BP SI DI R8 R9 R10 R11 R12 R13 R15
+			},
+			outputs: []outputInfo{
+				{1, 0},
+				{0, 1}, // AX
+			},
+		},
+	},
+	{
+		name:            "LoweredAtomicAnd32",
+		auxType:         auxSymOff,
+		argLen:          3,
+		resultNotInArgs: true,
+		clobberFlags:    true,
+		needIntTemp:     true,
+		faultOnNilArg0:  true,
+		hasSideEffects:  true,
+		unsafePoint:     true,
+		symEffect:       SymRdWr,
+		asm:             x86.AANDL,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 49134}, // CX DX BX BP SI DI R8 R9 R10 R11 R12 R13 R15
+				{1, 49134}, // CX DX BX BP SI DI R8 R9 R10 R11 R12 R13 R15
+			},
+			outputs: []outputInfo{
+				{1, 0},
+				{0, 1}, // AX
+			},
+		},
+	},
+	{
+		name:            "LoweredAtomicOr64",
+		auxType:         auxSymOff,
+		argLen:          3,
+		resultNotInArgs: true,
+		clobberFlags:    true,
+		needIntTemp:     true,
+		faultOnNilArg0:  true,
+		hasSideEffects:  true,
+		unsafePoint:     true,
+		symEffect:       SymRdWr,
+		asm:             x86.AORQ,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 49134}, // CX DX BX BP SI DI R8 R9 R10 R11 R12 R13 R15
+				{1, 49134}, // CX DX BX BP SI DI R8 R9 R10 R11 R12 R13 R15
+			},
+			outputs: []outputInfo{
+				{1, 0},
+				{0, 1}, // AX
+			},
+		},
+	},
+	{
+		name:            "LoweredAtomicOr32",
+		auxType:         auxSymOff,
+		argLen:          3,
+		resultNotInArgs: true,
+		clobberFlags:    true,
+		needIntTemp:     true,
+		faultOnNilArg0:  true,
+		hasSideEffects:  true,
+		unsafePoint:     true,
+		symEffect:       SymRdWr,
+		asm:             x86.AORL,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 49134}, // CX DX BX BP SI DI R8 R9 R10 R11 R12 R13 R15
+				{1, 49134}, // CX DX BX BP SI DI R8 R9 R10 R11 R12 R13 R15
+			},
+			outputs: []outputInfo{
+				{1, 0},
+				{0, 1}, // AX
 			},
 		},
 	},
@@ -40739,25 +40873,49 @@ var opcodeTable = [...]opInfo{
 		generic:        true,
 	},
 	{
-		name:           "AtomicAnd64",
-		argLen:         3,
-		hasSideEffects: true,
-		generic:        true,
-	},
-	{
 		name:           "AtomicAnd32",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,
 	},
 	{
-		name:           "AtomicOr64",
+		name:           "AtomicOr32",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,
 	},
 	{
-		name:           "AtomicOr32",
+		name:           "AtomicAnd64value",
+		argLen:         3,
+		hasSideEffects: true,
+		generic:        true,
+	},
+	{
+		name:           "AtomicAnd32value",
+		argLen:         3,
+		hasSideEffects: true,
+		generic:        true,
+	},
+	{
+		name:           "AtomicAnd8value",
+		argLen:         3,
+		hasSideEffects: true,
+		generic:        true,
+	},
+	{
+		name:           "AtomicOr64value",
+		argLen:         3,
+		hasSideEffects: true,
+		generic:        true,
+	},
+	{
+		name:           "AtomicOr32value",
+		argLen:         3,
+		hasSideEffects: true,
+		generic:        true,
+	},
+	{
+		name:           "AtomicOr8value",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,
@@ -40799,37 +40957,37 @@ var opcodeTable = [...]opInfo{
 		generic:        true,
 	},
 	{
-		name:           "AtomicAnd8Variant",
+		name:           "AtomicAnd64valueVariant",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,
 	},
 	{
-		name:           "AtomicOr8Variant",
+		name:           "AtomicOr64valueVariant",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,
 	},
 	{
-		name:           "AtomicAnd64Variant",
+		name:           "AtomicAnd32valueVariant",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,
 	},
 	{
-		name:           "AtomicOr64Variant",
+		name:           "AtomicOr32valueVariant",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,
 	},
 	{
-		name:           "AtomicAnd32Variant",
+		name:           "AtomicAnd8valueVariant",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,
 	},
 	{
-		name:           "AtomicOr32Variant",
+		name:           "AtomicOr8valueVariant",
 		argLen:         3,
 		hasSideEffects: true,
 		generic:        true,

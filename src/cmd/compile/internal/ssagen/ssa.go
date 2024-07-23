@@ -4164,6 +4164,13 @@ func (s *state) sfcall(op ssa.Op, args ...*ssa.Value) (*ssa.Value, bool) {
 	return nil, false
 }
 
+// split breaks up a tuple-typed value into its 2 parts.
+func (s *state) split(v *ssa.Value) (*ssa.Value, *ssa.Value) {
+	p0 := s.newValue1(ssa.OpSelect0, v.Type.FieldType(0), v)
+	p1 := s.newValue1(ssa.OpSelect1, v.Type.FieldType(1), v)
+	return p0, p1
+}
+
 var intrinsics map[intrinsicKey]intrinsicBuilder
 
 // An intrinsicBuilder converts a call node n into an ssa value that
@@ -4241,7 +4248,7 @@ func InitTables() {
 			},
 			all...)
 	}
-	addF("runtime/internal/math", "MulUintptr",
+	addF("internal/runtime/math", "MulUintptr",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			if s.config.PtrSize == 4 {
 				return s.newValue2(ssa.OpMul32uover, types.NewTuple(types.Types[types.TUINT], types.Types[types.TUINT]), args[0], args[1])
@@ -4287,13 +4294,13 @@ func InitTables() {
 		// make it worthwhile as an intrinsic
 		brev_arch = append(brev_arch, sys.PPC64)
 	}
-	/******** runtime/internal/sys ********/
-	addF("runtime/internal/sys", "Bswap32",
+	/******** internal/runtime/sys ********/
+	addF("internal/runtime/sys", "Bswap32",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			return s.newValue1(ssa.OpBswap32, types.Types[types.TUINT32], args[0])
 		},
 		brev_arch...)
-	addF("runtime/internal/sys", "Bswap64",
+	addF("internal/runtime/sys", "Bswap64",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			return s.newValue1(ssa.OpBswap64, types.Types[types.TUINT64], args[0])
 		},
@@ -4309,9 +4316,9 @@ func InitTables() {
 
 	// Make Prefetch intrinsics for supported platforms
 	// On the unsupported platforms stub function will be eliminated
-	addF("runtime/internal/sys", "Prefetch", makePrefetchFunc(ssa.OpPrefetchCache),
+	addF("internal/runtime/sys", "Prefetch", makePrefetchFunc(ssa.OpPrefetchCache),
 		sys.AMD64, sys.ARM64, sys.PPC64)
-	addF("runtime/internal/sys", "PrefetchStreamed", makePrefetchFunc(ssa.OpPrefetchCacheStreamed),
+	addF("internal/runtime/sys", "PrefetchStreamed", makePrefetchFunc(ssa.OpPrefetchCacheStreamed),
 		sys.AMD64, sys.ARM64, sys.PPC64)
 
 	/******** internal/runtime/atomic ********/
@@ -4410,13 +4417,13 @@ func InitTables() {
 		},
 		sys.AMD64, sys.Loong64, sys.MIPS64, sys.PPC64, sys.RISCV64, sys.S390X)
 
-	type atomicOpEmitter func(s *state, n *ir.CallExpr, args []*ssa.Value, op ssa.Op, typ types.Kind)
+	type atomicOpEmitter func(s *state, n *ir.CallExpr, args []*ssa.Value, op ssa.Op, typ types.Kind, needReturn bool)
 
-	makeAtomicGuardedIntrinsicARM64 := func(op0, op1 ssa.Op, typ types.Kind, emit atomicOpEmitter) intrinsicBuilder {
+	makeAtomicGuardedIntrinsicARM64common := func(op0, op1 ssa.Op, typ types.Kind, emit atomicOpEmitter, needReturn bool) intrinsicBuilder {
 
 		return func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			if buildcfg.GOARM64.LSE {
-				emit(s, n, args, op1, typ)
+				emit(s, n, args, op1, typ, needReturn)
 			} else {
 				// Target Atomic feature is identified by dynamic detection
 				addr := s.entryNewValue1A(ssa.OpAddr, types.Types[types.TBOOL].PtrTo(), ir.Syms.ARM64HasATOMICS, s.sb)
@@ -4433,29 +4440,37 @@ func InitTables() {
 
 				// We have atomic instructions - use it directly.
 				s.startBlock(bTrue)
-				emit(s, n, args, op1, typ)
+				emit(s, n, args, op1, typ, needReturn)
 				s.endBlock().AddEdgeTo(bEnd)
 
 				// Use original instruction sequence.
 				s.startBlock(bFalse)
-				emit(s, n, args, op0, typ)
+				emit(s, n, args, op0, typ, needReturn)
 				s.endBlock().AddEdgeTo(bEnd)
 
 				// Merge results.
 				s.startBlock(bEnd)
 			}
-			if typ == types.TNIL {
-				return nil
-			} else {
+			if needReturn {
 				return s.variable(n, types.Types[typ])
+			} else {
+				return nil
 			}
 		}
 	}
+	makeAtomicGuardedIntrinsicARM64 := func(op0, op1 ssa.Op, typ types.Kind, emit atomicOpEmitter) intrinsicBuilder {
+		return makeAtomicGuardedIntrinsicARM64common(op0, op1, typ, emit, true)
+	}
+	makeAtomicGuardedIntrinsicARM64old := func(op0, op1 ssa.Op, typ types.Kind, emit atomicOpEmitter) intrinsicBuilder {
+		return makeAtomicGuardedIntrinsicARM64common(op0, op1, typ, emit, false)
+	}
 
-	atomicEmitterARM64 := func(s *state, n *ir.CallExpr, args []*ssa.Value, op ssa.Op, typ types.Kind) {
+	atomicEmitterARM64 := func(s *state, n *ir.CallExpr, args []*ssa.Value, op ssa.Op, typ types.Kind, needReturn bool) {
 		v := s.newValue3(op, types.NewTuple(types.Types[typ], types.TypeMem), args[0], args[1], s.mem())
 		s.vars[memVar] = s.newValue1(ssa.OpSelect1, types.TypeMem, v)
-		s.vars[n] = s.newValue1(ssa.OpSelect0, types.Types[typ], v)
+		if needReturn {
+			s.vars[n] = s.newValue1(ssa.OpSelect0, types.Types[typ], v)
+		}
 	}
 	addF("internal/runtime/atomic", "Xchg",
 		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicExchange32, ssa.OpAtomicExchange32Variant, types.TUINT32, atomicEmitterARM64),
@@ -4508,10 +4523,12 @@ func InitTables() {
 		},
 		sys.PPC64)
 
-	atomicCasEmitterARM64 := func(s *state, n *ir.CallExpr, args []*ssa.Value, op ssa.Op, typ types.Kind) {
+	atomicCasEmitterARM64 := func(s *state, n *ir.CallExpr, args []*ssa.Value, op ssa.Op, typ types.Kind, needReturn bool) {
 		v := s.newValue4(op, types.NewTuple(types.Types[types.TBOOL], types.TypeMem), args[0], args[1], args[2], s.mem())
 		s.vars[memVar] = s.newValue1(ssa.OpSelect1, types.TypeMem, v)
-		s.vars[n] = s.newValue1(ssa.OpSelect0, types.Types[typ], v)
+		if needReturn {
+			s.vars[n] = s.newValue1(ssa.OpSelect0, types.Types[typ], v)
+		}
 	}
 
 	addF("internal/runtime/atomic", "Cas",
@@ -4521,6 +4538,7 @@ func InitTables() {
 		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicCompareAndSwap64, ssa.OpAtomicCompareAndSwap64Variant, types.TBOOL, atomicCasEmitterARM64),
 		sys.ARM64)
 
+	// Old-style atomic logical operation API (all supported archs except arm64).
 	addF("internal/runtime/atomic", "And8",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			s.vars[memVar] = s.newValue3(ssa.OpAtomicAnd8, types.TypeMem, args[0], args[1], s.mem())
@@ -4538,7 +4556,7 @@ func InitTables() {
 			s.vars[memVar] = s.newValue3(ssa.OpAtomicOr8, types.TypeMem, args[0], args[1], s.mem())
 			return nil
 		},
-		sys.AMD64, sys.ARM64, sys.MIPS, sys.MIPS64, sys.PPC64, sys.RISCV64, sys.S390X)
+		sys.AMD64, sys.MIPS, sys.MIPS64, sys.PPC64, sys.RISCV64, sys.S390X)
 	addF("internal/runtime/atomic", "Or",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			s.vars[memVar] = s.newValue3(ssa.OpAtomicOr32, types.TypeMem, args[0], args[1], s.mem())
@@ -4546,30 +4564,66 @@ func InitTables() {
 		},
 		sys.AMD64, sys.MIPS, sys.MIPS64, sys.PPC64, sys.RISCV64, sys.S390X)
 
+	// arm64 always uses the new-style atomic logical operations, for both the
+	// old and new style API.
 	addF("internal/runtime/atomic", "And8",
-		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicAnd8, ssa.OpAtomicAnd8Variant, types.TUINT8, atomicEmitterARM64),
+		makeAtomicGuardedIntrinsicARM64old(ssa.OpAtomicAnd8value, ssa.OpAtomicAnd8valueVariant, types.TUINT8, atomicEmitterARM64),
 		sys.ARM64)
 	addF("internal/runtime/atomic", "Or8",
-		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicOr8, ssa.OpAtomicOr8Variant, types.TUINT8, atomicEmitterARM64),
+		makeAtomicGuardedIntrinsicARM64old(ssa.OpAtomicOr8value, ssa.OpAtomicOr8valueVariant, types.TUINT8, atomicEmitterARM64),
 		sys.ARM64)
 	addF("internal/runtime/atomic", "And64",
-		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicAnd64, ssa.OpAtomicAnd64Variant, types.TUINT64, atomicEmitterARM64),
+		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicAnd64value, ssa.OpAtomicAnd64valueVariant, types.TUINT64, atomicEmitterARM64),
 		sys.ARM64)
 	addF("internal/runtime/atomic", "And32",
-		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicAnd32, ssa.OpAtomicAnd32Variant, types.TUINT32, atomicEmitterARM64),
+		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicAnd32value, ssa.OpAtomicAnd32valueVariant, types.TUINT32, atomicEmitterARM64),
 		sys.ARM64)
 	addF("internal/runtime/atomic", "And",
-		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicAnd32, ssa.OpAtomicAnd32Variant, types.TUINT32, atomicEmitterARM64),
+		makeAtomicGuardedIntrinsicARM64old(ssa.OpAtomicAnd32value, ssa.OpAtomicAnd32valueVariant, types.TUINT32, atomicEmitterARM64),
 		sys.ARM64)
 	addF("internal/runtime/atomic", "Or64",
-		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicOr64, ssa.OpAtomicOr64Variant, types.TUINT64, atomicEmitterARM64),
+		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicOr64value, ssa.OpAtomicOr64valueVariant, types.TUINT64, atomicEmitterARM64),
 		sys.ARM64)
 	addF("internal/runtime/atomic", "Or32",
-		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicOr32, ssa.OpAtomicOr32Variant, types.TUINT32, atomicEmitterARM64),
+		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicOr32value, ssa.OpAtomicOr32valueVariant, types.TUINT32, atomicEmitterARM64),
 		sys.ARM64)
 	addF("internal/runtime/atomic", "Or",
-		makeAtomicGuardedIntrinsicARM64(ssa.OpAtomicOr32, ssa.OpAtomicOr32Variant, types.TUINT32, atomicEmitterARM64),
+		makeAtomicGuardedIntrinsicARM64old(ssa.OpAtomicOr32value, ssa.OpAtomicOr32valueVariant, types.TUINT32, atomicEmitterARM64),
 		sys.ARM64)
+
+	// New-style atomic logical operations, which return the old memory value.
+	addF("internal/runtime/atomic", "And64",
+		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
+			v := s.newValue3(ssa.OpAtomicAnd64value, types.NewTuple(types.Types[types.TUINT64], types.TypeMem), args[0], args[1], s.mem())
+			p0, p1 := s.split(v)
+			s.vars[memVar] = p1
+			return p0
+		},
+		sys.AMD64)
+	addF("internal/runtime/atomic", "And32",
+		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
+			v := s.newValue3(ssa.OpAtomicAnd32value, types.NewTuple(types.Types[types.TUINT32], types.TypeMem), args[0], args[1], s.mem())
+			p0, p1 := s.split(v)
+			s.vars[memVar] = p1
+			return p0
+		},
+		sys.AMD64)
+	addF("internal/runtime/atomic", "Or64",
+		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
+			v := s.newValue3(ssa.OpAtomicOr64value, types.NewTuple(types.Types[types.TUINT64], types.TypeMem), args[0], args[1], s.mem())
+			p0, p1 := s.split(v)
+			s.vars[memVar] = p1
+			return p0
+		},
+		sys.AMD64)
+	addF("internal/runtime/atomic", "Or32",
+		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
+			v := s.newValue3(ssa.OpAtomicOr32value, types.NewTuple(types.Types[types.TUINT32], types.TypeMem), args[0], args[1], s.mem())
+			p0, p1 := s.split(v)
+			s.vars[memVar] = p1
+			return p0
+		},
+		sys.AMD64)
 
 	// Aliases for atomic load operations
 	alias("internal/runtime/atomic", "Loadint32", "internal/runtime/atomic", "Load", all...)
@@ -4837,8 +4891,8 @@ func InitTables() {
 			return s.newValue1(ssa.OpCtz64, types.Types[types.TINT], y)
 		},
 		sys.S390X)
-	alias("math/bits", "ReverseBytes64", "runtime/internal/sys", "Bswap64", all...)
-	alias("math/bits", "ReverseBytes32", "runtime/internal/sys", "Bswap32", all...)
+	alias("math/bits", "ReverseBytes64", "internal/runtime/sys", "Bswap64", all...)
+	alias("math/bits", "ReverseBytes32", "internal/runtime/sys", "Bswap32", all...)
 	// ReverseBytes inlines correctly, no need to intrinsify it.
 	// Nothing special is needed for targets where ReverseBytes16 lowers to a rotate
 	// On Power10, 16-bit rotate is not available so use BRH instruction
@@ -5025,14 +5079,14 @@ func InitTables() {
 		},
 		sys.AMD64, sys.ARM64, sys.PPC64, sys.S390X, sys.MIPS64, sys.RISCV64, sys.Loong64)
 	alias("math/bits", "Mul", "math/bits", "Mul64", p8...)
-	alias("runtime/internal/math", "Mul64", "math/bits", "Mul64", p8...)
+	alias("internal/runtime/math", "Mul64", "math/bits", "Mul64", p8...)
 	addF("math/bits", "Add64",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			return s.newValue3(ssa.OpAdd64carry, types.NewTuple(types.Types[types.TUINT64], types.Types[types.TUINT64]), args[0], args[1], args[2])
 		},
 		sys.AMD64, sys.ARM64, sys.PPC64, sys.S390X, sys.RISCV64, sys.Loong64, sys.MIPS64)
 	alias("math/bits", "Add", "math/bits", "Add64", p8...)
-	alias("runtime/internal/math", "Add64", "math/bits", "Add64", all...)
+	alias("internal/runtime/math", "Add64", "math/bits", "Add64", all...)
 	addF("math/bits", "Sub64",
 		func(s *state, n *ir.CallExpr, args []*ssa.Value) *ssa.Value {
 			return s.newValue3(ssa.OpSub64borrow, types.NewTuple(types.Types[types.TUINT64], types.Types[types.TUINT64]), args[0], args[1], args[2])
@@ -5051,12 +5105,12 @@ func InitTables() {
 		sys.AMD64)
 	alias("math/bits", "Div", "math/bits", "Div64", sys.ArchAMD64)
 
-	alias("runtime/internal/sys", "TrailingZeros8", "math/bits", "TrailingZeros8", all...)
-	alias("runtime/internal/sys", "TrailingZeros32", "math/bits", "TrailingZeros32", all...)
-	alias("runtime/internal/sys", "TrailingZeros64", "math/bits", "TrailingZeros64", all...)
-	alias("runtime/internal/sys", "Len8", "math/bits", "Len8", all...)
-	alias("runtime/internal/sys", "Len64", "math/bits", "Len64", all...)
-	alias("runtime/internal/sys", "OnesCount64", "math/bits", "OnesCount64", all...)
+	alias("internal/runtime/sys", "TrailingZeros8", "math/bits", "TrailingZeros8", all...)
+	alias("internal/runtime/sys", "TrailingZeros32", "math/bits", "TrailingZeros32", all...)
+	alias("internal/runtime/sys", "TrailingZeros64", "math/bits", "TrailingZeros64", all...)
+	alias("internal/runtime/sys", "Len8", "math/bits", "Len8", all...)
+	alias("internal/runtime/sys", "Len64", "math/bits", "Len64", all...)
+	alias("internal/runtime/sys", "OnesCount64", "math/bits", "OnesCount64", all...)
 
 	/******** sync/atomic ********/
 
@@ -5098,16 +5152,16 @@ func InitTables() {
 	alias("sync/atomic", "AddUintptr", "internal/runtime/atomic", "Xadd", p4...)
 	alias("sync/atomic", "AddUintptr", "internal/runtime/atomic", "Xadd64", p8...)
 
-	alias("sync/atomic", "AndInt32", "internal/runtime/atomic", "And32", sys.ArchARM64)
-	alias("sync/atomic", "AndUint32", "internal/runtime/atomic", "And32", sys.ArchARM64)
-	alias("sync/atomic", "AndInt64", "internal/runtime/atomic", "And64", sys.ArchARM64)
-	alias("sync/atomic", "AndUint64", "internal/runtime/atomic", "And64", sys.ArchARM64)
-	alias("sync/atomic", "AndUintptr", "internal/runtime/atomic", "And64", sys.ArchARM64)
-	alias("sync/atomic", "OrInt32", "internal/runtime/atomic", "Or32", sys.ArchARM64)
-	alias("sync/atomic", "OrUint32", "internal/runtime/atomic", "Or32", sys.ArchARM64)
-	alias("sync/atomic", "OrInt64", "internal/runtime/atomic", "Or64", sys.ArchARM64)
-	alias("sync/atomic", "OrUint64", "internal/runtime/atomic", "Or64", sys.ArchARM64)
-	alias("sync/atomic", "OrUintptr", "internal/runtime/atomic", "Or64", sys.ArchARM64)
+	alias("sync/atomic", "AndInt32", "internal/runtime/atomic", "And32", sys.ArchARM64, sys.ArchAMD64)
+	alias("sync/atomic", "AndUint32", "internal/runtime/atomic", "And32", sys.ArchARM64, sys.ArchAMD64)
+	alias("sync/atomic", "AndInt64", "internal/runtime/atomic", "And64", sys.ArchARM64, sys.ArchAMD64)
+	alias("sync/atomic", "AndUint64", "internal/runtime/atomic", "And64", sys.ArchARM64, sys.ArchAMD64)
+	alias("sync/atomic", "AndUintptr", "internal/runtime/atomic", "And64", sys.ArchARM64, sys.ArchAMD64)
+	alias("sync/atomic", "OrInt32", "internal/runtime/atomic", "Or32", sys.ArchARM64, sys.ArchAMD64)
+	alias("sync/atomic", "OrUint32", "internal/runtime/atomic", "Or32", sys.ArchARM64, sys.ArchAMD64)
+	alias("sync/atomic", "OrInt64", "internal/runtime/atomic", "Or64", sys.ArchARM64, sys.ArchAMD64)
+	alias("sync/atomic", "OrUint64", "internal/runtime/atomic", "Or64", sys.ArchARM64, sys.ArchAMD64)
+	alias("sync/atomic", "OrUintptr", "internal/runtime/atomic", "Or64", sys.ArchARM64, sys.ArchAMD64)
 
 	/******** math/big ********/
 	alias("math/big", "mulWW", "math/bits", "Mul64", p8...)

@@ -7,8 +7,8 @@ package runtime
 import (
 	"internal/abi"
 	"internal/goarch"
-	"runtime/internal/math"
-	"runtime/internal/sys"
+	"internal/runtime/math"
+	"internal/runtime/sys"
 	"unsafe"
 )
 
@@ -18,7 +18,7 @@ type slice struct {
 	cap   int
 }
 
-// A notInHeapSlice is a slice backed by runtime/internal/sys.NotInHeap memory.
+// A notInHeapSlice is a slice backed by internal/runtime/sys.NotInHeap memory.
 type notInHeapSlice struct {
 	array *notInHeap
 	len   int

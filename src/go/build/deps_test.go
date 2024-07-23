@@ -83,11 +83,11 @@ var depsRules = `
 	< internal/stringslite
 	< internal/itoa
 	< internal/unsafeheader
-	< runtime/internal/sys
+	< internal/runtime/sys
 	< internal/runtime/syscall
 	< internal/runtime/atomic
 	< internal/runtime/exithook
-	< runtime/internal/math
+	< internal/runtime/math
 	< runtime
 	< sync/atomic
 	< internal/race
