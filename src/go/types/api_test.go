@@ -763,7 +763,7 @@ func TestUsesInfo(t *testing.T) {
 
 		// Uses of fields are instantiated.
 		{`package s1; type N[A any] struct{ a A }; var f = N[int]{}.a`, `a`, `field a int`},
-		{`package s1; type N[A any] struct{ a A }; func (r N[B]) m(b B) { r.a = b }`, `a`, `field a B`},
+		{`package s2; type N[A any] struct{ a A }; func (r N[B]) m(b B) { r.a = b }`, `a`, `field a B`},
 
 		// Uses of methods are uses of the instantiated method.
 		{`package m0; type N[A any] int; func (r N[B]) m() { r.n() }; func (N[C]) n() {}`, `n`, `func (m0.N[B]).n()`},
@@ -1885,6 +1885,9 @@ func TestScopeLookupParent(t *testing.T) {
 	// Each /*name=kind:line*/ comment makes the test look up the
 	// name at that point and checks that it resolves to a decl of
 	// the specified kind and line number.  "undef" means undefined.
+	// Note that type switch case clauses with an empty body (but for
+	// comments) need the ";" to ensure that the recorded scope extends
+	// past the comments.
 	mainSrc := `
 /*lib=pkgname:5*/ /*X=var:1*/ /*Pi=const:8*/ /*T=typename:9*/ /*Y=var:10*/ /*F=func:12*/
 package main
@@ -1908,17 +1911,17 @@ func F[T *U, U any](param1, param2 int) /*param1=undef*/ (res1 /*res1=undef*/, r
 
 	var i interface{}
 	switch y := i.(type) { /*y=undef*/
-	case /*y=undef*/ int /*y=var:23*/ :
-	case float32, /*y=undef*/ float64 /*y=var:23*/ :
-	default /*y=var:23*/:
+	case /*y=undef*/ int /*y=undef*/ : /*y=var:23*/ ;
+	case float32, /*y=undef*/ float64 /*y=undef*/ : /*y=var:23*/ ;
+	default /*y=undef*/ : /*y=var:23*/
 		println(y)
 	}
 	/*y=undef*/
 
         switch int := i.(type) {
-        case /*int=typename:0*/ int /*int=var:31*/ :
+        case /*int=typename:0*/ int /*int=typename:0*/ : /*int=var:31*/
         	println(int)
-        default /*int=var:31*/ :
+        default /*int=typename:0*/ : /*int=var:31*/ ;
         }
 
 	_ = param1
