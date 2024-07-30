@@ -10,8 +10,9 @@ import (
 	"cmd/go/internal/cache"
 	"cmd/go/internal/cfg"
 	"cmd/go/internal/load"
-	"cmd/go/internal/par"
 	"cmd/go/internal/str"
+	"cmd/internal/par"
+	"cmd/internal/pathcache"
 	"errors"
 	"fmt"
 	"internal/lazyregexp"
@@ -606,7 +607,7 @@ func (sh *Shell) runOut(dir string, env []string, cmdargs ...any) ([]byte, error
 	}
 
 	var buf bytes.Buffer
-	path, err := cfg.LookPath(cmdline[0])
+	path, err := pathcache.LookPath(cmdline[0])
 	if err != nil {
 		return nil, err
 	}

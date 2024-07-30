@@ -213,7 +213,6 @@ const (
 	C_LACON // $n(REG) where int12 < n <= int32
 	C_LECON
 	C_DACON // $n(REG) where int32 < n
-	C_STCON // $tlsvar
 	C_SBRA
 	C_LBRA
 	C_SAUTO
@@ -303,9 +302,6 @@ const (
 	AMOVWD
 	AMOVWF
 
-	AMOVWL
-	AMOVWR
-
 	AMUL
 	AMULD
 	AMULF
@@ -360,8 +356,6 @@ const (
 
 	// 64-bit
 	AMOVV
-	AMOVVL
-	AMOVVR
 
 	ASLLV
 	ASRAV
