@@ -1059,9 +1059,6 @@ func (ft *factsTable) update(parent *Block, v, w *Value, d domain, r relation) {
 					// We know that either x>min OR x<=max. factsTable cannot record OR conditions,
 					// so let's see if we can already prove that one of them is false, in which case
 					// the other must be true
-					if r == gt {
-						min++
-					}
 					l := ft.limits[x.ID]
 					if l.max <= min {
 						if r&eq == 0 || l.max < min {
@@ -1070,6 +1067,9 @@ func (ft *factsTable) update(parent *Block, v, w *Value, d domain, r relation) {
 						}
 					} else if l.min > max {
 						// x<=max is impossible, so it must be x>min
+						if r == gt {
+							min++
+						}
 						ft.signedMin(x, min)
 					}
 				}
@@ -1501,9 +1501,6 @@ func prove(f *Func) {
 				addBranchRestrictions(ft, parent, branch)
 			}
 
-			// Add facts about the values in the current block.
-			addLocalFacts(ft, node.block)
-
 			if ft.unsat {
 				// node.block is unreachable.
 				// Remove it and don't visit
@@ -1515,6 +1512,9 @@ func prove(f *Func) {
 			// Otherwise, we can now commit to
 			// taking this branch. We'll restore
 			// ft when we unwind.
+
+			// Add facts about the values in the current block.
+			addLocalFacts(ft, node.block)
 
 			work = append(work, bp{
 				block: node.block,
