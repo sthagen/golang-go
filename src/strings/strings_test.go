@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"iter"
 	"math"
 	"math/rand"
 	"slices"
@@ -18,6 +19,37 @@ import (
 	"unicode/utf8"
 	"unsafe"
 )
+
+func collect(t *testing.T, seq iter.Seq[string]) []string {
+	out := slices.Collect(seq)
+	out1 := slices.Collect(seq)
+	if !slices.Equal(out, out1) {
+		t.Fatalf("inconsistent seq:\n%s\n%s", out, out1)
+	}
+	return out
+}
+
+type LinesTest struct {
+	a string
+	b []string
+}
+
+var linesTests = []LinesTest{
+	{a: "abc\nabc\n", b: []string{"abc\n", "abc\n"}},
+	{a: "abc\r\nabc", b: []string{"abc\r\n", "abc"}},
+	{a: "abc\r\n", b: []string{"abc\r\n"}},
+	{a: "\nabc", b: []string{"\n", "abc"}},
+	{a: "\nabc\n\n", b: []string{"\n", "abc\n", "\n"}},
+}
+
+func TestLines(t *testing.T) {
+	for _, s := range linesTests {
+		result := slices.Collect(Lines(s.a))
+		if !slices.Equal(result, s.b) {
+			t.Errorf(`slices.Collect(Lines(%q)) = %q; want %q`, s.a, result, s.b)
+		}
+	}
+}
 
 var abcd = "abcd"
 var faces = "☺☻☹"
@@ -123,6 +155,11 @@ var indexTests = []IndexTest{
 	// test fallback to Rabin-Karp.
 	{"oxoxoxoxoxoxoxoxoxoxoxoy", "oy", 22},
 	{"oxoxoxoxoxoxoxoxoxoxoxox", "oy", -1},
+	// test fallback to IndexRune
+	{"oxoxoxoxoxoxoxoxoxoxox☺", "☺", 22},
+	// invalid UTF-8 byte sequence (must be longer than bytealg.MaxBruteForce to
+	// test that we don't use IndexRune)
+	{"xx0123456789012345678901234567890123456789012345678901234567890120123456789012345678901234567890123456xxx\xed\x9f\xc0", "\xed\x9f\xc0", 105},
 }
 
 var lastIndexTests = []IndexTest{
@@ -294,6 +331,37 @@ func TestIndexRune(t *testing.T) {
 		{"a☺b☻c☹d\xe2\x98�\xff�\xed\xa0\x80", -1, -1},
 		{"a☺b☻c☹d\xe2\x98�\xff�\xed\xa0\x80", 0xD800, -1}, // Surrogate pair
 		{"a☺b☻c☹d\xe2\x98�\xff�\xed\xa0\x80", utf8.MaxRune + 1, -1},
+
+		// 2 bytes
+		{"ӆ", 'ӆ', 0},
+		{"a", 'ӆ', -1},
+		{"  ӆ", 'ӆ', 2},
+		{"  a", 'ӆ', -1},
+		{Repeat("ц", 64) + "ӆ", 'ӆ', 128}, // test cutover
+		{Repeat("Ꙁ", 64) + "Ꚁ", '䚀', -1},  // 'Ꚁ' and '䚀' share the same last two bytes
+
+		// 3 bytes
+		{"Ꚁ", 'Ꚁ', 0},
+		{"a", 'Ꚁ', -1},
+		{"  Ꚁ", 'Ꚁ', 2},
+		{"  a", 'Ꚁ', -1},
+		{Repeat("Ꙁ", 64) + "Ꚁ", 'Ꚁ', 192}, // test cutover
+		{Repeat("𡋀", 64) + "𡌀", '𣌀', -1},  // '𡌀' and '𣌀' share the same last two bytes
+
+		// 4 bytes
+		{"𡌀", '𡌀', 0},
+		{"a", '𡌀', -1},
+		{"  𡌀", '𡌀', 2},
+		{"  a", '𡌀', -1},
+		{Repeat("𡋀", 64) + "𡌀", '𡌀', 256}, // test cutover
+		{Repeat("𡋀", 64), '𡌀', -1},
+
+		// Test the cutover to to bytealg.IndexString when it is triggered in
+		// the middle of rune that contains consecutive runs of equal bytes.
+		{"aaaaaKKKK\U000bc104", '\U000bc104', 17}, // cutover: (n + 16) / 8
+		{"aaaaaKKKK鄄", '鄄', 17},
+		{"aaKKKKKa\U000bc104", '\U000bc104', 18}, // cutover: 4 + n>>4
+		{"aaKKKKKa鄄", '鄄', 18},
 	}
 	for _, tt := range tests {
 		if got := IndexRune(tt.in, tt.rune); got != tt.want {
@@ -301,13 +369,14 @@ func TestIndexRune(t *testing.T) {
 		}
 	}
 
-	haystack := "test世界"
+	// Make sure we trigger the cutover and string(rune) conversion.
+	haystack := "test" + Repeat("𡋀", 32) + "𡌀"
 	allocs := testing.AllocsPerRun(1000, func() {
 		if i := IndexRune(haystack, 's'); i != 2 {
 			t.Fatalf("'s' at %d; want 2", i)
 		}
-		if i := IndexRune(haystack, '世'); i != 4 {
-			t.Fatalf("'世' at %d; want 4", i)
+		if i := IndexRune(haystack, '𡌀'); i != 132 {
+			t.Fatalf("'𡌀' at %d; want 4", i)
 		}
 	})
 	if allocs != 0 && testing.CoverMode() == "" {
@@ -410,6 +479,12 @@ func TestSplit(t *testing.T) {
 			t.Errorf("Split(%q, %q, %d) = %v; want %v", tt.s, tt.sep, tt.n, a, tt.a)
 			continue
 		}
+		if tt.n < 0 {
+			a2 := slices.Collect(SplitSeq(tt.s, tt.sep))
+			if !slices.Equal(a2, tt.a) {
+				t.Errorf(`collect(SplitSeq(%q, %q)) = %v; want %v`, tt.s, tt.sep, a2, tt.a)
+			}
+		}
 		if tt.n == 0 {
 			continue
 		}
@@ -448,6 +523,12 @@ func TestSplitAfter(t *testing.T) {
 		if !slices.Equal(a, tt.a) {
 			t.Errorf(`Split(%q, %q, %d) = %v; want %v`, tt.s, tt.sep, tt.n, a, tt.a)
 			continue
+		}
+		if tt.n < 0 {
+			a2 := slices.Collect(SplitAfterSeq(tt.s, tt.sep))
+			if !slices.Equal(a2, tt.a) {
+				t.Errorf(`collect(SplitAfterSeq(%q, %q)) = %v; want %v`, tt.s, tt.sep, a2, tt.a)
+			}
 		}
 		s := Join(a, "")
 		if s != tt.s {
@@ -492,6 +573,10 @@ func TestFields(t *testing.T) {
 			t.Errorf("Fields(%q) = %v; want %v", tt.s, a, tt.a)
 			continue
 		}
+		a2 := collect(t, FieldsSeq(tt.s))
+		if !slices.Equal(a2, tt.a) {
+			t.Errorf(`collect(FieldsSeq(%q)) = %v; want %v`, tt.s, a2, tt.a)
+		}
 	}
 }
 
@@ -515,6 +600,10 @@ func TestFieldsFunc(t *testing.T) {
 		a := FieldsFunc(tt.s, pred)
 		if !slices.Equal(a, tt.a) {
 			t.Errorf("FieldsFunc(%q) = %v, want %v", tt.s, a, tt.a)
+		}
+		a2 := collect(t, FieldsFuncSeq(tt.s, pred))
+		if !slices.Equal(a2, tt.a) {
+			t.Errorf(`collect(FieldsFuncSeq(%q)) = %v; want %v`, tt.s, a2, tt.a)
 		}
 	}
 }
