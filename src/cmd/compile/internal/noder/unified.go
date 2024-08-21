@@ -329,7 +329,10 @@ func writePkgStub(m posMap, noders []*noder) string {
 	{
 		w := publicRootWriter
 		w.pkg(pkg)
-		w.Bool(false) // TODO(mdempsky): Remove; was "has init"
+
+		if w.Version().Has(pkgbits.HasInit) {
+			w.Bool(false)
+		}
 
 		scope := pkg.Scope()
 		names := scope.Names()
@@ -410,11 +413,15 @@ func readPackage(pr *pkgReader, importpkg *types.Pkg, localStub bool) {
 			base.ErrorExit()
 		}
 
-		r.Bool() // TODO(mdempsky): Remove; was "has init"
+		if r.Version().Has(pkgbits.HasInit) {
+			r.Bool()
+		}
 
 		for i, n := 0, r.Len(); i < n; i++ {
 			r.Sync(pkgbits.SyncObject)
-			assert(!r.Bool())
+			if r.Version().Has(pkgbits.DerivedFuncInstance) {
+				assert(!r.Bool())
+			}
 			idx := r.Reloc(pkgbits.RelocObj)
 			assert(r.Len() == 0)
 
@@ -458,9 +465,9 @@ func writeUnifiedExport(out io.Writer) {
 	l := linker{
 		pw: pkgbits.NewPkgEncoder(base.Debug.SyncFrames),
 
-		pkgs:   make(map[string]pkgbits.Index),
-		decls:  make(map[*types.Sym]pkgbits.Index),
-		bodies: make(map[*types.Sym]pkgbits.Index),
+		pkgs:   make(map[string]index),
+		decls:  make(map[*types.Sym]index),
+		bodies: make(map[*types.Sym]index),
 	}
 
 	publicRootWriter := l.pw.NewEncoder(pkgbits.RelocMeta, pkgbits.SyncPublic)
@@ -468,7 +475,7 @@ func writeUnifiedExport(out io.Writer) {
 	assert(publicRootWriter.Idx == pkgbits.PublicRootIdx)
 	assert(privateRootWriter.Idx == pkgbits.PrivateRootIdx)
 
-	var selfPkgIdx pkgbits.Index
+	var selfPkgIdx index
 
 	{
 		pr := localPkgReader
@@ -477,11 +484,15 @@ func writeUnifiedExport(out io.Writer) {
 		r.Sync(pkgbits.SyncPkg)
 		selfPkgIdx = l.relocIdx(pr, pkgbits.RelocPkg, r.Reloc(pkgbits.RelocPkg))
 
-		r.Bool() // TODO(mdempsky): Remove; was "has init"
+		if r.Version().Has(pkgbits.HasInit) {
+			r.Bool()
+		}
 
 		for i, n := 0, r.Len(); i < n; i++ {
 			r.Sync(pkgbits.SyncObject)
-			assert(!r.Bool())
+			if r.Version().Has(pkgbits.DerivedFuncInstance) {
+				assert(!r.Bool())
+			}
 			idx := r.Reloc(pkgbits.RelocObj)
 			assert(r.Len() == 0)
 
@@ -498,7 +509,7 @@ func writeUnifiedExport(out io.Writer) {
 	}
 
 	{
-		var idxs []pkgbits.Index
+		var idxs []index
 		for _, idx := range l.decls {
 			idxs = append(idxs, idx)
 		}
@@ -508,12 +519,17 @@ func writeUnifiedExport(out io.Writer) {
 
 		w.Sync(pkgbits.SyncPkg)
 		w.Reloc(pkgbits.RelocPkg, selfPkgIdx)
-		w.Bool(false) // TODO(mdempsky): Remove; was "has init"
+
+		if w.Version().Has(pkgbits.HasInit) {
+			w.Bool(false)
+		}
 
 		w.Len(len(idxs))
 		for _, idx := range idxs {
 			w.Sync(pkgbits.SyncObject)
-			w.Bool(false)
+			if w.Version().Has(pkgbits.DerivedFuncInstance) {
+				w.Bool(false)
+			}
 			w.Reloc(pkgbits.RelocObj, idx)
 			w.Len(0)
 		}
@@ -525,7 +541,7 @@ func writeUnifiedExport(out io.Writer) {
 	{
 		type symIdx struct {
 			sym *types.Sym
-			idx pkgbits.Index
+			idx index
 		}
 		var bodies []symIdx
 		for sym, idx := range l.bodies {
