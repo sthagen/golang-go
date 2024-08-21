@@ -30,17 +30,18 @@ type testStruct struct {
 }
 
 func TestHandle(t *testing.T) {
-	testHandle[testString](t, "foo")
-	testHandle[testString](t, "bar")
-	testHandle[testString](t, "")
-	testHandle[testIntArray](t, [4]int{7, 77, 777, 7777})
-	testHandle[testEface](t, nil)
-	testHandle[testStringArray](t, [3]string{"a", "b", "c"})
-	testHandle[testStringStruct](t, testStringStruct{"x"})
-	testHandle[testStringStructArrayStruct](t, testStringStructArrayStruct{
-		s: [2]testStringStruct{testStringStruct{"y"}, testStringStruct{"z"}},
+	testHandle(t, testString("foo"))
+	testHandle(t, testString("bar"))
+	testHandle(t, testString(""))
+	testHandle(t, testIntArray{7, 77, 777, 7777})
+	testHandle(t, testEface(nil))
+	testHandle(t, testStringArray{"a", "b", "c"})
+	testHandle(t, testStringStruct{"x"})
+	testHandle(t, testStringStructArrayStruct{
+		s: [2]testStringStruct{{"y"}, {"z"}},
 	})
-	testHandle[testStruct](t, testStruct{0.5, "184"})
+	testHandle(t, testStruct{0.5, "184"})
+	testHandle(t, testEface("hello"))
 }
 
 func testHandle[T comparable](t *testing.T, value T) {
@@ -93,7 +94,7 @@ func drainMaps(t *testing.T) {
 
 func checkMapsFor[T comparable](t *testing.T, value T) {
 	// Manually load the value out of the map.
-	typ := abi.TypeOf(value)
+	typ := abi.TypeFor[T]()
 	a, ok := uniqueMaps.Load(typ)
 	if !ok {
 		return
