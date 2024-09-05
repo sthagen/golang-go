@@ -29,7 +29,7 @@ import (
 	"cmd/compile/internal/ssa"
 	"cmd/compile/internal/typebits"
 	"cmd/compile/internal/types"
-	"cmd/internal/notsha256"
+	"cmd/internal/hash"
 	"cmd/internal/obj"
 	"cmd/internal/src"
 
@@ -979,7 +979,7 @@ func (lv *liveness) enableClobber() {
 		// Clobber only functions where the hash of the function name matches a pattern.
 		// Useful for binary searching for a miscompiled function.
 		hstr := ""
-		for _, b := range notsha256.Sum256([]byte(lv.f.Name)) {
+		for _, b := range hash.Sum20([]byte(lv.f.Name)) {
 			hstr += fmt.Sprintf("%08b", b)
 		}
 		if !strings.HasSuffix(hstr, h) {
@@ -1148,7 +1148,7 @@ func (lv *liveness) showlive(v *ssa.Value, live bitvec.BitVec) {
 		s += " " + v
 	}
 
-	base.WarnfAt(pos, s)
+	base.WarnfAt(pos, "%s", s)
 }
 
 func (lv *liveness) printbvec(printed bool, name string, live bitvec.BitVec) bool {
