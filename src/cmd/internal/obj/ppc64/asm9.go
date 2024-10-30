@@ -282,6 +282,7 @@ var optabBase = []Optab{
 	{as: ASYSCALL, a1: C_U15CON, type_: 77, size: 12},
 	{as: ABEQ, a6: C_BRA, type_: 16, size: 4},
 	{as: ABEQ, a1: C_CREG, a6: C_BRA, type_: 16, size: 4},
+	{as: ABEQ, a1: C_CREG, a6: C_LR, type_: 17, size: 4},
 	{as: ABR, a6: C_BRA, type_: 11, size: 4},                                         // b label
 	{as: ABR, a6: C_BRAPIC, type_: 11, size: 8},                                      // b label; nop
 	{as: ABR, a6: C_LR, type_: 18, size: 4},                                          // blr
@@ -1871,6 +1872,9 @@ func buildop(ctxt *obj.Link) {
 			opset(AFSUBS, r0)
 			opset(AFSUBCC, r0)
 			opset(AFSUBSCC, r0)
+			opset(ADADD, r0)
+			opset(ADDIV, r0)
+			opset(ADSUB, r0)
 
 		case AFMADD:
 			opset(AFMADDCC, r0)
@@ -1895,6 +1899,7 @@ func buildop(ctxt *obj.Link) {
 			opset(AFMULS, r0)
 			opset(AFMULCC, r0)
 			opset(AFMULSCC, r0)
+			opset(ADMUL, r0)
 
 		case AFCMPO:
 			opset(AFCMPU, r0)
@@ -2814,6 +2819,50 @@ func asmout(c *ctxt9, p *obj.Prog, o *Optab, out *[5]uint32) {
 			c.ctxt.Diag("branch too far\n%v", p)
 		}
 		o1 = OP_BC(c.opirr(p.As), uint32(a), uint32(r), uint32(v), 0)
+
+	case 17:
+		var bo int32
+		bi := int(p.Reg)
+
+		if p.From.Reg == REG_CR {
+			c.ctxt.Diag("unrecognized register: expected CR0-CR7\n")
+		}
+		bi = int(p.From.Reg&0x7) * 4
+
+		bo = BO_BCR
+
+		switch p.As {
+		case ABLT:
+			bi += BI_LT
+		case ABGT:
+			bi += BI_GT
+		case ABEQ:
+			bi += BI_EQ
+		case ABNE:
+			bo = BO_NOTBCR
+			bi += BI_EQ
+		case ABLE:
+			bo = BO_NOTBCR
+			bi += BI_GT
+		case ABGE:
+			bo = BO_NOTBCR
+			bi += BI_LT
+		case ABVS:
+			bi += BI_FU
+		case ABVC:
+			bo = BO_NOTBCR
+			bi += BI_FU
+		default:
+			c.ctxt.Diag("unexpected instruction: expecting BGT, BEQ, BNE, BLE, BGE, BVS, BVC \n%v", p)
+
+		}
+		if oclass(&p.To) == C_LR {
+			o1 = OPVCC(19, 16, 0, 0)
+		} else {
+			c.ctxt.Diag("bad optab entry (17): %d\n%v", p.To.Class, p)
+		}
+
+		o1 = OP_BCR(o1, uint32(bo), uint32(bi))
 
 	case 18: /* br/bl (lr/ctr); bc/bcl bo,bi,(lr/ctr) */
 		var v int32
@@ -3934,6 +3983,15 @@ func (c *ctxt9) oprrr(a obj.As) uint32 {
 		return OPVCC(19, 417, 0, 0)
 	case ACRXOR:
 		return OPVCC(19, 193, 0, 0)
+
+	case ADADD:
+		return OPVCC(59, 2, 0, 0)
+	case ADDIV:
+		return OPVCC(59, 546, 0, 0)
+	case ADMUL:
+		return OPVCC(59, 34, 0, 0)
+	case ADSUB:
+		return OPVCC(59, 514, 0, 0)
 
 	case ADCBF:
 		return OPVCC(31, 86, 0, 0)
