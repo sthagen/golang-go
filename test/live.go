@@ -277,6 +277,26 @@ func f17a(p *byte) { // ERROR "live at entry to f17a: p$"
 	m2[x2] = p // ERROR "live at call to mapassign: p$"
 }
 
+func f17b(p *byte) { // ERROR "live at entry to f17b: p$"
+	// key temporary
+	if b {
+		m2s[str()] = p // ERROR "live at call to mapassign_faststr: p$" "live at call to str: p$"
+	}
+	m2s[str()] = p // ERROR "live at call to mapassign_faststr: p$" "live at call to str: p$"
+	m2s[str()] = p // ERROR "live at call to mapassign_faststr: p$" "live at call to str: p$"
+}
+
+func f17c() {
+	// key and value temporaries
+	if b {
+		m2s[str()] = f17d() // ERROR "live at call to f17d: .autotmp_[0-9]+$" "live at call to mapassign_faststr: .autotmp_[0-9]+$"
+	}
+	m2s[str()] = f17d() // ERROR "live at call to f17d: .autotmp_[0-9]+$" "live at call to mapassign_faststr: .autotmp_[0-9]+$"
+	m2s[str()] = f17d() // ERROR "live at call to f17d: .autotmp_[0-9]+$" "live at call to mapassign_faststr: .autotmp_[0-9]+$"
+}
+
+func f17d() *byte
+
 func g18() [2]string
 
 func f18() {
@@ -637,6 +657,16 @@ func newT40() *T40 {
 	ret := T40{}
 	ret.m = make(map[int]int, 42) // ERROR "live at call to makemap: &ret$"
 	return &ret
+}
+
+func good40() {
+	ret := T40{}              // ERROR "stack object ret T40$"
+	ret.m = make(map[int]int) // ERROR "live at call to rand(32)?: .autotmp_[0-9]+$" "stack object .autotmp_[0-9]+ (runtime.hmap|internal/runtime/maps.Map)$"
+	t := &ret
+	printnl() // ERROR "live at call to printnl: ret$"
+	// Note: ret is live at the printnl because the compiler moves &ret
+	// from before the printnl to after.
+	useT40(t)
 }
 
 func bad40() {

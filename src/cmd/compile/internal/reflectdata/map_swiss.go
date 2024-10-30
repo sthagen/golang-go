@@ -34,9 +34,21 @@ func SwissMapGroupType(t *types.Type) *types.Type {
 	//         elem elemType
 	//     }
 	// }
+
+	keytype := t.Key()
+	elemtype := t.Elem()
+	types.CalcSize(keytype)
+	types.CalcSize(elemtype)
+	if keytype.Size() > abi.SwissMapMaxKeyBytes {
+		keytype = types.NewPtr(keytype)
+	}
+	if elemtype.Size() > abi.SwissMapMaxElemBytes {
+		elemtype = types.NewPtr(elemtype)
+	}
+
 	slotFields := []*types.Field{
-		makefield("key", t.Key()),
-		makefield("elem", t.Elem()),
+		makefield("key", keytype),
+		makefield("elem", elemtype),
 	}
 	slot := types.NewStruct(slotFields)
 	slot.SetNoalg(true)
@@ -64,6 +76,12 @@ func SwissMapGroupType(t *types.Type) *types.Type {
 		// the end to ensure pointers are valid.
 		base.Fatalf("bad group size for %v", t)
 	}
+	if t.Key().Size() > abi.SwissMapMaxKeyBytes && !keytype.IsPtr() {
+		base.Fatalf("key indirect incorrect for %v", t)
+	}
+	if t.Elem().Size() > abi.SwissMapMaxElemBytes && !elemtype.IsPtr() {
+		base.Fatalf("elem indirect incorrect for %v", t)
+	}
 
 	t.MapType().SwissGroup = group
 	group.StructType().Map = t
@@ -86,8 +104,6 @@ func swissTableType() *types.Type {
 	//     localDepth uint8
 	//     // N.B Padding
 	//
-	//     seed uintptr
-	//
 	//     index int
 	//
 	//     // From groups.
@@ -101,7 +117,6 @@ func swissTableType() *types.Type {
 		makefield("capacity", types.Types[types.TUINT16]),
 		makefield("growthLeft", types.Types[types.TUINT16]),
 		makefield("localDepth", types.Types[types.TUINT8]),
-		makefield("seed", types.Types[types.TUINTPTR]),
 		makefield("index", types.Types[types.TINT]),
 		makefield("groups_data", types.Types[types.TUNSAFEPTR]),
 		makefield("groups_lengthMask", types.Types[types.TUINT64]),
@@ -116,9 +131,9 @@ func swissTableType() *types.Type {
 	table.SetUnderlying(types.NewStruct(fields))
 	types.CalcSize(table)
 
-	// The size of table should be 48 bytes on 64 bit
-	// and 36 bytes on 32 bit platforms.
-	if size := int64(3*2 + 2*1 /* one extra for padding */ + 2*8 + 3*types.PtrSize); table.Size() != size {
+	// The size of table should be 40 bytes on 64 bit
+	// and 32 bytes on 32 bit platforms.
+	if size := int64(3*2 + 2*1 /* one extra for padding */ + 2*8 + 2*types.PtrSize); table.Size() != size {
 		base.Fatalf("internal/runtime/maps.table size not correct: got %d, want %d", table.Size(), size)
 	}
 
@@ -144,6 +159,8 @@ func SwissMapType() *types.Type {
 	//
 	//     globalDepth uint8
 	//     globalShift uint8
+	//
+	//     writing uint8
 	//     // N.B Padding
 	//
 	//     clearSeq uint64
@@ -156,6 +173,7 @@ func SwissMapType() *types.Type {
 		makefield("dirLen", types.Types[types.TINT]),
 		makefield("globalDepth", types.Types[types.TUINT8]),
 		makefield("globalShift", types.Types[types.TUINT8]),
+		makefield("writing", types.Types[types.TUINT8]),
 		makefield("clearSeq", types.Types[types.TUINT64]),
 	}
 
@@ -169,7 +187,7 @@ func SwissMapType() *types.Type {
 
 	// The size of Map should be 48 bytes on 64 bit
 	// and 32 bytes on 32 bit platforms.
-	if size := int64(2*8 + 4*types.PtrSize /* one extra for globalDepth + padding */); m.Size() != size {
+	if size := int64(2*8 + 4*types.PtrSize /* one extra for globalDepth/globalShift/writing + padding */); m.Size() != size {
 		base.Fatalf("internal/runtime/maps.Map size not correct: got %d, want %d", m.Size(), size)
 	}
 
@@ -202,8 +220,9 @@ func SwissMapIterType() *types.Type {
 	//
 	//    dirIdx int
 	//
-	//    tab        *table
-	//    groupSmall unsafe.Pointer // actually groupReference.data
+	//    tab *table
+	//
+	//    group unsafe.Pointer // actually groupReference.data
 	//
 	//    entryIdx uint64
 	// }
@@ -219,7 +238,7 @@ func SwissMapIterType() *types.Type {
 		makefield("globalDepth", types.Types[types.TUINT8]),
 		makefield("dirIdx", types.Types[types.TINT]),
 		makefield("tab", types.NewPtr(swissTableType())),
-		makefield("groupSmall", types.Types[types.TUNSAFEPTR]),
+		makefield("group", types.Types[types.TUNSAFEPTR]),
 		makefield("entryIdx", types.Types[types.TUINT64]),
 	}
 
@@ -265,6 +284,12 @@ func writeSwissMapType(t *types.Type, lsym *obj.LSym, c rttype.Cursor) {
 	}
 	if hashMightPanic(t.Key()) {
 		flags |= abi.SwissMapHashMightPanic
+	}
+	if t.Key().Size() > abi.SwissMapMaxKeyBytes {
+		flags |= abi.SwissMapIndirectKey
+	}
+	if t.Elem().Size() > abi.SwissMapMaxKeyBytes {
+		flags |= abi.SwissMapIndirectElem
 	}
 	c.Field("Flags").WriteUint32(flags)
 

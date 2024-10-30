@@ -12,7 +12,7 @@ import (
 
 const debugLog = false
 
-func (t *table) checkInvariants(typ *abi.SwissMapType) {
+func (t *table) checkInvariants(typ *abi.SwissMapType, m *Map) {
 	if !debugLog {
 		return
 	}
@@ -24,7 +24,7 @@ func (t *table) checkInvariants(typ *abi.SwissMapType) {
 	var empty uint16
 	for i := uint64(0); i <= t.groups.lengthMask; i++ {
 		g := t.groups.group(typ, i)
-		for j := uint32(0); j < abi.SwissMapGroupSlots; j++ {
+		for j := uintptr(0); j < abi.SwissMapGroupSlots; j++ {
 			c := g.ctrls().get(j)
 			switch {
 			case c == ctrlDeleted:
@@ -35,6 +35,9 @@ func (t *table) checkInvariants(typ *abi.SwissMapType) {
 				used++
 
 				key := g.key(typ, j)
+				if typ.IndirectKey() {
+					key = *((*unsafe.Pointer)(key))
+				}
 
 				// Can't lookup keys that don't compare equal
 				// to themselves (e.g., NaN).
@@ -42,12 +45,12 @@ func (t *table) checkInvariants(typ *abi.SwissMapType) {
 					continue
 				}
 
-				if _, ok := t.Get(typ, key); !ok {
-					hash := typ.Hasher(key, t.seed)
+				if _, ok := t.Get(typ, m, key); !ok {
+					hash := typ.Hasher(key, m.seed)
 					print("invariant failed: slot(", i, "/", j, "): key ")
 					dump(key, typ.Key.Size_)
 					print(" not found [hash=", hash, ", h2=", h2(hash), " h1=", h1(hash), "]\n")
-					t.Print(typ)
+					t.Print(typ, m)
 					panic("invariant failed: slot: key not found")
 				}
 			}
@@ -56,32 +59,30 @@ func (t *table) checkInvariants(typ *abi.SwissMapType) {
 
 	if used != t.used {
 		print("invariant failed: found ", used, " used slots, but used count is ", t.used, "\n")
-		t.Print(typ)
+		t.Print(typ, m)
 		panic("invariant failed: found mismatched used slot count")
 	}
 
 	growthLeft := (t.capacity*maxAvgGroupLoad)/abi.SwissMapGroupSlots - t.used - deleted
 	if growthLeft != t.growthLeft {
 		print("invariant failed: found ", t.growthLeft, " growthLeft, but expected ", growthLeft, "\n")
-		t.Print(typ)
+		t.Print(typ, m)
 		panic("invariant failed: found mismatched growthLeft")
 	}
 	if deleted != t.tombstones() {
 		print("invariant failed: found ", deleted, " tombstones, but expected ", t.tombstones(), "\n")
-		t.Print(typ)
+		t.Print(typ, m)
 		panic("invariant failed: found mismatched tombstones")
 	}
 
 	if empty == 0 {
 		print("invariant failed: found no empty slots (violates probe invariant)\n")
-		t.Print(typ)
+		t.Print(typ, m)
 		panic("invariant failed: found no empty slots (violates probe invariant)")
 	}
 }
-
-func (t *table) Print(typ *abi.SwissMapType) {
+func (t *table) Print(typ *abi.SwissMapType, m *Map) {
 	print(`table{
-	seed: `, t.seed, `
 	index: `, t.index, `
 	localDepth: `, t.localDepth, `
 	capacity: `, t.capacity, `
@@ -95,7 +96,7 @@ func (t *table) Print(typ *abi.SwissMapType) {
 
 		g := t.groups.group(typ, i)
 		ctrls := g.ctrls()
-		for j := uint32(0); j < abi.SwissMapGroupSlots; j++ {
+		for j := uintptr(0); j < abi.SwissMapGroupSlots; j++ {
 			print("\t\t\tslot ", j, "\n")
 
 			c := ctrls.get(j)

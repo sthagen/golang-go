@@ -8,6 +8,7 @@ package maps
 import (
 	"internal/abi"
 	"internal/goarch"
+	"internal/runtime/math"
 	"internal/runtime/sys"
 	"unsafe"
 )
@@ -196,7 +197,6 @@ type Map struct {
 	used uint64
 
 	// seed is the hash seed, computed as a unique random number per map.
-	// TODO(prattmic): Populate this on table initialization.
 	seed uintptr
 
 	// The directory of tables.
@@ -228,6 +228,12 @@ type Map struct {
 	// On 64-bit systems, this is 64 - globalDepth.
 	globalShift uint8
 
+	// writing is a flag that is toggled (XOR 1) while the map is being
+	// written. Normally it is set to 1 when writing, but if there are
+	// multiple concurrent writers, then toggling increases the probability
+	// that both sides will detect the race.
+	writing uint8
+
 	// clearSeq is a sequence counter of calls to Clear. It is used to
 	// detect map clears during iteration.
 	clearSeq uint64
@@ -240,49 +246,82 @@ func depthToShift(depth uint8) uint8 {
 	return 64 - depth
 }
 
-func NewMap(mt *abi.SwissMapType, capacity uint64) *Map {
-	if capacity < abi.SwissMapGroupSlots {
-		// TODO: temporary to simplify initial implementation.
-		capacity = abi.SwissMapGroupSlots
+// If m is non-nil, it should be used rather than allocating.
+//
+// maxAlloc should be runtime.maxAlloc.
+//
+// TODO(prattmic): Put maxAlloc somewhere accessible.
+func NewMap(mt *abi.SwissMapType, hint uintptr, m *Map, maxAlloc uintptr) *Map {
+	if m == nil {
+		m = new(Map)
 	}
-	dirSize := (capacity + maxTableCapacity - 1) / maxTableCapacity
+
+	m.seed = uintptr(rand())
+
+	if hint <= abi.SwissMapGroupSlots {
+		// A small map can fill all 8 slots, so no need to increase
+		// target capacity.
+		//
+		// In fact, since an 8 slot group is what the first assignment
+		// to an empty map would allocate anyway, it doesn't matter if
+		// we allocate here or on the first assignment.
+		//
+		// Thus we just return without allocating. (We'll save the
+		// allocation completely if no assignment comes.)
+
+		// Note that the compiler may have initialized m.dirPtr with a
+		// pointer to a stack-allocated group, in which case we already
+		// have a group. The control word is already initialized.
+
+		return m
+	}
+
+	// Full size map.
+
+	// Set initial capacity to hold hint entries without growing in the
+	// average case.
+	targetCapacity := (hint * abi.SwissMapGroupSlots) / maxAvgGroupLoad
+	if targetCapacity < hint { // overflow
+		return m // return an empty map.
+	}
+
+	dirSize := (uint64(targetCapacity) + maxTableCapacity - 1) / maxTableCapacity
 	dirSize, overflow := alignUpPow2(dirSize)
+	if overflow || dirSize > uint64(math.MaxUintptr) {
+		return m // return an empty map.
+	}
+
+	// Reject hints that are obviously too large.
+	groups, overflow := math.MulUintptr(uintptr(dirSize), maxTableCapacity)
 	if overflow {
-		panic("rounded-up capacity overflows uint64")
-	}
-	globalDepth := uint8(sys.TrailingZeros64(dirSize))
-
-	m := &Map{
-		//TODO
-		//seed: uintptr(rand()),
-
-		//directory: make([]*table, dirSize),
-
-		globalDepth: globalDepth,
-		globalShift: depthToShift(globalDepth),
-	}
-
-	if capacity > abi.SwissMapGroupSlots {
-		directory := make([]*table, dirSize)
-
-		for i := range directory {
-			// TODO: Think more about initial table capacity.
-			directory[i] = newTable(mt, capacity/dirSize, i, globalDepth)
-		}
-
-		m.dirPtr = unsafe.Pointer(&directory[0])
-		m.dirLen = len(directory)
+		return m // return an empty map.
 	} else {
-		grp := newGroups(mt, 1)
-		m.dirPtr = grp.data
-		m.dirLen = 0
-
-		g := groupReference{
-			data: m.dirPtr,
+		mem, overflow := math.MulUintptr(groups, mt.Group.Size_)
+		if overflow || mem > maxAlloc {
+			return m // return an empty map.
 		}
-		g.ctrls().setEmpty()
 	}
 
+	m.globalDepth = uint8(sys.TrailingZeros64(dirSize))
+	m.globalShift = depthToShift(m.globalDepth)
+
+	directory := make([]*table, dirSize)
+
+	for i := range directory {
+		// TODO: Think more about initial table capacity.
+		directory[i] = newTable(mt, uint64(targetCapacity)/dirSize, i, m.globalDepth)
+	}
+
+	m.dirPtr = unsafe.Pointer(&directory[0])
+	m.dirLen = len(directory)
+
+	return m
+}
+
+func NewEmptyMap() *Map {
+	m := new(Map)
+	m.seed = uintptr(rand())
+	// See comment in NewMap. No need to eager allocate a group.
 	return m
 }
 
@@ -356,6 +395,14 @@ func (m *Map) Get(typ *abi.SwissMapType, key unsafe.Pointer) (unsafe.Pointer, bo
 }
 
 func (m *Map) getWithKey(typ *abi.SwissMapType, key unsafe.Pointer) (unsafe.Pointer, unsafe.Pointer, bool) {
+	if m.Used() == 0 {
+		return nil, nil, false
+	}
+
+	if m.writing != 0 {
+		fatal("concurrent map read and map write")
+	}
+
 	hash := typ.Hasher(key, m.seed)
 
 	if m.dirLen == 0 {
@@ -367,6 +414,14 @@ func (m *Map) getWithKey(typ *abi.SwissMapType, key unsafe.Pointer) (unsafe.Poin
 }
 
 func (m *Map) getWithoutKey(typ *abi.SwissMapType, key unsafe.Pointer) (unsafe.Pointer, bool) {
+	if m.Used() == 0 {
+		return nil, false
+	}
+
+	if m.writing != 0 {
+		fatal("concurrent map read and map write")
+	}
+
 	hash := typ.Hasher(key, m.seed)
 
 	if m.dirLen == 0 {
@@ -386,7 +441,7 @@ func (m *Map) getWithKeySmall(typ *abi.SwissMapType, hash uintptr, key unsafe.Po
 	h2 := uint8(h2(hash))
 	ctrls := *g.ctrls()
 
-	for i := uint32(0); i < abi.SwissMapGroupSlots; i++ {
+	for i := uintptr(0); i < abi.SwissMapGroupSlots; i++ {
 		c := uint8(ctrls)
 		ctrls >>= 8
 		if c != h2 {
@@ -394,8 +449,16 @@ func (m *Map) getWithKeySmall(typ *abi.SwissMapType, hash uintptr, key unsafe.Po
 		}
 
 		slotKey := g.key(typ, i)
+		if typ.IndirectKey() {
+			slotKey = *((*unsafe.Pointer)(slotKey))
+		}
+
 		if typ.Key.Equal(key, slotKey) {
-			return slotKey, g.elem(typ, i), true
+			slotElem := g.elem(typ, i)
+			if typ.IndirectElem() {
+				slotElem = *((*unsafe.Pointer)(slotElem))
+			}
+			return slotKey, slotElem, true
 		}
 	}
 
@@ -412,11 +475,30 @@ func (m *Map) Put(typ *abi.SwissMapType, key, elem unsafe.Pointer) {
 //
 // PutSlot never returns nil.
 func (m *Map) PutSlot(typ *abi.SwissMapType, key unsafe.Pointer) unsafe.Pointer {
+	if m.writing != 0 {
+		fatal("concurrent map writes")
+	}
+
 	hash := typ.Hasher(key, m.seed)
+
+	// Set writing after calling Hasher, since Hasher may panic, in which
+	// case we have not actually done a write.
+	m.writing ^= 1 // toggle, see comment on writing
+
+	if m.dirPtr == nil {
+		m.growToSmall(typ)
+	}
 
 	if m.dirLen == 0 {
 		if m.used < abi.SwissMapGroupSlots {
-			return m.putSlotSmall(typ, hash, key)
+			elem := m.putSlotSmall(typ, hash, key)
+
+			if m.writing == 0 {
+				fatal("concurrent map writes")
+			}
+			m.writing ^= 1
+
+			return elem
 		}
 
 		// Can't fit another entry, grow to full size map.
@@ -432,6 +514,12 @@ func (m *Map) PutSlot(typ *abi.SwissMapType, key unsafe.Pointer) unsafe.Pointer 
 		if !ok {
 			continue
 		}
+
+		if m.writing == 0 {
+			fatal("concurrent map writes")
+		}
+		m.writing ^= 1
+
 		return elem
 	}
 }
@@ -448,12 +536,18 @@ func (m *Map) putSlotSmall(typ *abi.SwissMapType, hash uintptr, key unsafe.Point
 		i := match.first()
 
 		slotKey := g.key(typ, i)
+		if typ.IndirectKey() {
+			slotKey = *((*unsafe.Pointer)(slotKey))
+		}
 		if typ.Key.Equal(key, slotKey) {
 			if typ.NeedKeyUpdate() {
 				typedmemmove(typ.Key, slotKey, key)
 			}
 
 			slotElem := g.elem(typ, i)
+			if typ.IndirectElem() {
+				slotElem = *((*unsafe.Pointer)(slotElem))
+			}
 
 			return slotElem
 		}
@@ -464,19 +558,40 @@ func (m *Map) putSlotSmall(typ *abi.SwissMapType, hash uintptr, key unsafe.Point
 	// deleteSmall).
 	match = g.ctrls().matchEmpty()
 	if match == 0 {
-		panic("small map with no empty slot")
+		fatal("small map with no empty slot (concurrent map writes?)")
 	}
 
 	i := match.first()
 
 	slotKey := g.key(typ, i)
+	if typ.IndirectKey() {
+		kmem := newobject(typ.Key)
+		*(*unsafe.Pointer)(slotKey) = kmem
+		slotKey = kmem
+	}
 	typedmemmove(typ.Key, slotKey, key)
+
 	slotElem := g.elem(typ, i)
+	if typ.IndirectElem() {
+		emem := newobject(typ.Elem)
+		*(*unsafe.Pointer)(slotElem) = emem
+		slotElem = emem
+	}
 
 	g.ctrls().set(i, ctrl(h2(hash)))
 	m.used++
 
 	return slotElem
+}
+
+func (m *Map) growToSmall(typ *abi.SwissMapType) {
+	grp := newGroups(typ, 1)
+	m.dirPtr = grp.data
+
+	g := groupReference{
+		data: m.dirPtr,
+	}
+	g.ctrls().setEmpty()
 }
 
 func (m *Map) growToTable(typ *abi.SwissMapType) {
@@ -486,14 +601,28 @@ func (m *Map) growToTable(typ *abi.SwissMapType) {
 		data: m.dirPtr,
 	}
 
-	for i := uint32(0); i < abi.SwissMapGroupSlots; i++ {
+	for i := uintptr(0); i < abi.SwissMapGroupSlots; i++ {
 		if (g.ctrls().get(i) & ctrlEmpty) == ctrlEmpty {
 			// Empty
 			continue
 		}
+
 		key := g.key(typ, i)
+		if typ.IndirectKey() {
+			key = *((*unsafe.Pointer)(key))
+		}
+
 		elem := g.elem(typ, i)
+		if typ.IndirectElem() {
+			elem = *((*unsafe.Pointer)(elem))
+		}
+
 		hash := typ.Hasher(key, m.seed)
+
+		// TODO(prattmic): For indirect key/elem, this is
+		// allocating new objects for key/elem. That is
+		// unnecessary; the new table could simply point to the
+		// existing object.
 		slotElem := tab.uncheckedPutSlot(typ, hash, key)
 		typedmemmove(typ.Elem, slotElem, elem)
 		tab.used++
@@ -505,18 +634,47 @@ func (m *Map) growToTable(typ *abi.SwissMapType) {
 
 	m.dirPtr = unsafe.Pointer(&directory[0])
 	m.dirLen = len(directory)
+
+	m.globalDepth = 0
+	m.globalShift = depthToShift(m.globalDepth)
 }
 
 func (m *Map) Delete(typ *abi.SwissMapType, key unsafe.Pointer) {
-	hash := typ.Hasher(key, m.seed)
-
-	if m.dirLen == 0 {
-		m.deleteSmall(typ, hash, key)
+	if m == nil || m.Used() == 0 {
+		if err := mapKeyError(typ, key); err != nil {
+			panic(err) // see issue 23734
+		}
 		return
 	}
 
-	idx := m.directoryIndex(hash)
-	m.directoryAt(idx).Delete(typ, m, key)
+	if m.writing != 0 {
+		fatal("concurrent map writes")
+	}
+
+	hash := typ.Hasher(key, m.seed)
+
+	// Set writing after calling Hasher, since Hasher may panic, in which
+	// case we have not actually done a write.
+	m.writing ^= 1 // toggle, see comment on writing
+
+	if m.dirLen == 0 {
+		m.deleteSmall(typ, hash, key)
+	} else {
+		idx := m.directoryIndex(hash)
+		m.directoryAt(idx).Delete(typ, m, key)
+	}
+
+	if m.used == 0 {
+		// Reset the hash seed to make it more difficult for attackers
+		// to repeatedly trigger hash collisions. See
+		// https://go.dev/issue/25237.
+		m.seed = uintptr(rand())
+	}
+
+	if m.writing == 0 {
+		fatal("concurrent map writes")
+	}
+	m.writing ^= 1
 }
 
 func (m *Map) deleteSmall(typ *abi.SwissMapType, hash uintptr, key unsafe.Pointer) {
@@ -529,11 +687,33 @@ func (m *Map) deleteSmall(typ *abi.SwissMapType, hash uintptr, key unsafe.Pointe
 	for match != 0 {
 		i := match.first()
 		slotKey := g.key(typ, i)
+		origSlotKey := slotKey
+		if typ.IndirectKey() {
+			slotKey = *((*unsafe.Pointer)(slotKey))
+		}
 		if typ.Key.Equal(key, slotKey) {
 			m.used--
 
-			typedmemclr(typ.Key, slotKey)
-			typedmemclr(typ.Elem, g.elem(typ, i))
+			if typ.IndirectKey() {
+				// Clearing the pointer is sufficient.
+				*(*unsafe.Pointer)(origSlotKey) = nil
+			} else if typ.Key.Pointers() {
+				// Only bother clearing if there are pointers.
+				typedmemclr(typ.Key, slotKey)
+			}
+
+			slotElem := g.elem(typ, i)
+			if typ.IndirectElem() {
+				// Clearing the pointer is sufficient.
+				*(*unsafe.Pointer)(slotElem) = nil
+			} else {
+				// Unlike keys, always clear the elem (even if
+				// it contains no pointers), as compound
+				// assignment operations depend on cleared
+				// deleted values. See
+				// https://go.dev/issue/25936.
+				typedmemclr(typ.Elem, slotElem)
+			}
 
 			// We only have 1 group, so it is OK to immediately
 			// reuse deleted slots.
@@ -546,23 +726,40 @@ func (m *Map) deleteSmall(typ *abi.SwissMapType, hash uintptr, key unsafe.Pointe
 
 // Clear deletes all entries from the map resulting in an empty map.
 func (m *Map) Clear(typ *abi.SwissMapType) {
-	if m.dirLen == 0 {
-		m.clearSmall(typ)
+	if m == nil || m.Used() == 0 {
 		return
 	}
 
-	var lastTab *table
-	for i := range m.dirLen {
-		t := m.directoryAt(uintptr(i))
-		if t == lastTab {
-			continue
-		}
-		t.Clear(typ)
-		lastTab = t
+	if m.writing != 0 {
+		fatal("concurrent map writes")
 	}
-	m.used = 0
-	m.clearSeq++
-	// TODO: shrink directory?
+	m.writing ^= 1 // toggle, see comment on writing
+
+	if m.dirLen == 0 {
+		m.clearSmall(typ)
+	} else {
+		var lastTab *table
+		for i := range m.dirLen {
+			t := m.directoryAt(uintptr(i))
+			if t == lastTab {
+				continue
+			}
+			t.Clear(typ)
+			lastTab = t
+		}
+		m.used = 0
+		m.clearSeq++
+		// TODO: shrink directory?
+	}
+
+	// Reset the hash seed to make it more difficult for attackers to
+	// repeatedly trigger hash collisions. See https://go.dev/issue/25237.
+	m.seed = uintptr(rand())
+
+	if m.writing == 0 {
+		fatal("concurrent map writes")
+	}
+	m.writing ^= 1
 }
 
 func (m *Map) clearSmall(typ *abi.SwissMapType) {

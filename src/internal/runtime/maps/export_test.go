@@ -18,9 +18,13 @@ var AlignUpPow2 = alignUpPow2
 const MaxTableCapacity = maxTableCapacity
 const MaxAvgGroupLoad = maxAvgGroupLoad
 
-func NewTestMap[K comparable, V any](length uint64) (*Map, *abi.SwissMapType) {
+// This isn't equivalent to runtime.maxAlloc. It is fine for basic testing but
+// we can't properly test hint alloc overflows with this.
+const maxAllocTest = 1 << 30
+
+func NewTestMap[K comparable, V any](hint uintptr) (*Map, *abi.SwissMapType) {
 	mt := newTestMapType[K, V]()
-	return NewMap(mt, length), mt
+	return NewMap(mt, hint, nil, maxAllocTest), mt
 }
 
 func (m *Map) TableCount() int {
@@ -78,11 +82,15 @@ func (m *Map) KeyFromFullGroup(typ *abi.SwissMapType) unsafe.Pointer {
 			}
 
 			// All full or deleted slots.
-			for j := uint32(0); j < abi.SwissMapGroupSlots; j++ {
+			for j := uintptr(0); j < abi.SwissMapGroupSlots; j++ {
 				if g.ctrls().get(j) == ctrlDeleted {
 					continue
 				}
-				return g.key(typ, j)
+				slotKey := g.key(typ, j)
+				if typ.IndirectKey() {
+					slotKey = *((*unsafe.Pointer)(slotKey))
+				}
+				return slotKey
 			}
 		}
 	}

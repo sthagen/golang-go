@@ -74,12 +74,17 @@ func MapOf(key, elem Type) Type {
 	mt.SlotSize = slot.Size()
 	mt.ElemOff = slot.Field(1).Offset
 	mt.Flags = 0
-	// TODO(prattmic): indirect key/elem flags
 	if needKeyUpdate(ktyp) {
 		mt.Flags |= abi.SwissMapNeedKeyUpdate
 	}
 	if hashMightPanic(ktyp) {
 		mt.Flags |= abi.SwissMapHashMightPanic
+	}
+	if ktyp.Size_ > abi.SwissMapMaxKeyBytes {
+		mt.Flags |= abi.SwissMapIndirectKey
+	}
+	if etyp.Size_ > abi.SwissMapMaxKeyBytes {
+		mt.Flags |= abi.SwissMapIndirectElem
 	}
 	mt.PtrToThis = 0
 
@@ -88,8 +93,6 @@ func MapOf(key, elem Type) Type {
 }
 
 func groupAndSlotOf(ktyp, etyp Type) (Type, Type) {
-	// TODO(prattmic): indirect key/elem flags
-
 	// type group struct {
 	//     ctrl uint64
 	//     slots [abi.SwissMapGroupSlots]struct {
@@ -97,6 +100,13 @@ func groupAndSlotOf(ktyp, etyp Type) (Type, Type) {
 	//         elem elemType
 	//     }
 	// }
+
+	if ktyp.Size() > abi.SwissMapMaxKeyBytes {
+		ktyp = PointerTo(ktyp)
+	}
+	if etyp.Size() > abi.SwissMapMaxElemBytes {
+		etyp = PointerTo(etyp)
+	}
 
 	fields := []StructField{
 		{
@@ -143,9 +153,7 @@ func (v Value) MapIndex(key Value) Value {
 	// of unexported fields.
 
 	var e unsafe.Pointer
-	// TODO(#54766): temporarily disable specialized variants.
-	//if (tt.Key == stringType || key.kind() == String) && tt.Key == key.typ() && tt.Elem.Size() <= abi.SwissMapMaxElemBytes {
-	if false {
+	if (tt.Key == stringType || key.kind() == String) && tt.Key == key.typ() && tt.Elem.Size() <= abi.SwissMapMaxElemBytes {
 		k := *(*string)(key.ptr)
 		e = mapaccess_faststr(v.typ(), v.pointer(), k)
 	} else {
@@ -366,9 +374,7 @@ func (v Value) SetMapIndex(key, elem Value) {
 	key.mustBeExported()
 	tt := (*mapType)(unsafe.Pointer(v.typ()))
 
-	// TODO(#54766): temporarily disable specialized variants.
-	//if (tt.Key == stringType || key.kind() == String) && tt.Key == key.typ() && tt.Elem.Size() <= abi.SwissMapMaxElemBytes {
-	if false {
+	if (tt.Key == stringType || key.kind() == String) && tt.Key == key.typ() && tt.Elem.Size() <= abi.SwissMapMaxElemBytes {
 		k := *(*string)(key.ptr)
 		if elem.typ() == nil {
 			mapdelete_faststr(v.typ(), v.pointer(), k)
