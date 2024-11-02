@@ -119,36 +119,9 @@ func (g ctrlGroup) matchEmptyOrDeleted() bitset {
 	// A deleted slot is 1111 1110
 	// A full slot is    0??? ????
 	//
-	// A slot is empty or deleted iff bit 7 is set and bit 0 is not.
+	// A slot is empty or deleted iff bit 7 is set.
 	v := uint64(g)
-	return bitset((v &^ (v << 7)) & bitsetMSB)
-}
-
-// convertNonFullToEmptyAndFullToDeleted converts deleted control bytes in a
-// group to empty control bytes, and control bytes indicating full slots to
-// deleted control bytes.
-func (g *ctrlGroup) convertNonFullToEmptyAndFullToDeleted() {
-	// An empty slot is     1000 0000
-	// A deleted slot is    1111 1110
-	// A full slot is       0??? ????
-	//
-	// We select the MSB, invert, add 1 if the MSB was set and zero out the low
-	// bit.
-	//
-	//  - if the MSB was set (i.e. slot was empty, or deleted):
-	//     v:             1000 0000
-	//     ^v:            0111 1111
-	//     ^v + (v >> 7): 1000 0000
-	//     &^ bitsetLSB:  1000 0000 = empty slot.
-	//
-	// - if the MSB was not set (i.e. full slot):
-	//     v:             0000 0000
-	//     ^v:            1111 1111
-	//     ^v + (v >> 7): 1111 1111
-	//     &^ bitsetLSB:  1111 1110 = deleted slot.
-	//
-	v := uint64(*g) & bitsetMSB
-	*g = ctrlGroup((^v + (v >> 7)) &^ bitsetLSB)
+	return bitset(v & bitsetMSB)
 }
 
 // groupReference is a wrapper type representing a single slot group stored at
