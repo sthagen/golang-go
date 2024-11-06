@@ -469,6 +469,7 @@ const (
 	Op386BSFL
 	Op386BSFW
 	Op386LoweredCtz32
+	Op386LoweredCtz64
 	Op386BSRL
 	Op386BSRW
 	Op386BSWAPL
@@ -1787,6 +1788,11 @@ const (
 	OpLOONG64NEGD
 	OpLOONG64SQRTD
 	OpLOONG64SQRTF
+	OpLOONG64CLZW
+	OpLOONG64CLZV
+	OpLOONG64REVB2H
+	OpLOONG64REVB2W
+	OpLOONG64REVBV
 	OpLOONG64FMINF
 	OpLOONG64FMIND
 	OpLOONG64FMAXF
@@ -3093,6 +3099,7 @@ const (
 	OpCtz16
 	OpCtz32
 	OpCtz64
+	OpCtz64On32
 	OpCtz8NonZero
 	OpCtz16NonZero
 	OpCtz32NonZero
@@ -5189,6 +5196,21 @@ var opcodeTable = [...]opInfo{
 		reg: regInfo{
 			inputs: []inputInfo{
 				{0, 239}, // AX CX DX BX BP SI DI
+			},
+			outputs: []outputInfo{
+				{0, 239}, // AX CX DX BX BP SI DI
+			},
+		},
+	},
+	{
+		name:            "LoweredCtz64",
+		argLen:          2,
+		resultNotInArgs: true,
+		clobberFlags:    true,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 239}, // AX CX DX BX BP SI DI
+				{1, 239}, // AX CX DX BX BP SI DI
 			},
 			outputs: []outputInfo{
 				{0, 239}, // AX CX DX BX BP SI DI
@@ -23968,6 +23990,71 @@ var opcodeTable = [...]opInfo{
 		},
 	},
 	{
+		name:   "CLZW",
+		argLen: 1,
+		asm:    loong64.ACLZW,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1073741816}, // R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R18 R19 R20 R21 g R23 R24 R25 R26 R27 R28 R29 R31
+			},
+			outputs: []outputInfo{
+				{0, 1071644664}, // R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R18 R19 R20 R21 R23 R24 R25 R26 R27 R28 R29 R31
+			},
+		},
+	},
+	{
+		name:   "CLZV",
+		argLen: 1,
+		asm:    loong64.ACLZV,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1073741816}, // R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R18 R19 R20 R21 g R23 R24 R25 R26 R27 R28 R29 R31
+			},
+			outputs: []outputInfo{
+				{0, 1071644664}, // R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R18 R19 R20 R21 R23 R24 R25 R26 R27 R28 R29 R31
+			},
+		},
+	},
+	{
+		name:   "REVB2H",
+		argLen: 1,
+		asm:    loong64.AREVB2H,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1073741816}, // R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R18 R19 R20 R21 g R23 R24 R25 R26 R27 R28 R29 R31
+			},
+			outputs: []outputInfo{
+				{0, 1071644664}, // R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R18 R19 R20 R21 R23 R24 R25 R26 R27 R28 R29 R31
+			},
+		},
+	},
+	{
+		name:   "REVB2W",
+		argLen: 1,
+		asm:    loong64.AREVB2W,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1073741816}, // R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R18 R19 R20 R21 g R23 R24 R25 R26 R27 R28 R29 R31
+			},
+			outputs: []outputInfo{
+				{0, 1071644664}, // R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R18 R19 R20 R21 R23 R24 R25 R26 R27 R28 R29 R31
+			},
+		},
+	},
+	{
+		name:   "REVBV",
+		argLen: 1,
+		asm:    loong64.AREVBV,
+		reg: regInfo{
+			inputs: []inputInfo{
+				{0, 1073741816}, // R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R18 R19 R20 R21 g R23 R24 R25 R26 R27 R28 R29 R31
+			},
+			outputs: []outputInfo{
+				{0, 1071644664}, // R4 R5 R6 R7 R8 R9 R10 R11 R12 R13 R14 R15 R16 R17 R18 R19 R20 R21 R23 R24 R25 R26 R27 R28 R29 R31
+			},
+		},
+	},
+	{
 		name:            "FMINF",
 		argLen:          2,
 		commutative:     true,
@@ -40456,6 +40543,11 @@ var opcodeTable = [...]opInfo{
 	{
 		name:    "Ctz64",
 		argLen:  1,
+		generic: true,
+	},
+	{
+		name:    "Ctz64On32",
+		argLen:  2,
 		generic: true,
 	},
 	{
