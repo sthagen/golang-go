@@ -123,7 +123,9 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.From.Reg = x
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = y
-	case ssa.OpLOONG64MOVVnop:
+	case ssa.OpLOONG64MOVVnop,
+		ssa.OpLOONG64LoweredRound32F,
+		ssa.OpLOONG64LoweredRound64F:
 		// nothing to do
 	case ssa.OpLoadReg:
 		if v.Type.IsFlags() {
@@ -320,6 +322,30 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.Reg = v.Args[1].Reg()
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = loong64.REG_FCC0
+
+	case ssa.OpLOONG64FMADDF,
+		ssa.OpLOONG64FMADDD,
+		ssa.OpLOONG64FMSUBF,
+		ssa.OpLOONG64FMSUBD,
+		ssa.OpLOONG64FNMADDF,
+		ssa.OpLOONG64FNMADDD,
+		ssa.OpLOONG64FNMSUBF,
+		ssa.OpLOONG64FNMSUBD:
+		p := s.Prog(v.Op.Asm())
+		// r=(FMA x y z) -> FMADDD z, y, x, r
+		// the SSA operand order is for taking advantage of
+		// commutativity (that only applies for the first two operands)
+		r := v.Reg()
+		x := v.Args[0].Reg()
+		y := v.Args[1].Reg()
+		z := v.Args[2].Reg()
+		p.From.Type = obj.TYPE_REG
+		p.From.Reg = z
+		p.Reg = y
+		p.AddRestSourceReg(x)
+		p.To.Type = obj.TYPE_REG
+		p.To.Reg = r
+
 	case ssa.OpLOONG64MOVVaddr:
 		p := s.Prog(loong64.AMOVV)
 		p.From.Type = obj.TYPE_ADDR
@@ -589,6 +615,13 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.To.Name = obj.NAME_EXTERN
 		// AuxInt encodes how many buffer entries we need.
 		p.To.Sym = ir.Syms.GCWriteBarrier[v.AuxInt-1]
+
+	case ssa.OpLOONG64LoweredPubBarrier:
+		// DBAR 0x1A
+		p := s.Prog(v.Op.Asm())
+		p.From.Type = obj.TYPE_CONST
+		p.From.Offset = 0x1A
+
 	case ssa.OpLOONG64LoweredPanicBoundsA, ssa.OpLOONG64LoweredPanicBoundsB, ssa.OpLOONG64LoweredPanicBoundsC:
 		p := s.Prog(obj.ACALL)
 		p.To.Type = obj.TYPE_MEM
@@ -694,92 +727,29 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p3.To.Type = obj.TYPE_BRANCH
 		p3.To.SetTarget(p)
 		s.Prog(loong64.ADBAR)
+
 	case ssa.OpLOONG64LoweredAtomicAdd32, ssa.OpLOONG64LoweredAtomicAdd64:
-		// DBAR
-		// LL	(Rarg0), Rout
-		// ADDV Rarg1, Rout, Rtmp
-		// SC	Rtmp, (Rarg0)
-		// BEQ	Rtmp, -3(PC)
-		// DBAR
-		// ADDV Rarg1, Rout
-		ll := loong64.ALLV
-		sc := loong64.ASCV
+		// AMADDx  Rarg1, (Rarg0), Rout
+		// ADDV    Rarg1, Rout, Rout
+		amaddx := loong64.AAMADDDBV
+		addx := loong64.AADDV
 		if v.Op == ssa.OpLOONG64LoweredAtomicAdd32 {
-			ll = loong64.ALL
-			sc = loong64.ASC
+			amaddx = loong64.AAMADDDBW
 		}
-		s.Prog(loong64.ADBAR)
-		p := s.Prog(ll)
-		p.From.Type = obj.TYPE_MEM
-		p.From.Reg = v.Args[0].Reg()
-		p.To.Type = obj.TYPE_REG
-		p.To.Reg = v.Reg0()
-		p1 := s.Prog(loong64.AADDVU)
+		p := s.Prog(amaddx)
+		p.From.Type = obj.TYPE_REG
+		p.From.Reg = v.Args[1].Reg()
+		p.To.Type = obj.TYPE_MEM
+		p.To.Reg = v.Args[0].Reg()
+		p.RegTo2 = v.Reg0()
+
+		p1 := s.Prog(addx)
 		p1.From.Type = obj.TYPE_REG
 		p1.From.Reg = v.Args[1].Reg()
 		p1.Reg = v.Reg0()
 		p1.To.Type = obj.TYPE_REG
-		p1.To.Reg = loong64.REGTMP
-		p2 := s.Prog(sc)
-		p2.From.Type = obj.TYPE_REG
-		p2.From.Reg = loong64.REGTMP
-		p2.To.Type = obj.TYPE_MEM
-		p2.To.Reg = v.Args[0].Reg()
-		p3 := s.Prog(loong64.ABEQ)
-		p3.From.Type = obj.TYPE_REG
-		p3.From.Reg = loong64.REGTMP
-		p3.To.Type = obj.TYPE_BRANCH
-		p3.To.SetTarget(p)
-		s.Prog(loong64.ADBAR)
-		p4 := s.Prog(loong64.AADDVU)
-		p4.From.Type = obj.TYPE_REG
-		p4.From.Reg = v.Args[1].Reg()
-		p4.Reg = v.Reg0()
-		p4.To.Type = obj.TYPE_REG
-		p4.To.Reg = v.Reg0()
-	case ssa.OpLOONG64LoweredAtomicAddconst32, ssa.OpLOONG64LoweredAtomicAddconst64:
-		// DBAR
-		// LL	(Rarg0), Rout
-		// ADDV $auxint, Rout, Rtmp
-		// SC	Rtmp, (Rarg0)
-		// BEQ	Rtmp, -3(PC)
-		// DBAR
-		// ADDV $auxint, Rout
-		ll := loong64.ALLV
-		sc := loong64.ASCV
-		if v.Op == ssa.OpLOONG64LoweredAtomicAddconst32 {
-			ll = loong64.ALL
-			sc = loong64.ASC
-		}
-		s.Prog(loong64.ADBAR)
-		p := s.Prog(ll)
-		p.From.Type = obj.TYPE_MEM
-		p.From.Reg = v.Args[0].Reg()
-		p.To.Type = obj.TYPE_REG
-		p.To.Reg = v.Reg0()
-		p1 := s.Prog(loong64.AADDVU)
-		p1.From.Type = obj.TYPE_CONST
-		p1.From.Offset = v.AuxInt
-		p1.Reg = v.Reg0()
-		p1.To.Type = obj.TYPE_REG
-		p1.To.Reg = loong64.REGTMP
-		p2 := s.Prog(sc)
-		p2.From.Type = obj.TYPE_REG
-		p2.From.Reg = loong64.REGTMP
-		p2.To.Type = obj.TYPE_MEM
-		p2.To.Reg = v.Args[0].Reg()
-		p3 := s.Prog(loong64.ABEQ)
-		p3.From.Type = obj.TYPE_REG
-		p3.From.Reg = loong64.REGTMP
-		p3.To.Type = obj.TYPE_BRANCH
-		p3.To.SetTarget(p)
-		s.Prog(loong64.ADBAR)
-		p4 := s.Prog(loong64.AADDVU)
-		p4.From.Type = obj.TYPE_CONST
-		p4.From.Offset = v.AuxInt
-		p4.Reg = v.Reg0()
-		p4.To.Type = obj.TYPE_REG
-		p4.To.Reg = v.Reg0()
+		p1.To.Reg = v.Reg0()
+
 	case ssa.OpLOONG64LoweredAtomicCas32, ssa.OpLOONG64LoweredAtomicCas64:
 		// MOVV $0, Rout
 		// DBAR

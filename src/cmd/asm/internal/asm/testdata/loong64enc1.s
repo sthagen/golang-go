@@ -21,8 +21,11 @@ lable2:
 	MOVW	$65536, R4		// 04020014
 	MOVW	$4096, R4		// 24000014
 	MOVV	$65536, R4		// 04020014
+	MOVB	R4, R5			// 855c0000
+	MOVH	R4, R5			// 85580000
 	MOVV	$4096, R4		// 24000014
 	MOVW	R4, R5			// 85001700
+	MOVWU	R4, R5			// 8500df00
 	MOVV	R4, R5			// 85001500
 	MOVBU	R4, R5			// 85fc4303
 	SUB	R4, R5, R6		// a6101100
@@ -443,3 +446,13 @@ lable2:
 	XVSEQH		X3, X2, X4      // 448c0074
 	XVSEQW		X3, X2, X4      // 440c0174
 	XVSEQV		X3, X2, X4      // 448c0174
+
+	// VPCNT{B,H,W,V}, XVPCNT{B,H,W,V} instruction
+	VPCNTB		V1, V2          // 22209c72
+	VPCNTH		V1, V2          // 22249c72
+	VPCNTW		V1, V2          // 22289c72
+	VPCNTV		V1, V2          // 222c9c72
+	XVPCNTB		X3, X2          // 62209c76
+	XVPCNTH		X3, X2          // 62249c76
+	XVPCNTW		X3, X2          // 62289c76
+	XVPCNTV		X3, X2          // 622c9c76

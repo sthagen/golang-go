@@ -151,6 +151,7 @@ func init() {
 		fp01      = regInfo{inputs: nil, outputs: []regMask{fp}}
 		fp11      = regInfo{inputs: []regMask{fp}, outputs: []regMask{fp}}
 		fp21      = regInfo{inputs: []regMask{fp, fp}, outputs: []regMask{fp}}
+		fp31      = regInfo{inputs: []regMask{fp, fp, fp}, outputs: []regMask{fp}}
 		fp2flags  = regInfo{inputs: []regMask{fp, fp}}
 		fpload    = regInfo{inputs: []regMask{gpspsbg}, outputs: []regMask{fp}}
 		fp2load   = regInfo{inputs: []regMask{gpspsbg, gpg}, outputs: []regMask{fp}}
@@ -192,6 +193,15 @@ func init() {
 		{name: "XORconst", argLength: 1, reg: gp11, asm: "XOR", aux: "Int64", typ: "UInt64"}, // arg0 ^ auxInt
 		{name: "NOR", argLength: 2, reg: gp21, asm: "NOR", commutative: true},                // ^(arg0 | arg1)
 		{name: "NORconst", argLength: 1, reg: gp11, asm: "NOR", aux: "Int64"},                // ^(arg0 | auxInt)
+
+		{name: "FMADDF", argLength: 3, reg: fp31, asm: "FMADDF", commutative: true, typ: "Float32"},   // (arg0 * arg1) + arg2
+		{name: "FMADDD", argLength: 3, reg: fp31, asm: "FMADDD", commutative: true, typ: "Float64"},   // (arg0 * arg1) + arg2
+		{name: "FMSUBF", argLength: 3, reg: fp31, asm: "FMSUBF", commutative: true, typ: "Float32"},   // (arg0 * arg1) - arg2
+		{name: "FMSUBD", argLength: 3, reg: fp31, asm: "FMSUBD", commutative: true, typ: "Float64"},   // (arg0 * arg1) - arg2
+		{name: "FNMADDF", argLength: 3, reg: fp31, asm: "FNMADDF", commutative: true, typ: "Float32"}, // -((arg0 * arg1) + arg2)
+		{name: "FNMADDD", argLength: 3, reg: fp31, asm: "FNMADDD", commutative: true, typ: "Float64"}, // -((arg0 * arg1) + arg2)
+		{name: "FNMSUBF", argLength: 3, reg: fp31, asm: "FNMSUBF", commutative: true, typ: "Float32"}, // -((arg0 * arg1) - arg2)
+		{name: "FNMSUBD", argLength: 3, reg: fp31, asm: "FNMSUBD", commutative: true, typ: "Float64"}, // -((arg0 * arg1) - arg2)
 
 		{name: "NEGV", argLength: 1, reg: gp11},                // -arg0
 		{name: "NEGF", argLength: 1, reg: fp11, asm: "NEGF"},   // -arg0, float32
@@ -330,6 +340,10 @@ func init() {
 		{name: "MOVFD", argLength: 1, reg: fp11, asm: "MOVFD"},     // float32 -> float64
 		{name: "MOVDF", argLength: 1, reg: fp11, asm: "MOVDF"},     // float64 -> float32
 
+		// Round ops to block fused-multiply-add extraction.
+		{name: "LoweredRound32F", argLength: 1, reg: fp11, resultInArg0: true},
+		{name: "LoweredRound64F", argLength: 1, reg: fp11, resultInArg0: true},
+
 		// function calls
 		{name: "CALLstatic", argLength: -1, reg: regInfo{clobbers: callerSave}, aux: "CallOff", clobberFlags: true, call: true},                                               // call static function aux.(*obj.LSym).  last arg=mem, auxint=argsize, returns mem
 		{name: "CALLtail", argLength: -1, reg: regInfo{clobbers: callerSave}, aux: "CallOff", clobberFlags: true, call: true, tailCall: true},                                 // tail call static function aux.(*obj.LSym).  last arg=mem, auxint=argsize, returns mem
@@ -448,18 +462,8 @@ func init() {
 
 		// atomic add.
 		// *arg0 += arg1. arg2=mem. returns <new content of *arg0, memory>.
-		// DBAR
-		// LL	(Rarg0), Rout
-		// ADDV Rarg1, Rout, Rtmp
-		// SC	Rtmp, (Rarg0)
-		// BEQ	Rtmp, -3(PC)
-		// DBAR
-		// ADDV Rarg1, Rout
-		{name: "LoweredAtomicAdd32", argLength: 3, reg: gpxchg, resultNotInArgs: true, faultOnNilArg0: true, hasSideEffects: true, unsafePoint: true},
-		{name: "LoweredAtomicAdd64", argLength: 3, reg: gpxchg, resultNotInArgs: true, faultOnNilArg0: true, hasSideEffects: true, unsafePoint: true},
-		// *arg0 += auxint. arg1=mem. returns <new content of *arg0, memory>. auxint is 32-bit.
-		{name: "LoweredAtomicAddconst32", argLength: 2, reg: regInfo{inputs: []regMask{gpspsbg}, outputs: []regMask{gp}}, aux: "Int32", resultNotInArgs: true, faultOnNilArg0: true, hasSideEffects: true, unsafePoint: true},
-		{name: "LoweredAtomicAddconst64", argLength: 2, reg: regInfo{inputs: []regMask{gpspsbg}, outputs: []regMask{gp}}, aux: "Int64", resultNotInArgs: true, faultOnNilArg0: true, hasSideEffects: true, unsafePoint: true},
+		{name: "LoweredAtomicAdd32", argLength: 3, reg: gpxchg, resultNotInArgs: true, faultOnNilArg0: true, hasSideEffects: true},
+		{name: "LoweredAtomicAdd64", argLength: 3, reg: gpxchg, resultNotInArgs: true, faultOnNilArg0: true, hasSideEffects: true},
 
 		// atomic compare and swap.
 		// arg0 = pointer, arg1 = old value, arg2 = new value, arg3 = memory.
@@ -506,6 +510,9 @@ func init() {
 		// and R30 (REGTMP).
 		// Returns a pointer to a write barrier buffer in R29.
 		{name: "LoweredWB", argLength: 1, reg: regInfo{clobbers: (callerSave &^ gpg) | buildReg("R1"), outputs: []regMask{buildReg("R29")}}, clobberFlags: true, aux: "Int64"},
+
+		// Do data barrier. arg0=memorys
+		{name: "LoweredPubBarrier", argLength: 1, asm: "DBAR", hasSideEffects: true},
 
 		// There are three of these functions so that they can have three different register inputs.
 		// When we check 0 <= c <= cap (A), then 0 <= b <= c (B), then 0 <= a <= b (C), we want the
