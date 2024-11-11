@@ -516,6 +516,9 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		ssa.OpLOONG64REVB2H,
 		ssa.OpLOONG64REVB2W,
 		ssa.OpLOONG64REVBV,
+		ssa.OpLOONG64BITREV4B,
+		ssa.OpLOONG64BITREVW,
+		ssa.OpLOONG64BITREVV,
 		ssa.OpLOONG64ABSD:
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_REG
@@ -693,40 +696,17 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.RegTo2 = loong64.REGZERO
 
 	case ssa.OpLOONG64LoweredAtomicExchange32, ssa.OpLOONG64LoweredAtomicExchange64:
-		// DBAR
-		// MOVV	Rarg1, Rtmp
-		// LL	(Rarg0), Rout
-		// SC	Rtmp, (Rarg0)
-		// BEQ	Rtmp, -3(PC)
-		// DBAR
-		ll := loong64.ALLV
-		sc := loong64.ASCV
+		// AMSWAPx	Rarg1, (Rarg0), Rout
+		amswapx := loong64.AAMSWAPDBV
 		if v.Op == ssa.OpLOONG64LoweredAtomicExchange32 {
-			ll = loong64.ALL
-			sc = loong64.ASC
+			amswapx = loong64.AAMSWAPDBW
 		}
-		s.Prog(loong64.ADBAR)
-		p := s.Prog(loong64.AMOVV)
+		p := s.Prog(amswapx)
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[1].Reg()
-		p.To.Type = obj.TYPE_REG
-		p.To.Reg = loong64.REGTMP
-		p1 := s.Prog(ll)
-		p1.From.Type = obj.TYPE_MEM
-		p1.From.Reg = v.Args[0].Reg()
-		p1.To.Type = obj.TYPE_REG
-		p1.To.Reg = v.Reg0()
-		p2 := s.Prog(sc)
-		p2.From.Type = obj.TYPE_REG
-		p2.From.Reg = loong64.REGTMP
-		p2.To.Type = obj.TYPE_MEM
-		p2.To.Reg = v.Args[0].Reg()
-		p3 := s.Prog(loong64.ABEQ)
-		p3.From.Type = obj.TYPE_REG
-		p3.From.Reg = loong64.REGTMP
-		p3.To.Type = obj.TYPE_BRANCH
-		p3.To.SetTarget(p)
-		s.Prog(loong64.ADBAR)
+		p.To.Type = obj.TYPE_MEM
+		p.To.Reg = v.Args[0].Reg()
+		p.RegTo2 = v.Reg0()
 
 	case ssa.OpLOONG64LoweredAtomicAdd32, ssa.OpLOONG64LoweredAtomicAdd64:
 		// AMADDx  Rarg1, (Rarg0), Rout
@@ -798,6 +778,29 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p5.To.SetTarget(p1)
 		p6 := s.Prog(loong64.ADBAR)
 		p2.To.SetTarget(p6)
+
+	case ssa.OpLOONG64LoweredAtomicAnd32,
+		ssa.OpLOONG64LoweredAtomicOr32:
+		// AM{AND,OR}DBx  Rarg1, (Rarg0), RegZero
+		p := s.Prog(v.Op.Asm())
+		p.From.Type = obj.TYPE_REG
+		p.From.Reg = v.Args[1].Reg()
+		p.To.Type = obj.TYPE_MEM
+		p.To.Reg = v.Args[0].Reg()
+		p.RegTo2 = loong64.REGZERO
+
+	case ssa.OpLOONG64LoweredAtomicAnd32value,
+		ssa.OpLOONG64LoweredAtomicAnd64value,
+		ssa.OpLOONG64LoweredAtomicOr64value,
+		ssa.OpLOONG64LoweredAtomicOr32value:
+		// AM{AND,OR}DBx  Rarg1, (Rarg0), Rout
+		p := s.Prog(v.Op.Asm())
+		p.From.Type = obj.TYPE_REG
+		p.From.Reg = v.Args[1].Reg()
+		p.To.Type = obj.TYPE_MEM
+		p.To.Reg = v.Args[0].Reg()
+		p.RegTo2 = v.Reg0()
+
 	case ssa.OpLOONG64LoweredNilCheck:
 		// Issue a load which will fault if arg is nil.
 		p := s.Prog(loong64.AMOVB)
