@@ -68,16 +68,11 @@ type table struct {
 	// locality, but it comes at the expense of wasted space for some types
 	// (consider uint8 key, uint64 element). Consider placing all keys
 	// together in these cases to save space.
-	//
-	// TODO(prattmic): Support indirect keys/values? This means storing
-	// keys/values as pointers rather than inline in the slot. This avoid
-	// bloating the table size if either type is very large.
 	groups groupsReference
 }
 
 func newTable(typ *abi.SwissMapType, capacity uint64, index int, localDepth uint8) *table {
 	if capacity < abi.SwissMapGroupSlots {
-		// TODO: temporary until we have a real map type.
 		capacity = abi.SwissMapGroupSlots
 	}
 
@@ -414,9 +409,7 @@ func (t *table) uncheckedPutSlot(typ *abi.SwissMapType, hash uintptr, key unsafe
 	}
 }
 
-func (t *table) Delete(typ *abi.SwissMapType, m *Map, key unsafe.Pointer) {
-	hash := typ.Hasher(key, m.seed)
-
+func (t *table) Delete(typ *abi.SwissMapType, m *Map, hash uintptr, key unsafe.Pointer) {
 	seq := makeProbeSeq(h1(hash), t.groups.lengthMask)
 	for ; ; seq = seq.next() {
 		g := t.groups.group(typ, seq.offset)
