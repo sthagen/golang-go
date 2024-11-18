@@ -196,10 +196,12 @@ func BenchmarkSmallStrMap(b *testing.B) {
 	}
 }
 
-func BenchmarkMapStringKeysEight_16(b *testing.B) { benchmarkMapStringKeysEight(b, 16) }
-func BenchmarkMapStringKeysEight_32(b *testing.B) { benchmarkMapStringKeysEight(b, 32) }
-func BenchmarkMapStringKeysEight_64(b *testing.B) { benchmarkMapStringKeysEight(b, 64) }
-func BenchmarkMapStringKeysEight_1M(b *testing.B) { benchmarkMapStringKeysEight(b, 1<<20) }
+func BenchmarkMapStringKeysEight_16(b *testing.B)  { benchmarkMapStringKeysEight(b, 16) }
+func BenchmarkMapStringKeysEight_32(b *testing.B)  { benchmarkMapStringKeysEight(b, 32) }
+func BenchmarkMapStringKeysEight_64(b *testing.B)  { benchmarkMapStringKeysEight(b, 64) }
+func BenchmarkMapStringKeysEight_128(b *testing.B) { benchmarkMapStringKeysEight(b, 128) }
+func BenchmarkMapStringKeysEight_256(b *testing.B) { benchmarkMapStringKeysEight(b, 256) }
+func BenchmarkMapStringKeysEight_1M(b *testing.B)  { benchmarkMapStringKeysEight(b, 1<<20) }
 
 func benchmarkMapStringKeysEight(b *testing.B, keySize int) {
 	m := make(map[string]bool)
@@ -532,6 +534,15 @@ func benchSizes(f func(b *testing.B, n int)) func(*testing.B) {
 					b.Skip("Skipped because -mapbench=false")
 				}
 
+				f(b, n)
+			})
+		}
+	}
+}
+func smallBenchSizes(f func(b *testing.B, n int)) func(*testing.B) {
+	return func(b *testing.B) {
+		for n := 1; n <= 8; n++ {
+			b.Run("len="+strconv.Itoa(n), func(b *testing.B) {
 				f(b, n)
 			})
 		}
@@ -1136,4 +1147,15 @@ func BenchmarkMapDeleteLargeKey(b *testing.B) {
 	for range b.N {
 		delete(m, key)
 	}
+}
+
+func BenchmarkMapSmallAccessHit(b *testing.B) {
+	b.Run("Key=int32/Elem=int32", smallBenchSizes(benchmarkMapAccessHit[int32, int32]))
+	b.Run("Key=int64/Elem=int64", smallBenchSizes(benchmarkMapAccessHit[int64, int64]))
+	b.Run("Key=string/Elem=string", smallBenchSizes(benchmarkMapAccessHit[string, string]))
+}
+func BenchmarkMapSmallAccessMiss(b *testing.B) {
+	b.Run("Key=int32/Elem=int32", smallBenchSizes(benchmarkMapAccessMiss[int32, int32]))
+	b.Run("Key=int64/Elem=int64", smallBenchSizes(benchmarkMapAccessMiss[int64, int64]))
+	b.Run("Key=string/Elem=string", smallBenchSizes(benchmarkMapAccessMiss[string, string]))
 }
