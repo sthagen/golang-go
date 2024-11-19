@@ -96,6 +96,7 @@ func MkEnv() []cfg.EnvVar {
 		// a different version (for example, when bisecting a regression).
 		{Name: "GOEXPERIMENT", Value: cfg.RawGOEXPERIMENT},
 
+		{Name: "GOFIPS140", Value: cfg.GOFIPS140, Changed: cfg.GOFIPS140Changed},
 		{Name: "GOFLAGS", Value: cfg.Getenv("GOFLAGS")},
 		{Name: "GOHOSTARCH", Value: runtime.GOARCH},
 		{Name: "GOHOSTOS", Value: runtime.GOOS},
@@ -306,7 +307,7 @@ func runEnv(ctx context.Context, cmd *base.Command, args []string) {
 	env := cfg.CmdEnv
 	env = append(env, ExtraEnvVars()...)
 
-	if err := fsys.Init(base.Cwd()); err != nil {
+	if err := fsys.Init(); err != nil {
 		base.Fatal(err)
 	}
 

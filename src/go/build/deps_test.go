@@ -440,27 +440,49 @@ var depsRules = `
 	NET, log
 	< net/mail;
 
+	io, math/rand/v2 < crypto/internal/randutil;
+
 	STR < crypto/internal/impl;
 
 	OS < crypto/internal/sysrand
 	< crypto/internal/entropy;
 
+	internal/byteorder < crypto/internal/fipsdeps/byteorder;
+	internal/cpu, internal/goarch < crypto/internal/fipsdeps/cpu;
+	internal/godebug < crypto/internal/fipsdeps/godebug;
+
 	# FIPS is the FIPS 140 module.
 	# It must not depend on external crypto packages.
-	# Internal packages imported by FIPS might need to retain
-	# backwards compatibility with older versions of the module.
-	STR, crypto/internal/impl, crypto/internal/entropy
+	STR, crypto/internal/impl,
+	crypto/internal/entropy,
+	crypto/internal/randutil,
+	crypto/internal/fipsdeps/byteorder,
+	crypto/internal/fipsdeps/cpu,
+	crypto/internal/fipsdeps/godebug
 	< crypto/internal/fips
 	< crypto/internal/fips/alias
 	< crypto/internal/fips/subtle
-	< crypto/internal/fips/aes
-	< crypto/internal/fips/drbg
-	< crypto/internal/fips/aes/gcm
 	< crypto/internal/fips/sha256
 	< crypto/internal/fips/sha512
 	< crypto/internal/fips/sha3
 	< crypto/internal/fips/hmac
 	< crypto/internal/fips/check
+	< crypto/internal/fips/aes
+	< crypto/internal/fips/drbg
+	< crypto/internal/fips/aes/gcm
+	< crypto/internal/fips/hkdf
+	< crypto/internal/fips/mlkem
+	< crypto/internal/fips/ssh
+	< crypto/internal/fips/tls12
+	< crypto/internal/fips/tls13
+	< crypto/internal/fips/bigmod
+	< crypto/internal/fips/nistec/fiat
+	< crypto/internal/fips/nistec
+	< crypto/internal/fips/ecdh
+	< crypto/internal/fips/ecdsa
+	< crypto/internal/fips/edwards25519/field
+	< crypto/internal/fips/edwards25519
+	< crypto/internal/fips/ed25519
 	< FIPS;
 
 	FIPS < crypto/internal/fips/check/checktest;
@@ -484,19 +506,11 @@ var depsRules = `
 	< crypto/internal/boring
 	< crypto/boring;
 
-	crypto/internal/fips/alias, math/rand/v2,
-	crypto/subtle, embed
-	< crypto/internal/randutil
-	< crypto/internal/nistec/fiat
-	< crypto/internal/nistec
-	< crypto/internal/edwards25519/field
-	< crypto/internal/edwards25519;
-
 	crypto/boring
 	< crypto/aes, crypto/des, crypto/hmac, crypto/md5, crypto/rc4,
 	  crypto/sha1, crypto/sha256, crypto/sha512;
 
-	crypto/boring, crypto/internal/edwards25519/field
+	crypto/boring, crypto/internal/fips/edwards25519/field
 	< crypto/ecdh;
 
 	# Unfortunately, stuck with reflect via encoding/binary.
@@ -506,7 +520,6 @@ var depsRules = `
 	crypto/des,
 	crypto/ecdh,
 	crypto/hmac,
-	crypto/internal/edwards25519,
 	crypto/md5,
 	crypto/rc4,
 	crypto/sha1,
@@ -521,12 +534,10 @@ var depsRules = `
 	CRYPTO, FMT, math/big
 	< crypto/internal/boring/bbig
 	< crypto/rand
-	< crypto/internal/mlkem768
 	< crypto/ed25519
 	< encoding/asn1
 	< golang.org/x/crypto/cryptobyte/asn1
 	< golang.org/x/crypto/cryptobyte
-	< crypto/internal/bigmod
 	< crypto/dsa, crypto/elliptic, crypto/rsa
 	< crypto/ecdsa
 	< CRYPTO-MATH;
@@ -540,7 +551,6 @@ var depsRules = `
 	< golang.org/x/crypto/chacha20
 	< golang.org/x/crypto/internal/poly1305
 	< golang.org/x/crypto/chacha20poly1305
-	< golang.org/x/crypto/hkdf
 	< crypto/internal/hpke
 	< crypto/x509/internal/macos
 	< crypto/x509/pkix;
@@ -639,6 +649,9 @@ var depsRules = `
 	FMT, DEBUG, flag, runtime/trace, internal/sysinfo, math/rand
 	< testing;
 
+	RUNTIME
+	< internal/synctest;
+
 	log/slog, testing
 	< testing/slogtest;
 
@@ -667,7 +680,7 @@ var depsRules = `
 	FMT
 	< internal/txtar;
 
-	CRYPTO-MATH, testing, internal/testenv
+	CRYPTO-MATH, testing, internal/testenv, encoding/json
 	< crypto/internal/cryptotest;
 
 	CGO, FMT

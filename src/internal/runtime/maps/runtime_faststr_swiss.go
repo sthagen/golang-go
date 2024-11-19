@@ -8,6 +8,7 @@ package maps
 
 import (
 	"internal/abi"
+	"internal/goarch"
 	"internal/race"
 	"internal/runtime/sys"
 	"unsafe"
@@ -48,7 +49,7 @@ func (m *Map) getWithoutKeySmallFastStr(typ *abi.SwissMapType, key string) unsaf
 		// There's exactly one slot that passed the quick test. Do the single expensive comparison.
 		slotKey = g.key(typ, uintptr(j))
 		if key == *(*string)(slotKey) {
-			return unsafe.Pointer(uintptr(slotKey) + typ.ElemOff)
+			return unsafe.Pointer(uintptr(slotKey) + 2*goarch.PtrSize)
 		}
 		return nil
 	}
@@ -62,7 +63,7 @@ dohash:
 
 	for range abi.SwissMapGroupSlots {
 		if uint8(ctrls) == h2 && key == *(*string)(slotKey) {
-			return unsafe.Pointer(uintptr(slotKey) + typ.ElemOff)
+			return unsafe.Pointer(uintptr(slotKey) + 2*goarch.PtrSize)
 		}
 		slotKey = unsafe.Pointer(uintptr(slotKey) + slotSize)
 		ctrls >>= 8
@@ -123,7 +124,8 @@ func runtime_mapaccess1_faststr(typ *abi.SwissMapType, m *Map, key string) unsaf
 		return elem
 	}
 
-	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&key)), m.seed)
+	k := key
+	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&k)), m.seed)
 
 	// Select table.
 	idx := m.directoryIndex(hash)
@@ -141,7 +143,7 @@ func runtime_mapaccess1_faststr(typ *abi.SwissMapType, m *Map, key string) unsaf
 
 			slotKey := g.key(typ, i)
 			if key == *(*string)(slotKey) {
-				slotElem := g.elem(typ, i)
+				slotElem := unsafe.Pointer(uintptr(slotKey) + 2*goarch.PtrSize)
 				return slotElem
 			}
 			match = match.removeFirst()
@@ -181,7 +183,8 @@ func runtime_mapaccess2_faststr(typ *abi.SwissMapType, m *Map, key string) (unsa
 		return elem, true
 	}
 
-	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&key)), m.seed)
+	k := key
+	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&k)), m.seed)
 
 	// Select table.
 	idx := m.directoryIndex(hash)
@@ -199,7 +202,7 @@ func runtime_mapaccess2_faststr(typ *abi.SwissMapType, m *Map, key string) (unsa
 
 			slotKey := g.key(typ, i)
 			if key == *(*string)(slotKey) {
-				slotElem := g.elem(typ, i)
+				slotElem := unsafe.Pointer(uintptr(slotKey) + 2*goarch.PtrSize)
 				return slotElem, true
 			}
 			match = match.removeFirst()
@@ -270,7 +273,8 @@ func runtime_mapassign_faststr(typ *abi.SwissMapType, m *Map, key string) unsafe
 		fatal("concurrent map writes")
 	}
 
-	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&key)), m.seed)
+	k := key
+	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&k)), m.seed)
 
 	// Set writing after calling Hasher, since Hasher may panic, in which
 	// case we have not actually done a write.

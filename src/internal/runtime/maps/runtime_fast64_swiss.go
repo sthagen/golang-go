@@ -39,7 +39,7 @@ func runtime_mapaccess1_fast64(typ *abi.SwissMapType, m *Map, key uint64) unsafe
 		slotSize := typ.SlotSize
 		for full != 0 {
 			if key == *(*uint64)(slotKey) && full&(1<<7) != 0 {
-				slotElem := unsafe.Pointer(uintptr(slotKey) + typ.ElemOff)
+				slotElem := unsafe.Pointer(uintptr(slotKey) + 8)
 				return slotElem
 			}
 			slotKey = unsafe.Pointer(uintptr(slotKey) + slotSize)
@@ -48,7 +48,8 @@ func runtime_mapaccess1_fast64(typ *abi.SwissMapType, m *Map, key uint64) unsafe
 		return unsafe.Pointer(&zeroVal[0])
 	}
 
-	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&key)), m.seed)
+	k := key
+	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&k)), m.seed)
 
 	// Select table.
 	idx := m.directoryIndex(hash)
@@ -66,7 +67,7 @@ func runtime_mapaccess1_fast64(typ *abi.SwissMapType, m *Map, key uint64) unsafe
 
 			slotKey := g.key(typ, i)
 			if key == *(*uint64)(slotKey) {
-				slotElem := g.elem(typ, i)
+				slotElem := unsafe.Pointer(uintptr(slotKey) + 8)
 				return slotElem
 			}
 			match = match.removeFirst()
@@ -107,7 +108,7 @@ func runtime_mapaccess2_fast64(typ *abi.SwissMapType, m *Map, key uint64) (unsaf
 		slotSize := typ.SlotSize
 		for full != 0 {
 			if key == *(*uint64)(slotKey) && full&(1<<7) != 0 {
-				slotElem := unsafe.Pointer(uintptr(slotKey) + typ.ElemOff)
+				slotElem := unsafe.Pointer(uintptr(slotKey) + 8)
 				return slotElem, true
 			}
 			slotKey = unsafe.Pointer(uintptr(slotKey) + slotSize)
@@ -116,7 +117,8 @@ func runtime_mapaccess2_fast64(typ *abi.SwissMapType, m *Map, key uint64) (unsaf
 		return unsafe.Pointer(&zeroVal[0]), false
 	}
 
-	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&key)), m.seed)
+	k := key
+	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&k)), m.seed)
 
 	// Select table.
 	idx := m.directoryIndex(hash)
@@ -134,7 +136,7 @@ func runtime_mapaccess2_fast64(typ *abi.SwissMapType, m *Map, key uint64) (unsaf
 
 			slotKey := g.key(typ, i)
 			if key == *(*uint64)(slotKey) {
-				slotElem := g.elem(typ, i)
+				slotElem := unsafe.Pointer(uintptr(slotKey) + 8)
 				return slotElem, true
 			}
 			match = match.removeFirst()
@@ -203,7 +205,8 @@ func runtime_mapassign_fast64(typ *abi.SwissMapType, m *Map, key uint64) unsafe.
 		fatal("concurrent map writes")
 	}
 
-	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&key)), m.seed)
+	k := key
+	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&k)), m.seed)
 
 	// Set writing after calling Hasher, since Hasher may panic, in which
 	// case we have not actually done a write.
@@ -374,7 +377,8 @@ func runtime_mapassign_fast64ptr(typ *abi.SwissMapType, m *Map, key unsafe.Point
 		fatal("concurrent map writes")
 	}
 
-	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&key)), m.seed)
+	k := key
+	hash := typ.Hasher(abi.NoEscape(unsafe.Pointer(&k)), m.seed)
 
 	// Set writing after calling Hasher, since Hasher may panic, in which
 	// case we have not actually done a write.

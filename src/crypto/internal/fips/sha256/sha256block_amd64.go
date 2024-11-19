@@ -7,12 +7,12 @@
 package sha256
 
 import (
+	"crypto/internal/fipsdeps/cpu"
 	"crypto/internal/impl"
-	"internal/cpu"
 )
 
-var useAVX2 = cpu.X86.HasAVX2 && cpu.X86.HasBMI2
-var useSHANI = useAVX2 && cpu.X86.HasSHA
+var useAVX2 = cpu.X86HasAVX && cpu.X86HasAVX2 && cpu.X86HasBMI2
+var useSHANI = cpu.X86HasAVX && cpu.X86HasSHA && cpu.X86HasSSE41 && cpu.X86HasSSSE3
 
 func init() {
 	impl.Register("sha256", "AVX2", &useAVX2)

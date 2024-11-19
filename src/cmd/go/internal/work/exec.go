@@ -617,7 +617,7 @@ func (b *Builder) build(ctx context.Context, a *Action) (err error) {
 OverlayLoop:
 	for _, fs := range nonGoFileLists {
 		for _, f := range fs {
-			if _, ok := fsys.OverlayPath(mkAbs(p.Dir, f)); ok {
+			if fsys.Replaced(mkAbs(p.Dir, f)) {
 				a.nonGoOverlay = make(map[string]string)
 				break OverlayLoop
 			}
@@ -627,9 +627,8 @@ OverlayLoop:
 		for _, fs := range nonGoFileLists {
 			for i := range fs {
 				from := mkAbs(p.Dir, fs[i])
-				opath, _ := fsys.OverlayPath(from)
 				dst := objdir + filepath.Base(fs[i])
-				if err := sh.CopyFile(dst, opath, 0666, false); err != nil {
+				if err := sh.CopyFile(dst, fsys.Actual(from), 0666, false); err != nil {
 					return err
 				}
 				a.nonGoOverlay[from] = dst
@@ -859,7 +858,7 @@ OverlayLoop:
 		embed.Patterns = p.Internal.Embed
 		embed.Files = make(map[string]string)
 		for _, file := range p.EmbedFiles {
-			embed.Files[file] = filepath.Join(p.Dir, file)
+			embed.Files[file] = fsys.Actual(filepath.Join(p.Dir, file))
 		}
 		js, err := json.MarshalIndent(&embed, "", "\t")
 		if err != nil {
@@ -1176,9 +1175,9 @@ func buildVetConfig(a *Action, srcfiles []string) {
 		ID:           a.Package.ImportPath,
 		Compiler:     cfg.BuildToolchainName,
 		Dir:          a.Package.Dir,
-		GoFiles:      mkAbsFiles(a.Package.Dir, gofiles),
-		NonGoFiles:   mkAbsFiles(a.Package.Dir, nongofiles),
-		IgnoredFiles: mkAbsFiles(a.Package.Dir, ignored),
+		GoFiles:      actualFiles(mkAbsFiles(a.Package.Dir, gofiles)),
+		NonGoFiles:   actualFiles(mkAbsFiles(a.Package.Dir, nongofiles)),
+		IgnoredFiles: actualFiles(mkAbsFiles(a.Package.Dir, ignored)),
 		ImportPath:   a.Package.ImportPath,
 		ImportMap:    make(map[string]string),
 		PackageFile:  make(map[string]string),
@@ -2840,9 +2839,10 @@ func (b *Builder) cgo(a *Action, cgoExe, objdir string, pcCFLAGS, pcLDFLAGS, cgo
 	var trimpath []string
 	for i := range cgofiles {
 		path := mkAbs(p.Dir, cgofiles[i])
-		if opath, ok := fsys.OverlayPath(path); ok {
-			cgofiles[i] = opath
-			trimpath = append(trimpath, opath+"=>"+path)
+		if fsys.Replaced(path) {
+			actual := fsys.Actual(path)
+			cgofiles[i] = actual
+			trimpath = append(trimpath, actual+"=>"+path)
 		}
 	}
 	if len(trimpath) > 0 {
@@ -3381,6 +3381,15 @@ func mkAbsFiles(dir string, files []string) []string {
 		abs[i] = f
 	}
 	return abs
+}
+
+// actualFiles applies fsys.Actual to the list of files.
+func actualFiles(files []string) []string {
+	a := make([]string, len(files))
+	for i, f := range files {
+		a[i] = fsys.Actual(f)
+	}
+	return a
 }
 
 // passLongArgsInResponseFiles modifies cmd such that, for
