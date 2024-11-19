@@ -1038,6 +1038,11 @@ func rand_fatal(s string) {
 	fatal(s)
 }
 
+//go:linkname sysrand_fatal crypto/internal/sysrand.fatal
+func sysrand_fatal(s string) {
+	fatal(s)
+}
+
 //go:linkname fips_fatal crypto/internal/fips.fatal
 func fips_fatal(s string) {
 	fatal(s)
@@ -1045,6 +1050,16 @@ func fips_fatal(s string) {
 
 //go:linkname maps_fatal internal/runtime/maps.fatal
 func maps_fatal(s string) {
+	fatal(s)
+}
+
+//go:linkname internal_sync_throw internal/sync.throw
+func internal_sync_throw(s string) {
+	throw(s)
+}
+
+//go:linkname internal_sync_fatal internal/sync.fatal
+func internal_sync_fatal(s string) {
 	fatal(s)
 }
 

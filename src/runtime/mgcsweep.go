@@ -25,7 +25,6 @@
 package runtime
 
 import (
-	"internal/abi"
 	"internal/runtime/atomic"
 	"unsafe"
 )
@@ -565,7 +564,7 @@ func (sl *sweepLocked) sweep(preserve bool) bool {
 			}
 			if hasFinAndRevived {
 				// Pass 2: queue all finalizers and clear any weak handles. Weak handles are cleared
-				// before finalization as specified by the internal/weak package. See the documentation
+				// before finalization as specified by the weak package. See the documentation
 				// for that package for more details.
 				for siter.valid() && uintptr(siter.s.offset) < endOffset {
 					// Find the exact byte for which the special was setup
@@ -817,18 +816,6 @@ func (sl *sweepLocked) sweep(preserve bool) bool {
 				sysFault(unsafe.Pointer(s.base()), size)
 			} else {
 				mheap_.freeSpan(s)
-			}
-			if s.largeType != nil && s.largeType.TFlag&abi.TFlagUnrolledBitmap != 0 {
-				// The unrolled GCProg bitmap is allocated separately.
-				// Free the space for the unrolled bitmap.
-				systemstack(func() {
-					s := spanOf(uintptr(unsafe.Pointer(s.largeType)))
-					mheap_.freeManual(s, spanAllocPtrScalarBits)
-				})
-				// Make sure to zero this pointer without putting the old
-				// value in a write buffer, as the old value might be an
-				// invalid pointer. See arena.go:(*mheap).allocUserArenaChunk.
-				*(*uintptr)(unsafe.Pointer(&s.largeType)) = 0
 			}
 			return true
 		}

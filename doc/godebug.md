@@ -34,6 +34,7 @@ For example, if a Go program is running in an environment that contains
 
 then that Go program will disable the use of HTTP/2 by default in both
 the HTTP client and the HTTP server.
+Unrecognized settings in the `GODEBUG` environment variable are ignored.
 It is also possible to set the default `GODEBUG` for a given program
 (discussed below).
 
@@ -165,8 +166,16 @@ The possible values for `multipathtcp` are now:
 - "3": enable MPTCP on dialers only by default
 
 For Go 1.24, it now defaults to multipathtcp="2", thus
-enabled by default on listerners. Using multipathtcp="0" reverts to the
+enabled by default on listeners. Using multipathtcp="0" reverts to the
 pre-Go 1.24 behavior.
+
+Go 1.24 changed the behavior of `go test -json` to emit build errors as JSON
+instead of text.
+These new JSON events are distinguished by new `Action` values,
+but can still cause problems with CI systems that aren't robust to these events.
+This behavior can be controlled with the `gotestjsonbuildtext` setting.
+Using `gotestjsonbuildtext=1` restores the 1.23 behavior.
+This setting will be removed in a future release, Go 1.28 at the earliest.
 
 ### Go 1.23
 

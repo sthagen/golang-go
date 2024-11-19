@@ -96,7 +96,8 @@ var depsRules = `
 	< internal/runtime/maps
 	< runtime
 	< sync/atomic
-	< internal/weak
+	< internal/sync
+	< weak
 	< sync
 	< internal/bisect
 	< internal/godebug
@@ -113,7 +114,8 @@ var depsRules = `
 
 	RUNTIME
 	< sort
-	< container/heap;
+	< container/heap
+	< unique;
 
 	RUNTIME
 	< io;
@@ -163,9 +165,6 @@ var depsRules = `
 	MATH
 	< runtime/metrics;
 
-	RUNTIME, math/rand/v2
-	< internal/concurrent;
-
 	MATH, unicode/utf8
 	< strconv;
 
@@ -178,9 +177,6 @@ var depsRules = `
 
 	bufio, path, strconv
 	< STR;
-
-	RUNTIME, internal/concurrent
-	< unique;
 
 	# OS is basic OS access, including helpers (path/filepath, os/exec, etc).
 	# OS includes string routines, but those must be layered above package os.
@@ -444,15 +440,22 @@ var depsRules = `
 	NET, log
 	< net/mail;
 
-	NONE < crypto/internal/impl;
+	STR < crypto/internal/impl;
+
+	OS < crypto/internal/sysrand
+	< crypto/internal/entropy;
 
 	# FIPS is the FIPS 140 module.
 	# It must not depend on external crypto packages.
 	# Internal packages imported by FIPS might need to retain
 	# backwards compatibility with older versions of the module.
-	STR, crypto/internal/impl
+	STR, crypto/internal/impl, crypto/internal/entropy
 	< crypto/internal/fips
+	< crypto/internal/fips/alias
 	< crypto/internal/fips/subtle
+	< crypto/internal/fips/aes
+	< crypto/internal/fips/drbg
+	< crypto/internal/fips/aes/gcm
 	< crypto/internal/fips/sha256
 	< crypto/internal/fips/sha512
 	< crypto/internal/fips/sha3
@@ -474,7 +477,6 @@ var depsRules = `
 	hash, embed
 	< crypto
 	< crypto/subtle
-	< crypto/internal/alias
 	< crypto/cipher;
 
 	crypto/cipher,
@@ -482,7 +484,8 @@ var depsRules = `
 	< crypto/internal/boring
 	< crypto/boring;
 
-	crypto/internal/alias, math/rand/v2
+	crypto/internal/fips/alias, math/rand/v2,
+	crypto/subtle, embed
 	< crypto/internal/randutil
 	< crypto/internal/nistec/fiat
 	< crypto/internal/nistec
@@ -668,7 +671,7 @@ var depsRules = `
 	< crypto/internal/cryptotest;
 
 	CGO, FMT
-	< crypto/rand/internal/seccomp;
+	< crypto/internal/sysrand/internal/seccomp;
 
 	# v2 execution trace parser.
 	FMT
