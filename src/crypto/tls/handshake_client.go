@@ -10,8 +10,8 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
-	"crypto/internal/fips/mlkem"
-	"crypto/internal/fips/tls13"
+	"crypto/internal/fips140/mlkem"
+	"crypto/internal/fips140/tls13"
 	"crypto/internal/hpke"
 	"crypto/rsa"
 	"crypto/subtle"
@@ -714,7 +714,7 @@ func (hs *clientHandshakeState) doFullHandshake() error {
 			return err
 		}
 		if len(skx.key) >= 3 && skx.key[0] == 3 /* named curve */ {
-			c.curveID = CurveID(byteorder.BeUint16(skx.key[1:]))
+			c.curveID = CurveID(byteorder.BEUint16(skx.key[1:]))
 		}
 
 		msg, err = c.readHandshake(&hs.finishedHash)

@@ -398,6 +398,8 @@ func OpenFile(name string, flag int, perm FileMode) (*File, error) {
 	return f, nil
 }
 
+var errPathEscapes = errors.New("path escapes from parent")
+
 // openDir opens a file which is assumed to be a directory. As such, it skips
 // the syscalls that make the file descriptor non-blocking as these take time
 // and will fail on file descriptors for directories.
@@ -694,6 +696,8 @@ func (f *File) SyscallConn() (syscall.RawConn, error) {
 // a general substitute for a chroot-style security mechanism when the directory tree
 // contains arbitrary content.
 //
+// Use [Root.FS] to obtain a fs.FS that prevents escapes from the tree via symbolic links.
+//
 // The directory dir must not be "".
 //
 // The result implements [io/fs.StatFS], [io/fs.ReadFileFS] and
@@ -798,7 +802,10 @@ func ReadFile(name string) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
+	return readFileContents(f)
+}
 
+func readFileContents(f *File) ([]byte, error) {
 	var size int
 	if info, err := f.Stat(); err == nil {
 		size64 := info.Size()

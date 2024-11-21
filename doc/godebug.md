@@ -188,6 +188,9 @@ calling into Go code from C will enable DIT, and disable it before returning to
 C if it was not enabled when Go code was entered.
 This currently only affects arm64 programs. For all other platforms it is a no-op.
 
+Go 1.24 removed the `x509sha1` setting.  `crypto/x509` no longer supports verifying
+signatures on certificates that use SHA-1 based signature algorithms.
+
 ### Go 1.23
 
 Go 1.23 changed the channels created by package time to be unbuffered
@@ -380,7 +383,7 @@ There is no plan to remove this setting.
 
 Go 1.18 removed support for SHA1 in most X.509 certificates,
 controlled by the [`x509sha1` setting](/pkg/crypto/x509#InsecureAlgorithmError).
-This setting will be removed in a future release, Go 1.22 at the earliest.
+This setting was removed in Go 1.24.
 
 ### Go 1.10
 
