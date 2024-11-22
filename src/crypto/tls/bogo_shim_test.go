@@ -1,3 +1,7 @@
+// Copyright 2024 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package tls
 
 import (
@@ -72,6 +76,9 @@ var (
 	onResumeExpectECHAccepted  = flag.Bool("on-resume-expect-ech-accept", false, "")
 	_                          = flag.Bool("on-resume-expect-no-ech-name-override", false, "")
 	expectedServerName         = flag.String("expect-server-name", "", "")
+	echServerConfig            = flagStringSlice("ech-server-config", "")
+	echServerKey               = flagStringSlice("ech-server-key", "")
+	echServerRetryConfig       = flagStringSlice("ech-is-retry-config", "")
 
 	expectSessionMiss = flag.Bool("expect-session-miss", false, "")
 
@@ -101,12 +108,12 @@ func flagStringSlice(name, usage string) *stringSlice {
 	return f
 }
 
-func (saf stringSlice) String() string {
-	return strings.Join(saf, ",")
+func (saf *stringSlice) String() string {
+	return strings.Join(*saf, ",")
 }
 
-func (saf stringSlice) Set(s string) error {
-	saf = append(saf, s)
+func (saf *stringSlice) Set(s string) error {
+	*saf = append(*saf, s)
 	return nil
 }
 
@@ -244,6 +251,29 @@ func bogoShim() {
 		}
 	}
 
+	if len(*echServerConfig) != 0 {
+		if len(*echServerConfig) != len(*echServerKey) || len(*echServerConfig) != len(*echServerRetryConfig) {
+			log.Fatal("-ech-server-config, -ech-server-key, and -ech-is-retry-config mismatch")
+		}
+
+		for i, c := range *echServerConfig {
+			configBytes, err := base64.StdEncoding.DecodeString(c)
+			if err != nil {
+				log.Fatalf("parse ech-server-config err: %s", err)
+			}
+			privBytes, err := base64.StdEncoding.DecodeString((*echServerKey)[i])
+			if err != nil {
+				log.Fatalf("parse ech-server-key err: %s", err)
+			}
+
+			cfg.EncryptedClientHelloKeys = append(cfg.EncryptedClientHelloKeys, EncryptedClientHelloKey{
+				Config:      configBytes,
+				PrivateKey:  privBytes,
+				SendAsRetry: (*echServerRetryConfig)[i] == "1",
+			})
+		}
+	}
+
 	for i := 0; i < *resumeCount+1; i++ {
 		if i > 0 && (*onResumeECHConfigListB64 != "") {
 			echConfigList, err := base64.StdEncoding.DecodeString(*onResumeECHConfigListB64)
@@ -376,6 +406,7 @@ func TestBogoSuite(t *testing.T) {
 	if testenv.Builder() != "" && runtime.GOOS == "windows" {
 		t.Skip("#66913: windows network connections are flakey on builders")
 	}
+	skipFIPS(t)
 
 	// In order to make Go test caching work as expected, we stat the
 	// bogo_config.json file, so that the Go testing hooks know that it is
@@ -442,8 +473,11 @@ func TestBogoSuite(t *testing.T) {
 	// are present in the output. They are only checked if -bogo-filter
 	// was not passed.
 	assertResults := map[string]string{
-		"CurveTest-Client-Kyber-TLS13": "PASS",
-		"CurveTest-Server-Kyber-TLS13": "PASS",
+		// TODO: these tests are temporarily disabled, since we don't expose the
+		// necessary curve ID, and it's currently not possible to correctly
+		// configure it.
+		// "CurveTest-Client-Kyber-TLS13": "PASS",
+		// "CurveTest-Server-Kyber-TLS13": "PASS",
 	}
 
 	for name, result := range results.Tests {

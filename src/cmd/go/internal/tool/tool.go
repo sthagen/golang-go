@@ -287,14 +287,16 @@ func buildAndRunModtool(ctx context.Context, tool string, args []string) {
 	pkgOpts := load.PackageOpts{MainOnly: true}
 	p := load.PackagesAndErrors(ctx, pkgOpts, []string{tool})[0]
 	p.Internal.OmitDebug = true
+	p.Internal.ExeName = path.Base(p.ImportPath)
 
-	a1 := b.LinkAction(work.ModeInstall, work.ModeBuild, p)
+	a1 := b.LinkAction(work.ModeBuild, work.ModeBuild, p)
+	a1.CacheExecutable = true
 	a := &work.Action{Mode: "go tool", Actor: work.ActorFunc(runBuiltTool), Args: args, Deps: []*work.Action{a1}}
 	b.Do(ctx, a)
 }
 
 func runBuiltTool(b *work.Builder, ctx context.Context, a *work.Action) error {
-	cmdline := str.StringList(work.FindExecCmd(), a.Deps[0].Target, a.Args)
+	cmdline := str.StringList(work.FindExecCmd(), a.Deps[0].BuiltTarget(), a.Args)
 
 	if toolN {
 		fmt.Println(strings.Join(cmdline, " "))

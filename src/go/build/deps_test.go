@@ -467,6 +467,7 @@ var depsRules = `
 	< crypto/internal/fips140/sha3
 	< crypto/internal/fips140/hmac
 	< crypto/internal/fips140/check
+	< crypto/internal/fips140/pbkdf2
 	< crypto/internal/fips140/aes
 	< crypto/internal/fips140/drbg
 	< crypto/internal/fips140/aes/gcm
@@ -488,9 +489,11 @@ var depsRules = `
 
 	FIPS < crypto/internal/fips140/check/checktest;
 
+	FIPS, sync/atomic < crypto/tls/internal/fips140tls;
+
 	NONE < crypto/internal/boring/sig, crypto/internal/boring/syso;
-	sync/atomic < crypto/internal/boring/bcache, crypto/internal/boring/fipstls;
-	crypto/internal/boring/sig, crypto/internal/boring/fipstls < crypto/tls/fipsonly;
+	sync/atomic < crypto/internal/boring/bcache, crypto/internal/boring/fips140tls;
+	crypto/internal/boring/sig, crypto/tls/internal/fips140tls < crypto/tls/fipsonly;
 
 	# CRYPTO is core crypto algorithms - no cgo, fmt, net.
 	FIPS,
@@ -509,10 +512,12 @@ var depsRules = `
 
 	crypto/boring
 	< crypto/aes, crypto/des, crypto/hmac, crypto/md5, crypto/rc4,
-	  crypto/sha1, crypto/sha256, crypto/sha512;
+	  crypto/sha1, crypto/sha256, crypto/sha512, crypto/hkdf;
 
 	crypto/boring, crypto/internal/fips140/edwards25519/field
 	< crypto/ecdh;
+
+	crypto/hmac < crypto/pbkdf2;
 
 	# Unfortunately, stuck with reflect via encoding/binary.
 	encoding/binary, crypto/boring < golang.org/x/crypto/sha3;
@@ -526,7 +531,8 @@ var depsRules = `
 	crypto/sha1,
 	crypto/sha256,
 	crypto/sha512,
-	golang.org/x/crypto/sha3
+	golang.org/x/crypto/sha3,
+	crypto/hkdf
 	< CRYPTO;
 
 	CGO, fmt, net !< CRYPTO;
@@ -556,7 +562,7 @@ var depsRules = `
 	< crypto/x509/internal/macos
 	< crypto/x509/pkix;
 
-	crypto/internal/boring/fipstls, crypto/x509/pkix
+	crypto/tls/internal/fips140tls, crypto/x509/pkix
 	< crypto/x509
 	< crypto/tls;
 

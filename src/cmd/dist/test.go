@@ -323,6 +323,7 @@ type goTest struct {
 	bench    bool          // Run benchmarks (briefly), not tests.
 	runTests string        // Regexp of tests to run
 	cpu      string        // If non-empty, -cpu flag
+	skip     string        // If non-empty, -skip flag
 
 	gcflags   string // If non-empty, build with -gcflags=all=X
 	ldflags   string // If non-empty, build with -ldflags=X
@@ -463,6 +464,9 @@ func (opts *goTest) buildArgs(t *tester) (build, run, pkgs, testFlags []string, 
 	}
 	if opts.cpu != "" {
 		run = append(run, "-cpu="+opts.cpu)
+	}
+	if opts.skip != "" {
+		run = append(run, "-skip="+opts.skip)
 	}
 	if t.json {
 		run = append(run, "-json")
@@ -637,19 +641,17 @@ func (t *tester) registerTests() {
 		// Use 'go list std cmd' to get a list of all Go packages
 		// that running 'go test std cmd' could find problems in.
 		// (In race test mode, also set -tags=race.)
-		//
-		// In long test mode, this includes vendored packages and other
+		// This includes vendored packages and other
 		// packages without tests so that 'dist test' finds if any of
 		// them don't build, have a problem reported by high-confidence
 		// vet checks that come with 'go test', and anything else it
 		// may check in the future. See go.dev/issue/60463.
+		// Most packages have tests, so there is not much saved
+		// by skipping non-test packages.
+		// For the packages without any test files,
+		// 'go test' knows not to actually build a test binary,
+		// so the only cost is the vet, and we still want to run vet.
 		cmd := exec.Command(gorootBinGo, "list")
-		if t.short {
-			// In short test mode, use a format string to only
-			// list packages and commands that have tests.
-			const format = "{{if (or .TestGoFiles .XTestGoFiles)}}{{.ImportPath}}{{end}}"
-			cmd.Args = append(cmd.Args, "-f", format)
-		}
 		if t.race {
 			cmd.Args = append(cmd.Args, "-tags=race")
 		}
@@ -662,6 +664,12 @@ func (t *tester) registerTests() {
 		pkgs := strings.Fields(string(all))
 		for _, pkg := range pkgs {
 			if registerStdTestSpecially[pkg] {
+				continue
+			}
+			if t.short && (strings.HasPrefix(pkg, "vendor/") || strings.HasPrefix(pkg, "cmd/vendor/")) {
+				// Vendored code has no tests, and we don't care too much about vet errors
+				// since we can't modify the code, so skip the tests in short mode.
+				// We still let the longtest builders vet them.
 				continue
 			}
 			t.registerStdTest(pkg)
@@ -698,21 +706,38 @@ func (t *tester) registerTests() {
 	}
 
 	// Check that all crypto packages compile with the purego build tag.
-	t.registerTest("crypto with tag purego", &goTest{
+	t.registerTest("crypto with tag purego (build and vet only)", &goTest{
 		variant:  "purego",
 		tags:     []string{"purego"},
 		pkg:      "crypto/...",
 		runTests: "^$", // only ensure they compile
 	})
 
-	// Check that all crypto packages compile with fips.
-	for _, version := range fipsVersions() {
-		t.registerTest("crypto with GOFIPS140", &goTest{
-			variant:  "gofips140-" + version,
-			pkg:      "crypto/...",
-			runTests: "^$", // only ensure they compile
-			env:      []string{"GOFIPS140=" + version, "GOMODCACHE=" + filepath.Join(workdir, "fips-"+version)},
+	// Check that all crypto packages compile (and test correctly, in longmode) with fips.
+	if fipsSupported() {
+		// Test standard crypto packages with fips140=on.
+		t.registerTest("GODEBUG=fips140=on go test crypto/...", &goTest{
+			variant: "gofips140",
+			env:     []string{"GODEBUG=fips140=on"},
+			pkg:     "crypto/...",
 		})
+
+		// Test that earlier FIPS snapshots build.
+		// In long mode, test that they work too.
+		for _, version := range fipsVersions(t.short) {
+			suffix := " # (build and vet only)"
+			run := "^$" // only ensure they compile
+			if !t.short {
+				suffix = ""
+				run = ""
+			}
+			t.registerTest("GOFIPS140="+version+" go test crypto/..."+suffix, &goTest{
+				variant:  "gofips140-" + version,
+				pkg:      "crypto/...",
+				runTests: run,
+				env:      []string{"GOFIPS140=" + version, "GOMODCACHE=" + filepath.Join(workdir, "fips-"+version)},
+			})
+		}
 	}
 
 	// Test ios/amd64 for the iOS simulator.
@@ -834,7 +859,8 @@ func (t *tester) registerTests() {
 				buildmode: "pie",
 				ldflags:   "-linkmode=internal",
 				env:       []string{"CGO_ENABLED=0"},
-				pkg:       "crypto/internal/fips140/check",
+				pkg:       "crypto/internal/fips140test",
+				runTests:  "TestFIPSCheck",
 			})
 		// Also test a cgo package.
 		if t.cgoEnabled && t.internalLink() && !disablePIE {
@@ -857,7 +883,8 @@ func (t *tester) registerTests() {
 				buildmode: "exe",
 				ldflags:   "-linkmode=external",
 				env:       []string{"CGO_ENABLED=1"},
-				pkg:       "crypto/internal/fips140/check",
+				pkg:       "crypto/internal/fips140test",
+				runTests:  "TestFIPSCheck",
 			})
 		if t.externalLinkPIE() && !disablePIE {
 			t.registerTest("external linking, -buildmode=pie",
@@ -867,7 +894,8 @@ func (t *tester) registerTests() {
 					buildmode: "pie",
 					ldflags:   "-linkmode=external",
 					env:       []string{"CGO_ENABLED=1"},
-					pkg:       "crypto/internal/fips140/check",
+					pkg:       "crypto/internal/fips140test",
+					runTests:  "TestFIPSCheck",
 				})
 		}
 	}
@@ -1766,8 +1794,28 @@ func isEnvSet(evar string) bool {
 	return false
 }
 
+func fipsSupported() bool {
+	// Use GOFIPS140 or GOEXPERIMENT=boringcrypto, but not both.
+	if strings.Contains(goexperiment, "boringcrypto") {
+		return false
+	}
+
+	// If this goos/goarch does not support FIPS at all, return no versions.
+	// The logic here matches crypto/internal/fips140/check.Supported for now.
+	// In the future, if some snapshots add support for these, we will have
+	// to make a decision on a per-version basis.
+	switch {
+	case goarch == "wasm",
+		goos == "windows" && goarch == "386",
+		goos == "windows" && goarch == "arm",
+		goos == "aix":
+		return false
+	}
+	return true
+}
+
 // fipsVersions returns the list of versions available in lib/fips140.
-func fipsVersions() []string {
+func fipsVersions(short bool) []string {
 	var versions []string
 	zips, err := filepath.Glob(filepath.Join(goroot, "lib/fips140/*.zip"))
 	if err != nil {
