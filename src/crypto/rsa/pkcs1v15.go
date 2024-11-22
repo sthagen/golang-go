@@ -7,8 +7,10 @@ package rsa
 import (
 	"crypto/internal/boring"
 	"crypto/internal/fips140/rsa"
+	"crypto/internal/fips140only"
 	"crypto/internal/randutil"
 	"crypto/subtle"
+	"errors"
 	"io"
 )
 
@@ -38,6 +40,14 @@ type PKCS1v15DecryptOptions struct {
 // WARNING: use of this function to encrypt plaintexts other than
 // session keys is dangerous. Use RSA OAEP in new protocols.
 func EncryptPKCS1v15(random io.Reader, pub *PublicKey, msg []byte) ([]byte, error) {
+	if fips140only.Enabled {
+		return nil, errors.New("crypto/rsa: use of PKCS#1 v1.5 encryption is not allowed in FIPS 140-only mode")
+	}
+
+	if err := checkPublicKeySize(pub); err != nil {
+		return nil, err
+	}
+
 	randutil.MaybeReadByte(random)
 
 	k := pub.Size()
@@ -90,6 +100,10 @@ func EncryptPKCS1v15(random io.Reader, pub *PublicKey, msg []byte) ([]byte, erro
 // forge signatures as if they had the private key. See
 // DecryptPKCS1v15SessionKey for a way of solving this problem.
 func DecryptPKCS1v15(random io.Reader, priv *PrivateKey, ciphertext []byte) ([]byte, error) {
+	if err := checkPublicKeySize(&priv.PublicKey); err != nil {
+		return nil, err
+	}
+
 	if boring.Enabled {
 		bkey, err := boringPrivateKey(priv)
 		if err != nil {
@@ -147,6 +161,10 @@ func DecryptPKCS1v15(random io.Reader, priv *PrivateKey, ciphertext []byte) ([]b
 //   - [1] RFC 3218, Preventing the Million Message Attack on CMS,
 //     https://www.rfc-editor.org/rfc/rfc3218.html
 func DecryptPKCS1v15SessionKey(random io.Reader, priv *PrivateKey, ciphertext []byte, key []byte) error {
+	if err := checkPublicKeySize(&priv.PublicKey); err != nil {
+		return err
+	}
+
 	k := priv.Size()
 	if k-(len(key)+3+8) < 0 {
 		return ErrDecryption
@@ -175,6 +193,10 @@ func DecryptPKCS1v15SessionKey(random io.Reader, priv *PrivateKey, ciphertext []
 // access patterns. If the plaintext was valid then index contains the index of
 // the original message in em, to allow constant time padding removal.
 func decryptPKCS1v15(priv *PrivateKey, ciphertext []byte) (valid int, em []byte, index int, err error) {
+	if fips140only.Enabled {
+		return 0, nil, 0, errors.New("crypto/rsa: use of PKCS#1 v1.5 encryption is not allowed in FIPS 140-only mode")
+	}
+
 	k := priv.Size()
 	if k < 11 {
 		err = ErrDecryption

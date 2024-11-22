@@ -177,6 +177,10 @@ This behavior can be controlled with the `gotestjsonbuildtext` setting.
 Using `gotestjsonbuildtext=1` restores the 1.23 behavior.
 This setting will be removed in a future release, Go 1.28 at the earliest.
 
+Go 1.24 changed [`crypto/rsa`](/pkg/crypto/rsa) to require RSA keys to be at
+least 1024 bits. This behavior can be controlled with the `rsa1024min` setting.
+Using `rsa1024min=0` restores the Go 1.23 behavior.
+
 Go 1.24 introduced a mechanism for enabling platform specific Data Independent
 Timing (DIT) modes in the [`crypto/subtle`](/pkg/crypto/subtle) package. This
 mode can be enabled for an entire program with the `dataindependenttiming` setting.
@@ -190,6 +194,19 @@ This currently only affects arm64 programs. For all other platforms it is a no-o
 
 Go 1.24 removed the `x509sha1` setting.  `crypto/x509` no longer supports verifying
 signatures on certificates that use SHA-1 based signature algorithms.
+
+Go 1.24 changes the default value of the [`x509usepolicies`
+setting.](/pkg/crypto/x509/#CreateCertificate) from `0` to `1`. When marshalling
+certificates, policies are now taken from the
+[`Certificate.Policies`](/pkg/crypto/x509/#Certificate.Policies) field rather
+than the
+[`Certificate.PolicyIdentifiers`](/pkg/crypto/x509/#Certificate.PolicyIdentifiers)
+field by default.
+
+Go 1.24 enabled the post-quantum key exchange mechanism
+X25519MLKEM768 by default. The default can be reverted using the
+[`tlsmlkem` setting](/pkg/crypto/tls/#Config.CurvePreferences).
+Go 1.24 also removed X25519Kyber768Draft00 and the Go 1.23 `tlskyber` setting.
 
 ### Go 1.23
 

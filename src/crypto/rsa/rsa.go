@@ -20,8 +20,23 @@
 // Decrypter and Signer interfaces from the crypto package.
 //
 // Operations involving private keys are implemented using constant-time
-// algorithms, except for [GenerateKey], [PrivateKey.Precompute], and
-// [PrivateKey.Validate].
+// algorithms, except for [GenerateKey] and [PrivateKey.Precompute].
+//
+// # Minimum key size
+//
+// [GenerateKey] returns an error if a key of less than 1024 bits is requested,
+// and all Sign, Verify, Encrypt, and Decrypt methods return an error if used
+// with a key smaller than 1024 bits. Such keys are insecure and should not be
+// used.
+//
+// The `rsa1024min=0` GODEBUG setting suppresses this error, but we recommend
+// doing so only in tests, if necessary. Tests can use [testing.T.Setenv] or
+// include `//go:debug rsa1024min=0` in a `_test.go` source file to set it.
+//
+// Alternatively, see the [GenerateKey (TestKey)] example for a pregenerated
+// test-only 2048-bit key.
+//
+// [GenerateKey (TestKey)]: #example-GenerateKey-TestKey
 package rsa
 
 import (
@@ -34,6 +49,8 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"errors"
+	"fmt"
+	"internal/godebug"
 	"io"
 	"math"
 	"math/big"
@@ -218,43 +235,106 @@ func (priv *PrivateKey) Validate() error {
 		return errors.New("crypto/rsa: public exponent too large")
 	}
 
-	// Check that Πprimes == n.
-	modulus := new(big.Int).Set(bigOne)
-	for _, prime := range priv.Primes {
-		// Any primes ≤ 1 will cause divide-by-zero panics later.
-		if prime.Cmp(bigOne) <= 0 {
-			return errors.New("crypto/rsa: invalid prime value")
-		}
-		modulus.Mul(modulus, prime)
+	N, err := bigmod.NewModulus(pub.N.Bytes())
+	if err != nil {
+		return fmt.Errorf("crypto/rsa: invalid public modulus: %v", err)
 	}
-	if modulus.Cmp(priv.N) != 0 {
-		return errors.New("crypto/rsa: invalid modulus")
+	d, err := bigmod.NewNat().SetBytes(priv.D.Bytes(), N)
+	if err != nil {
+		return fmt.Errorf("crypto/rsa: invalid private exponent: %v", err)
+	}
+	one, err := bigmod.NewNat().SetUint(1, N)
+	if err != nil {
+		return fmt.Errorf("crypto/rsa: internal error: %v", err)
 	}
 
-	// Check that de ≡ 1 mod p-1, for each prime.
-	// This implies that e is coprime to each p-1 as e has a multiplicative
-	// inverse. Therefore e is coprime to lcm(p-1,q-1,r-1,...) =
-	// exponent(ℤ/nℤ). It also implies that a^de ≡ a mod p as a^(p-1) ≡ 1
-	// mod p. Thus a^de ≡ a mod n for all a coprime to n, as required.
-	congruence := new(big.Int)
-	de := new(big.Int).SetInt64(int64(priv.E))
-	de.Mul(de, priv.D)
+	Π := bigmod.NewNat().ExpandFor(N)
 	for _, prime := range priv.Primes {
-		pminus1 := new(big.Int).Sub(prime, bigOne)
-		congruence.Mod(de, pminus1)
-		if congruence.Cmp(bigOne) != 0 {
+		p, err := bigmod.NewNat().SetBytes(prime.Bytes(), N)
+		if err != nil {
+			return fmt.Errorf("crypto/rsa: invalid prime: %v", err)
+		}
+		if p.IsZero() == 1 {
+			return errors.New("crypto/rsa: invalid prime")
+		}
+		Π.Mul(p, N)
+
+		// Check that de ≡ 1 mod p-1, for each prime.
+		// This implies that e is coprime to each p-1 as e has a multiplicative
+		// inverse. Therefore e is coprime to lcm(p-1,q-1,r-1,...) =
+		// exponent(ℤ/nℤ). It also implies that a^de ≡ a mod p as a^(p-1) ≡ 1
+		// mod p. Thus a^de ≡ a mod n for all a coprime to n, as required.
+
+		p.Sub(one, N)
+		if p.IsZero() == 1 {
+			return errors.New("crypto/rsa: invalid prime")
+		}
+		pMinus1, err := bigmod.NewModulus(p.Bytes(N))
+		if err != nil {
+			return fmt.Errorf("crypto/rsa: internal error: %v", err)
+		}
+
+		e, err := bigmod.NewNat().SetUint(uint(pub.E), pMinus1)
+		if err != nil {
+			return fmt.Errorf("crypto/rsa: invalid public exponent: %v", err)
+		}
+		one, err := bigmod.NewNat().SetUint(1, pMinus1)
+		if err != nil {
+			return fmt.Errorf("crypto/rsa: internal error: %v", err)
+		}
+
+		de := bigmod.NewNat()
+		de.Mod(d, pMinus1)
+		de.Mul(e, pMinus1)
+		de.Sub(one, pMinus1)
+		if de.IsZero() != 1 {
 			return errors.New("crypto/rsa: invalid exponents")
 		}
 	}
+	// Check that Πprimes == n.
+	if Π.IsZero() != 1 {
+		return errors.New("crypto/rsa: invalid modulus")
+	}
+
 	return nil
+}
+
+// rsa1024min is a GODEBUG that re-enables weak RSA keys if set to "0".
+// See https://go.dev/issue/68762.
+var rsa1024min = godebug.New("rsa1024min")
+
+func checkKeySize(size int) error {
+	if size >= 1024 {
+		return nil
+	}
+	if rsa1024min.Value() == "0" {
+		rsa1024min.IncNonDefault()
+		return nil
+	}
+	return fmt.Errorf("crypto/rsa: %d-bit keys are insecure (see https://go.dev/pkg/crypto/rsa#hdr-Minimum_key_size)", size)
+}
+
+func checkPublicKeySize(k *PublicKey) error {
+	if k.N == nil {
+		return errors.New("crypto/rsa: missing public modulus")
+	}
+	return checkKeySize(k.N.BitLen())
 }
 
 // GenerateKey generates a random RSA private key of the given bit size.
 //
+// If bits is less than 1024, [GenerateKey] returns an error. See the "[Minimum
+// key size]" section for further details.
+//
 // Most applications should use [crypto/rand.Reader] as rand. Note that the
 // returned key does not depend deterministically on the bytes read from rand,
 // and may change between calls and/or between versions.
+//
+// [Minimum key size]: #hdr-Minimum_key_size
 func GenerateKey(random io.Reader, bits int) (*PrivateKey, error) {
+	if err := checkKeySize(bits); err != nil {
+		return nil, err
+	}
 	return GenerateMultiPrimeKey(random, 2, bits)
 }
 
@@ -402,6 +482,10 @@ NextSetOfPrimes:
 	}
 
 	priv.Precompute()
+	if err := priv.Validate(); err != nil {
+		return nil, err
+	}
+
 	return priv, nil
 }
 

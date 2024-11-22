@@ -131,8 +131,12 @@ var depsRules = `
 
 	unicode !< path;
 
+	RUNTIME
+	< internal/synctest
+	< testing/synctest;
+
 	# SYSCALL is RUNTIME plus the packages necessary for basic system calls.
-	RUNTIME, unicode/utf8, unicode/utf16
+	RUNTIME, unicode/utf8, unicode/utf16, internal/synctest
 	< internal/syscall/windows/sysdll, syscall/js
 	< syscall
 	< internal/syscall/unix, internal/syscall/windows, internal/syscall/windows/registry
@@ -491,19 +495,22 @@ var depsRules = `
 
 	FIPS, sync/atomic < crypto/tls/internal/fips140tls;
 
+	FIPS, internal/godebug, hash < crypto/fips140, crypto/internal/fips140only;
+
 	NONE < crypto/internal/boring/sig, crypto/internal/boring/syso;
 	sync/atomic < crypto/internal/boring/bcache, crypto/internal/boring/fips140tls;
 	crypto/internal/boring/sig, crypto/tls/internal/fips140tls < crypto/tls/fipsonly;
 
 	# CRYPTO is core crypto algorithms - no cgo, fmt, net.
-	FIPS,
+	FIPS, crypto/internal/fips140only,
 	crypto/internal/boring/sig,
 	crypto/internal/boring/syso,
 	golang.org/x/sys/cpu,
 	hash, embed
 	< crypto
 	< crypto/subtle
-	< crypto/cipher;
+	< crypto/cipher
+	< crypto/sha3;
 
 	crypto/cipher,
 	crypto/internal/boring/bcache
@@ -519,8 +526,7 @@ var depsRules = `
 
 	crypto/hmac < crypto/pbkdf2;
 
-	# Unfortunately, stuck with reflect via encoding/binary.
-	encoding/binary, crypto/boring < golang.org/x/crypto/sha3;
+	crypto/internal/fips140/mlkem < crypto/mlkem;
 
 	crypto/aes,
 	crypto/des,
@@ -531,7 +537,7 @@ var depsRules = `
 	crypto/sha1,
 	crypto/sha256,
 	crypto/sha512,
-	golang.org/x/crypto/sha3,
+	crypto/sha3,
 	crypto/hkdf
 	< CRYPTO;
 
@@ -655,10 +661,6 @@ var depsRules = `
 
 	FMT, DEBUG, flag, runtime/trace, internal/sysinfo, math/rand
 	< testing;
-
-	RUNTIME
-	< internal/synctest
-	< testing/synctest;
 
 	log/slog, testing
 	< testing/slogtest;
