@@ -14,6 +14,14 @@ a test integration system, you can revert to the text build output by setting
 
 ### Cgo {#cgo}
 
+Cgo supports new annotations for C functions to improve run time
+performance.
+`#cgo noescape cFunctionName` tells the compiler that memory passed to
+the C function `cFunctionname` does not escape.
+`#cgo nocallback cFunctionName` tells the compiler that the C function
+`cFunctionName` does not call back to any Go functions.
+For more information, see [the cgo documentation](/pkg/cmd/cgo#hdr-Optimizing_calls_of_C_code).
+
 Cgo currently refuses to compile calls to a C function which has multiple
 incompatible declarations. For instance, if `f` is declared as both `void f(int)`
 and `void f(double)`, cgo will report an error instead of possibly generating an
@@ -28,8 +36,13 @@ tests, fuzzers, benchmarks, and examples in test packages, such as
 malformed names, incorrect signatures, or examples that document
 non-existent identifiers. Some of these mistakes may cause tests not
 to run.
-
 This analyzer is among the subset of analyzers that are run by `go test`.
+
+The existing `printf` analyzer now reports a diagnostic for calls of
+the form `fmt.Printf(s)`, where `s` is a non-constant format string,
+with no other arguments. Such calls are nearly always a mistake
+as the value of `s` may contain the `%` symbol; use `fmt.Print` instead.
+See [#60529](/issue/60529).
 
 ### GOCACHEPROG
 
