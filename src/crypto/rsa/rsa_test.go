@@ -195,7 +195,7 @@ func TestEverything(t *testing.T) {
 			t.Parallel()
 			priv, err := GenerateKey(rand.Reader, size)
 			if err != nil {
-				t.Errorf("GenerateKey(%d): %v", size, err)
+				t.Fatalf("GenerateKey(%d): %v", size, err)
 			}
 			if bits := priv.N.BitLen(); bits != size {
 				t.Errorf("key too short (%d vs %d)", bits, size)
@@ -248,8 +248,14 @@ func testEverything(t *testing.T, priv *PrivateKey) {
 		}
 	}
 
+	const hashMsg = "crypto/rsa: input must be hashed message"
+	sig, err := SignPKCS1v15(nil, priv, crypto.SHA256, msg)
+	if err == nil || err.Error() != hashMsg {
+		t.Errorf("SignPKCS1v15 with bad hash: err = %q, want %q", err, hashMsg)
+	}
+
 	hash := sha256.Sum256(msg)
-	sig, err := SignPKCS1v15(nil, priv, crypto.SHA256, hash[:])
+	sig, err = SignPKCS1v15(nil, priv, crypto.SHA256, hash[:])
 	if err == ErrMessageTooLong {
 		t.Log("key too small for SignPKCS1v15")
 	} else if err != nil {

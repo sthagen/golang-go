@@ -5,6 +5,7 @@
 package rsa
 
 import (
+	"bytes"
 	"crypto/internal/fips140"
 	"crypto/internal/fips140/bigmod"
 	"errors"
@@ -45,10 +46,7 @@ func (priv *PrivateKey) PublicKey() *PublicKey {
 //
 // All values are in big-endian byte slice format, and may have leading zeros
 // or be shorter if leading zeroes were trimmed.
-//
-// N, e, d, P, and Q are required. dP, dQ, and qInv can be nil and will be
-// precomputed if missing.
-func NewPrivateKey(N []byte, e int, d, P, Q, dP, dQ, qInv []byte) (*PrivateKey, error) {
+func NewPrivateKey(N []byte, e int, d, P, Q []byte) (*PrivateKey, error) {
 	n, err := bigmod.NewModulus(N)
 	if err != nil {
 		return nil, err
@@ -65,23 +63,79 @@ func NewPrivateKey(N []byte, e int, d, P, Q, dP, dQ, qInv []byte) (*PrivateKey, 
 	if err != nil {
 		return nil, err
 	}
-	// TODO(filippo): implement CRT computation. For now, NewPrivateKey is
-	// always called with CRT values.
-	if dP == nil || dQ == nil || qInv == nil {
-		panic("crypto/internal/fips140/rsa: internal error: missing CRT parameters")
-	}
-	qInvN, err := bigmod.NewNat().SetBytes(qInv, p)
+	return newPrivateKey(n, e, dN, p, q)
+}
+
+func newPrivateKey(n *bigmod.Modulus, e int, d *bigmod.Nat, p, q *bigmod.Modulus) (*PrivateKey, error) {
+	pMinusOne := p.Nat().SubOne(p)
+	pMinusOneMod, err := bigmod.NewModulus(pMinusOne.Bytes(p))
 	if err != nil {
 		return nil, err
 	}
+	dP := bigmod.NewNat().Mod(d, pMinusOneMod).Bytes(pMinusOneMod)
+
+	qMinusOne := q.Nat().SubOne(q)
+	qMinusOneMod, err := bigmod.NewModulus(qMinusOne.Bytes(q))
+	if err != nil {
+		return nil, err
+	}
+	dQ := bigmod.NewNat().Mod(d, qMinusOneMod).Bytes(qMinusOneMod)
+
+	// Constant-time modular inversion with prime modulus by Fermat's Little
+	// Theorem: qInv = q⁻¹ mod p = q^(p-2) mod p.
+	if p.Nat().IsOdd() == 0 {
+		// [bigmod.Nat.Exp] requires an odd modulus.
+		return nil, errors.New("crypto/rsa: p is even")
+	}
+	pMinusTwo := p.Nat().SubOne(p).SubOne(p).Bytes(p)
+	qInv := bigmod.NewNat().Mod(q.Nat(), p)
+	qInv.Exp(qInv, pMinusTwo, p)
+
+	pk := &PrivateKey{
+		pub: PublicKey{
+			N: n, E: e,
+		},
+		d: d, p: p, q: q,
+		dP: dP, dQ: dQ, qInv: qInv,
+	}
+	if err := checkPrivateKey(pk); err != nil {
+		return nil, err
+	}
+	return pk, nil
+}
+
+// NewPrivateKeyWithPrecomputation creates a new RSA private key from the given
+// parameters, which include precomputed CRT values.
+func NewPrivateKeyWithPrecomputation(N []byte, e int, d, P, Q, dP, dQ, qInv []byte) (*PrivateKey, error) {
+	n, err := bigmod.NewModulus(N)
+	if err != nil {
+		return nil, err
+	}
+	p, err := bigmod.NewModulus(P)
+	if err != nil {
+		return nil, err
+	}
+	q, err := bigmod.NewModulus(Q)
+	if err != nil {
+		return nil, err
+	}
+	dN, err := bigmod.NewNat().SetBytes(d, n)
+	if err != nil {
+		return nil, err
+	}
+	qInvNat, err := bigmod.NewNat().SetBytes(qInv, p)
+	if err != nil {
+		return nil, err
+	}
+
 	pk := &PrivateKey{
 		pub: PublicKey{
 			N: n, E: e,
 		},
 		d: dN, p: p, q: q,
-		dP: dP, dQ: dQ, qInv: qInvN,
+		dP: dP, dQ: dQ, qInv: qInvNat,
 	}
-	if err := checkPublicKey(&pk.pub); err != nil {
+	if err := checkPrivateKey(pk); err != nil {
 		return nil, err
 	}
 	return pk, nil
@@ -105,15 +159,110 @@ func NewPrivateKeyWithoutCRT(N []byte, e int, d []byte) (*PrivateKey, error) {
 		},
 		d: dN,
 	}
-	if err := checkPublicKey(&pk.pub); err != nil {
+	if err := checkPrivateKey(pk); err != nil {
 		return nil, err
 	}
 	return pk, nil
 }
 
+// Export returns the key parameters in big-endian byte slice format.
+//
+// P, Q, dP, dQ, and qInv may be nil if the key was created with
+// NewPrivateKeyWithoutCRT.
+func (priv *PrivateKey) Export() (N []byte, e int, d, P, Q, dP, dQ, qInv []byte) {
+	N = priv.pub.N.Nat().Bytes(priv.pub.N)
+	e = priv.pub.E
+	d = priv.d.Bytes(priv.pub.N)
+	if priv.dP == nil {
+		return
+	}
+	P = priv.p.Nat().Bytes(priv.p)
+	Q = priv.q.Nat().Bytes(priv.q)
+	dP = bytes.Clone(priv.dP)
+	dQ = bytes.Clone(priv.dQ)
+	qInv = priv.qInv.Bytes(priv.p)
+	return
+}
+
+func checkPrivateKey(priv *PrivateKey) error {
+	if err := checkPublicKey(&priv.pub); err != nil {
+		return err
+	}
+
+	if priv.dP == nil {
+		return nil
+	}
+
+	N := priv.pub.N
+	p := priv.p
+	q := priv.q
+
+	// Check that pq ≡ 1 mod N (and that pN < N and q < N).
+	pN := bigmod.NewNat().ExpandFor(N)
+	if _, err := pN.SetBytes(p.Nat().Bytes(p), N); err != nil {
+		return errors.New("crypto/rsa: invalid prime")
+	}
+	qN := bigmod.NewNat().ExpandFor(N)
+	if _, err := qN.SetBytes(q.Nat().Bytes(q), N); err != nil {
+		return errors.New("crypto/rsa: invalid prime")
+	}
+	if pN.Mul(qN, N).IsZero() != 1 {
+		return errors.New("crypto/rsa: p * q != n")
+	}
+
+	// Check that de ≡ 1 mod p-1, and de ≡ 1 mod q-1.
+	//
+	// This implies that e is coprime to each p-1 as e has a multiplicative
+	// inverse. Therefore e is coprime to lcm(p-1,q-1,r-1,...) = exponent(ℤ/nℤ).
+	// It also implies that a^de ≡ a mod p as a^(p-1) ≡ 1 mod p. Thus a^de ≡ a
+	// mod n for all a coprime to n, as required.
+	//
+	// This checks dP, dQ, and e. We don't check d because it is not actually
+	// used in the RSA private key operation.
+	pMinus1, err := bigmod.NewModulus(p.Nat().SubOne(p).Bytes(p))
+	if err != nil {
+		return errors.New("crypto/rsa: invalid prime")
+	}
+	dP, err := bigmod.NewNat().SetBytes(priv.dP, pMinus1)
+	if err != nil {
+		return errors.New("crypto/rsa: invalid CRT exponent")
+	}
+	de := bigmod.NewNat()
+	de.SetUint(uint(priv.pub.E)).ExpandFor(pMinus1)
+	de.Mul(dP, pMinus1)
+	if de.IsOne() != 1 {
+		return errors.New("crypto/rsa: invalid CRT exponent")
+	}
+
+	qMinus1, err := bigmod.NewModulus(q.Nat().SubOne(q).Bytes(q))
+	if err != nil {
+		return errors.New("crypto/rsa: invalid prime")
+	}
+	dQ, err := bigmod.NewNat().SetBytes(priv.dQ, qMinus1)
+	if err != nil {
+		return errors.New("crypto/rsa: invalid CRT exponent")
+	}
+	de.SetUint(uint(priv.pub.E)).ExpandFor(qMinus1)
+	de.Mul(dQ, qMinus1)
+	if de.IsOne() != 1 {
+		return errors.New("crypto/rsa: invalid CRT exponent")
+	}
+
+	// Check that qInv * q ≡ 1 mod p.
+	one := q.Nat().Mul(priv.qInv, p)
+	if one.IsOne() != 1 {
+		return errors.New("crypto/rsa: invalid CRT coefficient")
+	}
+
+	return nil
+}
+
 func checkPublicKey(pub *PublicKey) error {
 	if pub.N == nil {
 		return errors.New("crypto/rsa: missing public modulus")
+	}
+	if pub.N.Nat().IsOdd() == 0 {
+		return errors.New("crypto/rsa: public modulus is even")
 	}
 	if pub.N.BitLen() < 2048 || pub.N.BitLen() > 16384 {
 		fips140.RecordNonApproved()
@@ -121,9 +270,14 @@ func checkPublicKey(pub *PublicKey) error {
 	if pub.E < 2 {
 		return errors.New("crypto/rsa: public exponent too small or negative")
 	}
+	// e needs to be coprime with p-1 and q-1, since it must be invertible
+	// modulo λ(pq). Since p and q are prime, this means e needs to be odd.
+	if pub.E&1 == 0 {
+		return errors.New("crypto/rsa: public exponent is even")
+	}
 	// FIPS 186-5, Section 5.5(e): "The exponent e shall be an odd, positive
 	// integer such that 2¹⁶ < e < 2²⁵⁶."
-	if pub.E <= 1<<16 || pub.E&1 == 0 {
+	if pub.E <= 1<<16 {
 		fips140.RecordNonApproved()
 	}
 	// We require pub.E to fit into a 32-bit integer so that we

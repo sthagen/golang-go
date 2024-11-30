@@ -20,7 +20,8 @@
 // Decrypter and Signer interfaces from the crypto package.
 //
 // Operations involving private keys are implemented using constant-time
-// algorithms, except for [GenerateKey] and [PrivateKey.Precompute].
+// algorithms, except for [GenerateKey] and for some operations involving
+// deprecated multi-prime keys.
 //
 // # Minimum key size
 //
@@ -45,6 +46,7 @@ import (
 	"crypto/internal/boring/bbig"
 	"crypto/internal/fips140/bigmod"
 	"crypto/internal/fips140/rsa"
+	"crypto/internal/fips140only"
 	"crypto/internal/randutil"
 	"crypto/rand"
 	"crypto/subtle"
@@ -223,80 +225,22 @@ type CRTValue struct {
 
 // Validate performs basic sanity checks on the key.
 // It returns nil if the key is valid, or else an error describing a problem.
+//
+// It runs faster on valid keys if run after [Precompute].
 func (priv *PrivateKey) Validate() error {
-	pub := &priv.PublicKey
-	if pub.N == nil {
-		return errors.New("crypto/rsa: missing public modulus")
+	// We can operate on keys based on d alone, but it isn't possible to encode
+	// with [crypto/x509.MarshalPKCS1PrivateKey], which unfortunately doesn't
+	// return an error.
+	if len(priv.Primes) < 2 {
+		return errors.New("crypto/rsa: missing primes")
 	}
-	if pub.E < 2 {
-		return errors.New("crypto/rsa: public exponent is less than 2")
+	// If Precomputed.fips is set, then the key has been validated by
+	// [rsa.NewPrivateKey] or [rsa.NewPrivateKeyWithoutCRT].
+	if priv.Precomputed.fips != nil {
+		return nil
 	}
-	if pub.E > 1<<31-1 {
-		return errors.New("crypto/rsa: public exponent too large")
-	}
-
-	N, err := bigmod.NewModulus(pub.N.Bytes())
-	if err != nil {
-		return fmt.Errorf("crypto/rsa: invalid public modulus: %v", err)
-	}
-	d, err := bigmod.NewNat().SetBytes(priv.D.Bytes(), N)
-	if err != nil {
-		return fmt.Errorf("crypto/rsa: invalid private exponent: %v", err)
-	}
-	one, err := bigmod.NewNat().SetUint(1, N)
-	if err != nil {
-		return fmt.Errorf("crypto/rsa: internal error: %v", err)
-	}
-
-	Π := bigmod.NewNat().ExpandFor(N)
-	for _, prime := range priv.Primes {
-		p, err := bigmod.NewNat().SetBytes(prime.Bytes(), N)
-		if err != nil {
-			return fmt.Errorf("crypto/rsa: invalid prime: %v", err)
-		}
-		if p.IsZero() == 1 {
-			return errors.New("crypto/rsa: invalid prime")
-		}
-		Π.Mul(p, N)
-
-		// Check that de ≡ 1 mod p-1, for each prime.
-		// This implies that e is coprime to each p-1 as e has a multiplicative
-		// inverse. Therefore e is coprime to lcm(p-1,q-1,r-1,...) =
-		// exponent(ℤ/nℤ). It also implies that a^de ≡ a mod p as a^(p-1) ≡ 1
-		// mod p. Thus a^de ≡ a mod n for all a coprime to n, as required.
-
-		p.Sub(one, N)
-		if p.IsZero() == 1 {
-			return errors.New("crypto/rsa: invalid prime")
-		}
-		pMinus1, err := bigmod.NewModulus(p.Bytes(N))
-		if err != nil {
-			return fmt.Errorf("crypto/rsa: internal error: %v", err)
-		}
-
-		e, err := bigmod.NewNat().SetUint(uint(pub.E), pMinus1)
-		if err != nil {
-			return fmt.Errorf("crypto/rsa: invalid public exponent: %v", err)
-		}
-		one, err := bigmod.NewNat().SetUint(1, pMinus1)
-		if err != nil {
-			return fmt.Errorf("crypto/rsa: internal error: %v", err)
-		}
-
-		de := bigmod.NewNat()
-		de.Mod(d, pMinus1)
-		de.Mul(e, pMinus1)
-		de.Sub(one, pMinus1)
-		if de.IsZero() != 1 {
-			return errors.New("crypto/rsa: invalid exponents")
-		}
-	}
-	// Check that Πprimes == n.
-	if Π.IsZero() != 1 {
-		return errors.New("crypto/rsa: invalid modulus")
-	}
-
-	return nil
+	_, err := priv.precompute()
+	return err
 }
 
 // rsa1024min is a GODEBUG that re-enables weak RSA keys if set to "0".
@@ -335,32 +279,8 @@ func GenerateKey(random io.Reader, bits int) (*PrivateKey, error) {
 	if err := checkKeySize(bits); err != nil {
 		return nil, err
 	}
-	return GenerateMultiPrimeKey(random, 2, bits)
-}
 
-// GenerateMultiPrimeKey generates a multi-prime RSA keypair of the given bit
-// size and the given random source.
-//
-// Table 1 in "[On the Security of Multi-prime RSA]" suggests maximum numbers of
-// primes for a given bit size.
-//
-// Although the public keys are compatible (actually, indistinguishable) from
-// the 2-prime case, the private keys are not. Thus it may not be possible to
-// export multi-prime private keys in certain formats or to subsequently import
-// them into other code.
-//
-// This package does not implement CRT optimizations for multi-prime RSA, so the
-// keys with more than two primes will have worse performance.
-//
-// Deprecated: The use of this function with a number of primes different from
-// two is not recommended for the above security, compatibility, and performance
-// reasons. Use [GenerateKey] instead.
-//
-// [On the Security of Multi-prime RSA]: http://www.cacr.math.uwaterloo.ca/techreports/2006/cacr2006-16.pdf
-func GenerateMultiPrimeKey(random io.Reader, nprimes int, bits int) (*PrivateKey, error) {
-	randutil.MaybeReadByte(random)
-
-	if boring.Enabled && random == boring.RandReader && nprimes == 2 &&
+	if boring.Enabled && random == boring.RandReader &&
 		(bits == 2048 || bits == 3072 || bits == 4096) {
 		bN, bE, bD, bP, bQ, bDp, bDq, bQinv, err := boring.GenerateKeyRSA(bits)
 		if err != nil {
@@ -395,6 +315,68 @@ func GenerateMultiPrimeKey(random io.Reader, nprimes int, bits int) (*PrivateKey
 		}
 		return key, nil
 	}
+
+	if fips140only.Enabled && bits < 2048 {
+		return nil, errors.New("crypto/rsa: use of keys smaller than 2048 bits is not allowed in FIPS 140-only mode")
+	}
+	if fips140only.Enabled && bits > 16384 {
+		return nil, errors.New("crypto/rsa: use of keys larger than 16384 bits is not allowed in FIPS 140-only mode")
+	}
+
+	k, err := rsa.GenerateKey(random, bits)
+	if err != nil {
+		return nil, err
+	}
+	N, e, d, p, q, dP, dQ, qInv := k.Export()
+	key := &PrivateKey{
+		PublicKey: PublicKey{
+			N: new(big.Int).SetBytes(N),
+			E: e,
+		},
+		D: new(big.Int).SetBytes(d),
+		Primes: []*big.Int{
+			new(big.Int).SetBytes(p),
+			new(big.Int).SetBytes(q),
+		},
+		Precomputed: PrecomputedValues{
+			fips:      k,
+			Dp:        new(big.Int).SetBytes(dP),
+			Dq:        new(big.Int).SetBytes(dQ),
+			Qinv:      new(big.Int).SetBytes(qInv),
+			CRTValues: make([]CRTValue, 0), // non-nil, to match Precompute
+		},
+	}
+	return key, nil
+}
+
+// GenerateMultiPrimeKey generates a multi-prime RSA keypair of the given bit
+// size and the given random source.
+//
+// Table 1 in "[On the Security of Multi-prime RSA]" suggests maximum numbers of
+// primes for a given bit size.
+//
+// Although the public keys are compatible (actually, indistinguishable) from
+// the 2-prime case, the private keys are not. Thus it may not be possible to
+// export multi-prime private keys in certain formats or to subsequently import
+// them into other code.
+//
+// This package does not implement CRT optimizations for multi-prime RSA, so the
+// keys with more than two primes will have worse performance.
+//
+// Deprecated: The use of this function with a number of primes different from
+// two is not recommended for the above security, compatibility, and performance
+// reasons. Use [GenerateKey] instead.
+//
+// [On the Security of Multi-prime RSA]: http://www.cacr.math.uwaterloo.ca/techreports/2006/cacr2006-16.pdf
+func GenerateMultiPrimeKey(random io.Reader, nprimes int, bits int) (*PrivateKey, error) {
+	if nprimes == 2 {
+		return GenerateKey(random, bits)
+	}
+	if fips140only.Enabled {
+		return nil, errors.New("crypto/rsa: multi-prime RSA is not allowed in FIPS 140-only mode")
+	}
+
+	randutil.MaybeReadByte(random)
 
 	priv := new(PrivateKey)
 	priv.E = 65537
@@ -503,62 +485,128 @@ var ErrDecryption = errors.New("crypto/rsa: decryption error")
 var ErrVerification = errors.New("crypto/rsa: verification error")
 
 // Precompute performs some calculations that speed up private key operations
-// in the future.
+// in the future. It is safe to run on non-validated private keys.
 func (priv *PrivateKey) Precompute() {
 	if priv.Precomputed.fips != nil {
 		return
 	}
 
-	if len(priv.Primes) < 2 {
-		priv.Precomputed.fips, _ = rsa.NewPrivateKeyWithoutCRT(
-			priv.N.Bytes(), priv.E, priv.D.Bytes())
+	precomputed, err := priv.precompute()
+	if err != nil {
+		// We don't have a way to report errors, so just leave the key
+		// unmodified. Validate will re-run precompute.
 		return
 	}
+	priv.Precomputed = precomputed
+}
 
-	priv.Precomputed.Dp = new(big.Int).Sub(priv.Primes[0], bigOne)
-	priv.Precomputed.Dp.Mod(priv.D, priv.Precomputed.Dp)
+func (priv *PrivateKey) precompute() (PrecomputedValues, error) {
+	var precomputed PrecomputedValues
 
-	priv.Precomputed.Dq = new(big.Int).Sub(priv.Primes[1], bigOne)
-	priv.Precomputed.Dq.Mod(priv.D, priv.Precomputed.Dq)
+	if priv.N == nil {
+		return precomputed, errors.New("crypto/rsa: missing public modulus")
+	}
+	if priv.D == nil {
+		return precomputed, errors.New("crypto/rsa: missing private exponent")
+	}
+	if len(priv.Primes) != 2 {
+		return priv.precomputeLegacy()
+	}
+	if priv.Primes[0] == nil {
+		return precomputed, errors.New("crypto/rsa: prime P is nil")
+	}
+	if priv.Primes[1] == nil {
+		return precomputed, errors.New("crypto/rsa: prime Q is nil")
+	}
 
-	priv.Precomputed.Qinv = new(big.Int).ModInverse(priv.Primes[1], priv.Primes[0])
+	// If the CRT values are already set, use them.
+	if priv.Precomputed.Dp != nil && priv.Precomputed.Dq != nil && priv.Precomputed.Qinv != nil {
+		k, err := rsa.NewPrivateKeyWithPrecomputation(priv.N.Bytes(), priv.E, priv.D.Bytes(),
+			priv.Primes[0].Bytes(), priv.Primes[1].Bytes(),
+			priv.Precomputed.Dp.Bytes(), priv.Precomputed.Dq.Bytes(), priv.Precomputed.Qinv.Bytes())
+		if err != nil {
+			return precomputed, err
+		}
+		precomputed = priv.Precomputed
+		precomputed.fips = k
+		precomputed.CRTValues = make([]CRTValue, 0)
+		return precomputed, nil
+	}
+
+	k, err := rsa.NewPrivateKey(priv.N.Bytes(), priv.E, priv.D.Bytes(),
+		priv.Primes[0].Bytes(), priv.Primes[1].Bytes())
+	if err != nil {
+		return precomputed, err
+	}
+
+	precomputed.fips = k
+	_, _, _, _, _, dP, dQ, qInv := k.Export()
+	precomputed.Dp = new(big.Int).SetBytes(dP)
+	precomputed.Dq = new(big.Int).SetBytes(dQ)
+	precomputed.Qinv = new(big.Int).SetBytes(qInv)
+	precomputed.CRTValues = make([]CRTValue, 0)
+	return precomputed, nil
+}
+
+func (priv *PrivateKey) precomputeLegacy() (PrecomputedValues, error) {
+	var precomputed PrecomputedValues
+
+	k, err := rsa.NewPrivateKeyWithoutCRT(priv.N.Bytes(), priv.E, priv.D.Bytes())
+	if err != nil {
+		return precomputed, err
+	}
+	precomputed.fips = k
+
+	if len(priv.Primes) < 2 {
+		return precomputed, nil
+	}
+
+	// Ensure the Mod and ModInverse calls below don't panic.
+	for _, prime := range priv.Primes {
+		if prime == nil {
+			return precomputed, errors.New("crypto/rsa: prime factor is nil")
+		}
+		if prime.Cmp(bigOne) <= 0 {
+			return precomputed, errors.New("crypto/rsa: prime factor is <= 1")
+		}
+	}
+
+	precomputed.Dp = new(big.Int).Sub(priv.Primes[0], bigOne)
+	precomputed.Dp.Mod(priv.D, precomputed.Dp)
+
+	precomputed.Dq = new(big.Int).Sub(priv.Primes[1], bigOne)
+	precomputed.Dq.Mod(priv.D, precomputed.Dq)
+
+	precomputed.Qinv = new(big.Int).ModInverse(priv.Primes[1], priv.Primes[0])
+	if precomputed.Qinv == nil {
+		return precomputed, errors.New("crypto/rsa: prime factors are not relatively prime")
+	}
 
 	r := new(big.Int).Mul(priv.Primes[0], priv.Primes[1])
-	priv.Precomputed.CRTValues = make([]CRTValue, len(priv.Primes)-2)
+	precomputed.CRTValues = make([]CRTValue, len(priv.Primes)-2)
 	for i := 2; i < len(priv.Primes); i++ {
 		prime := priv.Primes[i]
-		values := &priv.Precomputed.CRTValues[i-2]
+		values := &precomputed.CRTValues[i-2]
 
 		values.Exp = new(big.Int).Sub(prime, bigOne)
 		values.Exp.Mod(priv.D, values.Exp)
 
 		values.R = new(big.Int).Set(r)
 		values.Coeff = new(big.Int).ModInverse(r, prime)
+		if values.Coeff == nil {
+			return precomputed, errors.New("crypto/rsa: prime factors are not relatively prime")
+		}
 
 		r.Mul(r, prime)
 	}
 
-	// Errors are discarded because we don't have a way to report them.
-	// Anything that relies on Precomputed.fips will need to check for nil.
-	if len(priv.Primes) == 2 {
-		priv.Precomputed.fips, _ = rsa.NewPrivateKey(
-			priv.N.Bytes(), priv.E, priv.D.Bytes(),
-			priv.Primes[0].Bytes(), priv.Primes[1].Bytes(),
-			priv.Precomputed.Dp.Bytes(), priv.Precomputed.Dq.Bytes(),
-			priv.Precomputed.Qinv.Bytes())
-	} else {
-		priv.Precomputed.fips, _ = rsa.NewPrivateKeyWithoutCRT(
-			priv.N.Bytes(), priv.E, priv.D.Bytes())
-	}
+	return precomputed, nil
 }
 
 func fipsPublicKey(pub *PublicKey) (*rsa.PublicKey, error) {
 	N, err := bigmod.NewModulus(pub.N.Bytes())
 	if err != nil {
 		return nil, err
-	}
-	if pub.E < 0 {
-		return nil, errors.New("crypto/rsa: negative public exponent")
 	}
 	return &rsa.PublicKey{N: N, E: pub.E}, nil
 }
@@ -567,11 +615,9 @@ func fipsPrivateKey(priv *PrivateKey) (*rsa.PrivateKey, error) {
 	if priv.Precomputed.fips != nil {
 		return priv.Precomputed.fips, nil
 	}
-	// Make a copy of the private key to avoid modifying the original.
-	k := *priv
-	k.Precompute()
-	if k.Precomputed.fips == nil {
-		return nil, errors.New("crypto/rsa: invalid private key")
+	precomputed, err := priv.precompute()
+	if err != nil {
+		return nil, err
 	}
-	return k.Precomputed.fips, nil
+	return precomputed.fips, nil
 }
