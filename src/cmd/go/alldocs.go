@@ -2210,7 +2210,10 @@
 //		Build the listed main package, plus all packages it imports,
 //		into a C shared library. The only callable symbols will
 //		be those functions exported using a cgo //export comment.
-//		Requires exactly one main package to be listed.
+//		On wasip1, this mode builds it to a WASI reactor/library,
+//		of which the callable symbols are those functions exported
+//		using a //go:wasmexport directive. Requires exactly one
+//		main package to be listed.
 //
 //	-buildmode=default
 //		Listed main packages are built into executables and listed
@@ -3063,7 +3066,7 @@
 // If no import paths are given, the action applies to the
 // package in the current directory.
 //
-// There are four reserved names for paths that should not be used
+// There are five reserved names for paths that should not be used
 // for packages to be built with the go tool:
 //
 // - "main" denotes the top-level package in a stand-alone executable.
@@ -3077,6 +3080,8 @@
 //
 // - "cmd" expands to the Go repository's commands and their
 // internal libraries.
+//
+// - "tool" expands to the tools defined in the current module's go.mod file.
 //
 // Package names match against fully-qualified import paths or patterns that
 // match against any number of import paths. For instance, "fmt" refers to the

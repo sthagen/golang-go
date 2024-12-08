@@ -18,7 +18,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -66,6 +65,7 @@ func isGccgoTool(tool string) bool {
 
 func init() {
 	base.AddChdirFlag(&CmdTool.Flag)
+	base.AddModCommonFlags(&CmdTool.Flag)
 	CmdTool.Flag.BoolVar(&toolN, "n", false, "")
 }
 
@@ -249,13 +249,19 @@ func impersonateDistList(args []string) (handled bool) {
 	return true
 }
 
+func defaultExecName(importPath string) string {
+	var p load.Package
+	p.ImportPath = importPath
+	return p.DefaultExecName()
+}
+
 func loadModTool(ctx context.Context, name string) string {
 	modload.InitWorkfile()
 	modload.LoadModFile(ctx)
 
 	matches := []string{}
 	for tool := range modload.MainModules.Tools() {
-		if tool == name || path.Base(tool) == name {
+		if tool == name || defaultExecName(tool) == name {
 			matches = append(matches, tool)
 		}
 	}
@@ -287,7 +293,7 @@ func buildAndRunModtool(ctx context.Context, tool string, args []string) {
 	pkgOpts := load.PackageOpts{MainOnly: true}
 	p := load.PackagesAndErrors(ctx, pkgOpts, []string{tool})[0]
 	p.Internal.OmitDebug = true
-	p.Internal.ExeName = path.Base(p.ImportPath)
+	p.Internal.ExeName = p.DefaultExecName()
 
 	a1 := b.LinkAction(work.ModeBuild, work.ModeBuild, p)
 	a1.CacheExecutable = true
@@ -303,12 +309,18 @@ func runBuiltTool(b *work.Builder, ctx context.Context, a *work.Action) error {
 		return nil
 	}
 
+	// Use same environment go run uses to start the executable:
+	// the original environment with cfg.GOROOTbin added to the path.
+	env := slices.Clip(cfg.OrigEnv)
+	env = base.AppendPATH(env)
+
 	toolCmd := &exec.Cmd{
 		Path:   cmdline[0],
 		Args:   cmdline,
 		Stdin:  os.Stdin,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
+		Env:    env,
 	}
 	err := toolCmd.Start()
 	if err == nil {
