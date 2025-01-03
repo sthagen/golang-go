@@ -1797,6 +1797,8 @@ func isEnvSet(evar string) bool {
 }
 
 func (t *tester) fipsSupported() bool {
+	// Keep this in sync with [crypto/internal/fips140.Supported].
+
 	// Use GOFIPS140 or GOEXPERIMENT=boringcrypto, but not both.
 	if strings.Contains(goexperiment, "boringcrypto") {
 		return false
@@ -1810,6 +1812,7 @@ func (t *tester) fipsSupported() bool {
 	case goarch == "wasm",
 		goos == "windows" && goarch == "386",
 		goos == "windows" && goarch == "arm",
+		goos == "openbsd",
 		goos == "aix":
 		return false
 	}
