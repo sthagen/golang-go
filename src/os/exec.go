@@ -17,26 +17,6 @@ import (
 // ErrProcessDone indicates a [Process] has finished.
 var ErrProcessDone = errors.New("os: process already finished")
 
-type processMode uint8
-
-const (
-	// modePID means that Process operations such use the raw PID from the
-	// Pid field. handle is not used.
-	//
-	// This may be due to the host not supporting handles, or because
-	// Process was created as a literal, leaving handle unset.
-	//
-	// This must be the zero value so Process literals get modePID.
-	modePID processMode = iota
-
-	// modeHandle means that Process operations use handle, which is
-	// initialized with an OS process handle.
-	//
-	// Note that Release and Wait will deactivate and eventually close the
-	// handle, so acquire may fail, indicating the reason.
-	modeHandle
-)
-
 type processStatus uint64
 
 const (
@@ -58,15 +38,13 @@ const (
 type Process struct {
 	Pid int
 
-	mode processMode
-
 	// State contains the atomic process state.
 	//
-	// In modePID, this consists only of the processStatus fields, which
-	// indicate if the process is done/released.
+	// If handle is nil, this consists only of the processStatus fields,
+	// which indicate if the process is done/released.
 	//
-	// In modeHandle, the lower bits also contain a reference count for the
-	// handle field.
+	// In handle is not nil, the lower bits also contain a reference
+	// count for the handle field.
 	//
 	// The Process itself initially holds 1 persistent reference. Any
 	// operation that uses the handle with a system call temporarily holds
@@ -87,35 +65,91 @@ type Process struct {
 	// errors returned by concurrent calls.
 	state atomic.Uint64
 
-	// Used only in modePID.
+	// Used only when handle is nil
 	sigMu sync.RWMutex // avoid race between wait and signal
 
-	// handle is the OS handle for process actions, used only in
-	// modeHandle.
+	// handle, if not nil, is a pointer to a struct
+	// that holds the OS-specific process handle.
+	// This pointer is set when Process is created,
+	// and never changed afterward.
+	// This is a pointer to a separate memory allocation
+	// so that we can use runtime.AddCleanup.
+	handle *processHandle
+}
+
+// processHandle holds an operating system handle to a process.
+// This is only used on systems that support that concept,
+// currently Linux and Windows.
+// This maintains a reference count to the handle,
+// and closes the handle when the reference drops to zero.
+type processHandle struct {
+	// The actual handle. This field should not be used directly.
+	// Instead, use the acquire and release methods.
 	//
-	// handle must be accessed only via the handleTransientAcquire method
-	// (or during closeHandle), not directly! handle is immutable.
-	//
-	// On Windows, it is a handle from OpenProcess.
-	// On Linux, it is a pidfd.
-	// It is unused on other GOOSes.
+	// On Windows this is a handle returned by OpenProcess.
+	// On Linux this is a pidfd.
 	handle uintptr
+
+	// Number of active references. When this drops to zero
+	// the handle is closed.
+	refs atomic.Int32
+}
+
+// acquire adds a reference and returns the handle.
+// The bool result reports whether acquire succeeded;
+// it fails if the handle is already closed.
+// Every successful call to acquire should be paired with a call to release.
+func (ph *processHandle) acquire() (uintptr, bool) {
+	for {
+		refs := ph.refs.Load()
+		if refs < 0 {
+			panic("internal error: negative process handle reference count")
+		}
+		if refs == 0 {
+			return 0, false
+		}
+		if ph.refs.CompareAndSwap(refs, refs+1) {
+			return ph.handle, true
+		}
+	}
+}
+
+// release releases a reference to the handle.
+func (ph *processHandle) release() {
+	for {
+		refs := ph.refs.Load()
+		if refs <= 0 {
+			panic("internal error: too many releases of process handle")
+		}
+		if ph.refs.CompareAndSwap(refs, refs-1) {
+			if refs == 1 {
+				ph.closeHandle()
+			}
+			return
+		}
+	}
 }
 
 func newPIDProcess(pid int) *Process {
 	p := &Process{
-		Pid:  pid,
-		mode: modePID,
+		Pid: pid,
 	}
 	runtime.SetFinalizer(p, (*Process).Release)
 	return p
 }
 
 func newHandleProcess(pid int, handle uintptr) *Process {
+	ph := &processHandle{
+		handle: handle,
+	}
+
+	// Start the reference count as 1,
+	// meaning the reference from the returned Process.
+	ph.refs.Store(1)
+
 	p := &Process{
 		Pid:    pid,
-		mode:   modeHandle,
-		handle: handle,
+		handle: ph,
 	}
 	p.state.Store(1) // 1 persistent reference
 	runtime.SetFinalizer(p, (*Process).Release)
@@ -124,10 +158,7 @@ func newHandleProcess(pid int, handle uintptr) *Process {
 
 func newDoneProcess(pid int) *Process {
 	p := &Process{
-		Pid:  pid,
-		mode: modeHandle,
-		// N.B Since we set statusDone, handle will never actually be
-		// used, so its value doesn't matter.
+		Pid: pid,
 	}
 	p.state.Store(uint64(statusDone)) // No persistent reference, as there is no handle.
 	runtime.SetFinalizer(p, (*Process).Release)
@@ -135,7 +166,7 @@ func newDoneProcess(pid int) *Process {
 }
 
 func (p *Process) handleTransientAcquire() (uintptr, processStatus) {
-	if p.mode != modeHandle {
+	if p.handle == nil {
 		panic("handleTransientAcquire called in invalid mode")
 	}
 
@@ -148,12 +179,16 @@ func (p *Process) handleTransientAcquire() (uintptr, processStatus) {
 		if !p.state.CompareAndSwap(refs, new) {
 			continue
 		}
-		return p.handle, statusOK
+		h, ok := p.handle.acquire()
+		if !ok {
+			panic("inconsistent reference counts")
+		}
+		return h, statusOK
 	}
 }
 
 func (p *Process) handleTransientRelease() {
-	if p.mode != modeHandle {
+	if p.handle == nil {
 		panic("handleTransientRelease called in invalid mode")
 	}
 
@@ -179,9 +214,7 @@ func (p *Process) handleTransientRelease() {
 		if !p.state.CompareAndSwap(state, new) {
 			continue
 		}
-		if new&^processStatusMask == 0 {
-			p.closeHandle()
-		}
+		p.handle.release()
 		return
 	}
 }
@@ -192,7 +225,7 @@ func (p *Process) handleTransientRelease() {
 // Returns the status prior to this call. If this is not statusOK, then the
 // reference was not dropped or status changed.
 func (p *Process) handlePersistentRelease(reason processStatus) processStatus {
-	if p.mode != modeHandle {
+	if p.handle == nil {
 		panic("handlePersistentRelease called in invalid mode")
 	}
 
@@ -216,15 +249,13 @@ func (p *Process) handlePersistentRelease(reason processStatus) processStatus {
 		if !p.state.CompareAndSwap(refs, new) {
 			continue
 		}
-		if new&^processStatusMask == 0 {
-			p.closeHandle()
-		}
+		p.handle.release()
 		return status
 	}
 }
 
 func (p *Process) pidStatus() processStatus {
-	if p.mode != modePID {
+	if p.handle != nil {
 		panic("pidStatus called in invalid mode")
 	}
 
@@ -232,7 +263,7 @@ func (p *Process) pidStatus() processStatus {
 }
 
 func (p *Process) pidDeactivate(reason processStatus) {
-	if p.mode != modePID {
+	if p.handle != nil {
 		panic("pidDeactivate called in invalid mode")
 	}
 
