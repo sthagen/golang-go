@@ -17,53 +17,30 @@ import (
 // ErrProcessDone indicates a [Process] has finished.
 var ErrProcessDone = errors.New("os: process already finished")
 
-type processStatus uint64
+type processStatus uint32
 
 const (
-	// PID/handle OK to use.
-	statusOK processStatus = 0
+	// statusOK means that the Process is ready to use.
+	statusOK processStatus = iota
 
 	// statusDone indicates that the PID/handle should not be used because
 	// the process is done (has been successfully Wait'd on).
-	statusDone processStatus = 1 << 62
+	statusDone
 
 	// statusReleased indicates that the PID/handle should not be used
 	// because the process is released.
-	statusReleased processStatus = 1 << 63
-
-	processStatusMask = 0x3 << 62
+	statusReleased
 )
 
 // Process stores the information about a process created by [StartProcess].
 type Process struct {
 	Pid int
 
-	// State contains the atomic process state.
+	// state contains the atomic process state.
 	//
-	// If handle is nil, this consists only of the processStatus fields,
+	// This consists of the processStatus fields,
 	// which indicate if the process is done/released.
-	//
-	// In handle is not nil, the lower bits also contain a reference
-	// count for the handle field.
-	//
-	// The Process itself initially holds 1 persistent reference. Any
-	// operation that uses the handle with a system call temporarily holds
-	// an additional transient reference. This prevents the handle from
-	// being closed prematurely, which could result in the OS allocating a
-	// different handle with the same value, leading to Process' methods
-	// operating on the wrong process.
-	//
-	// Release and Wait both drop the Process' persistent reference, but
-	// other concurrent references may delay actually closing the handle
-	// because they hold a transient reference.
-	//
-	// Regardless, we want new method calls to immediately treat the handle
-	// as unavailable after Release or Wait to avoid extending this delay.
-	// This is achieved by setting either processStatus flag when the
-	// Process' persistent reference is dropped. The only difference in the
-	// flags is the reason the handle is unavailable, which affects the
-	// errors returned by concurrent calls.
-	state atomic.Uint64
+	state atomic.Uint32
 
 	// Used only when handle is nil
 	sigMu sync.RWMutex // avoid race between wait and signal
@@ -151,7 +128,6 @@ func newHandleProcess(pid int, handle uintptr) *Process {
 		Pid:    pid,
 		handle: ph,
 	}
-	p.state.Store(1) // 1 persistent reference
 	runtime.SetFinalizer(p, (*Process).Release)
 	return p
 }
@@ -160,7 +136,7 @@ func newDoneProcess(pid int) *Process {
 	p := &Process{
 		Pid: pid,
 	}
-	p.state.Store(uint64(statusDone)) // No persistent reference, as there is no handle.
+	p.state.Store(uint32(statusDone)) // No persistent reference, as there is no handle.
 	runtime.SetFinalizer(p, (*Process).Release)
 	return p
 }
@@ -170,53 +146,31 @@ func (p *Process) handleTransientAcquire() (uintptr, processStatus) {
 		panic("handleTransientAcquire called in invalid mode")
 	}
 
-	for {
-		refs := p.state.Load()
-		if refs&processStatusMask != 0 {
-			return 0, processStatus(refs & processStatusMask)
-		}
-		new := refs + 1
-		if !p.state.CompareAndSwap(refs, new) {
-			continue
-		}
-		h, ok := p.handle.acquire()
-		if !ok {
-			panic("inconsistent reference counts")
-		}
+	status := processStatus(p.state.Load())
+	if status != statusOK {
+		return 0, status
+	}
+	h, ok := p.handle.acquire()
+	if ok {
 		return h, statusOK
 	}
+
+	// This case means that the handle has been closed.
+	// We always set the status to non-zero before closing the handle.
+	// If we get here the status must have been set non-zero after
+	// we just checked it above.
+	status = processStatus(p.state.Load())
+	if status == statusOK {
+		panic("inconsistent process status")
+	}
+	return 0, status
 }
 
 func (p *Process) handleTransientRelease() {
 	if p.handle == nil {
 		panic("handleTransientRelease called in invalid mode")
 	}
-
-	for {
-		state := p.state.Load()
-		refs := state &^ processStatusMask
-		status := processStatus(state & processStatusMask)
-		if refs == 0 {
-			// This should never happen because
-			// handleTransientRelease is always paired with
-			// handleTransientAcquire.
-			panic("release of handle with refcount 0")
-		}
-		if refs == 1 && status == statusOK {
-			// Process holds a persistent reference and always sets
-			// a status when releasing that reference
-			// (handlePersistentRelease). Thus something has gone
-			// wrong if this is the last release but a status has
-			// not always been set.
-			panic("final release of handle without processStatus")
-		}
-		new := state - 1
-		if !p.state.CompareAndSwap(state, new) {
-			continue
-		}
-		p.handle.release()
-		return
-	}
+	p.handle.release()
 }
 
 // Drop the Process' persistent reference on the handle, deactivating future
@@ -230,8 +184,8 @@ func (p *Process) handlePersistentRelease(reason processStatus) processStatus {
 	}
 
 	for {
-		refs := p.state.Load()
-		status := processStatus(refs & processStatusMask)
+		state := p.state.Load()
+		status := processStatus(state)
 		if status != statusOK {
 			// Both Release and successful Wait will drop the
 			// Process' persistent reference on the handle. We
@@ -240,13 +194,7 @@ func (p *Process) handlePersistentRelease(reason processStatus) processStatus {
 			// reference is dropped exactly once.
 			return status
 		}
-		if refs == 0 {
-			// This should never happen because dropping the
-			// persistent reference always sets a status.
-			panic("release of handle with refcount 0")
-		}
-		new := (refs - 1) | uint64(reason)
-		if !p.state.CompareAndSwap(refs, new) {
+		if !p.state.CompareAndSwap(state, uint32(reason)) {
 			continue
 		}
 		p.handle.release()
@@ -275,7 +223,7 @@ func (p *Process) pidDeactivate(reason processStatus) {
 	// racing Release and Wait, Wait may successfully wait on the process,
 	// returning the wait status, while future calls error with "process
 	// released" rather than "process done".
-	p.state.CompareAndSwap(0, uint64(reason))
+	p.state.CompareAndSwap(0, uint32(reason))
 }
 
 // ProcAttr holds the attributes that will be applied to a new process
