@@ -11,15 +11,12 @@ setlocal
 
 if exist make.bat goto ok
 echo race.bat must be run from go\src
-:: cannot exit: would kill parent command interpreter
-goto end
+exit /b 1
 :ok
 
 set GOROOT=%CD%\..
-call .\make.bat --dist-tool >NUL
-if errorlevel 1 goto fail
-.\cmd\dist\dist.exe env -w -p >env.bat
-if errorlevel 1 goto fail
+call .\make.bat --dist-tool >NUL || goto fail
+.\cmd\dist\dist.exe env -w -p >env.bat || goto fail
 call .\env.bat
 del env.bat
 
@@ -28,24 +25,14 @@ echo Race detector is only supported on windows/amd64.
 goto fail
 
 :continue
-call .\make.bat --no-banner --no-local
-if %GOBUILDFAIL%==1 goto end
+call .\make.bat --no-banner || goto fail
 echo # go install -race std
-go install -race std
-if errorlevel 1 goto fail
+go install -race std || goto fail
+go tool dist test -race || goto fail
 
-go tool dist test -race
-
-if errorlevel 1 goto fail
-goto succ
+echo All tests passed.
+goto :eof
 
 :fail
-set GOBUILDFAIL=1
 echo Fail.
-goto end
-
-:succ
-echo All tests passed.
-
-:end
-if x%GOBUILDEXIT%==x1 exit %GOBUILDFAIL%
+exit /b 1

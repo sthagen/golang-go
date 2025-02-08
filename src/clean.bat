@@ -6,10 +6,7 @@
 
 setlocal
 
-set GOBUILDFAIL=0
-
-go tool dist env -w -p >env.bat
-if errorlevel 1 goto fail
+go tool dist env -w -p >env.bat || goto fail
 call .\env.bat
 del env.bat
 echo.
@@ -23,10 +20,7 @@ goto fail
 "%GOBIN%\go" tool dist clean
 "%GOBIN%\go" clean -i cmd
 
-goto end
+goto :eof
 
 :fail
-set GOBUILDFAIL=1
-
-:end
-if x%GOBUILDEXIT%==x1 exit %GOBUILDFAIL%
+exit /b 1

@@ -21,21 +21,28 @@ package fipstest
 import (
 	"bufio"
 	"bytes"
+	"crypto/elliptic"
 	"crypto/internal/cryptotest"
 	"crypto/internal/fips140"
+	"crypto/internal/fips140/aes"
+	"crypto/internal/fips140/aes/gcm"
 	"crypto/internal/fips140/ecdsa"
+	"crypto/internal/fips140/ed25519"
+	"crypto/internal/fips140/edwards25519"
 	"crypto/internal/fips140/hmac"
 	"crypto/internal/fips140/mlkem"
 	"crypto/internal/fips140/pbkdf2"
 	"crypto/internal/fips140/sha256"
 	"crypto/internal/fips140/sha3"
 	"crypto/internal/fips140/sha512"
+	"crypto/rand"
 	_ "embed"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"internal/testenv"
 	"io"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,6 +77,20 @@ type command struct {
 	handler      commandHandler
 }
 
+type ecdsaSigType int
+
+const (
+	ecdsaSigTypeNormal ecdsaSigType = iota
+	ecdsaSigTypeDeterministic
+)
+
+type aesDirection int
+
+const (
+	aesEncrypt aesDirection = iota
+	aesDecrypt
+)
+
 var (
 	// SHA2 algorithm capabilities:
 	//   https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html#section-7.2
@@ -81,6 +102,12 @@ var (
 	//   https://pages.nist.gov/ACVP/draft-celi-acvp-ml-kem.html#section-7.3
 	// HMAC DRBG algorithm capabilities:
 	//   https://pages.nist.gov/ACVP/draft-vassilev-acvp-drbg.html#section-7.2
+	// EDDSA algorithm capabilities:
+	//   https://pages.nist.gov/ACVP/draft-celi-acvp-eddsa.html#section-7
+	// ECDSA and DetECDSA algorithm capabilities:
+	//   https://pages.nist.gov/ACVP/draft-fussell-acvp-ecdsa.html#section-7
+	// AES algorithm capabilities:
+	//   https://pages.nist.gov/ACVP/draft-celi-acvp-symmetric.html#section-7.3
 	//go:embed acvp_capabilities.json
 	capabilitiesJson []byte
 
@@ -142,6 +169,26 @@ var (
 		"hmacDRBG/SHA3-256":     cmdHmacDrbgAft(func() fips140.Hash { return sha3.New256() }),
 		"hmacDRBG/SHA3-384":     cmdHmacDrbgAft(func() fips140.Hash { return sha3.New384() }),
 		"hmacDRBG/SHA3-512":     cmdHmacDrbgAft(func() fips140.Hash { return sha3.New512() }),
+
+		"EDDSA/keyGen": cmdEddsaKeyGenAft(),
+		"EDDSA/keyVer": cmdEddsaKeyVerAft(),
+		"EDDSA/sigGen": cmdEddsaSigGenAftBft(),
+		"EDDSA/sigVer": cmdEddsaSigVerAft(),
+
+		"ECDSA/keyGen":    cmdEcdsaKeyGenAft(),
+		"ECDSA/keyVer":    cmdEcdsaKeyVerAft(),
+		"ECDSA/sigGen":    cmdEcdsaSigGenAft(ecdsaSigTypeNormal),
+		"ECDSA/sigVer":    cmdEcdsaSigVerAft(),
+		"DetECDSA/sigGen": cmdEcdsaSigGenAft(ecdsaSigTypeDeterministic),
+
+		"AES-CBC/encrypt":        cmdAesCbc(aesEncrypt),
+		"AES-CBC/decrypt":        cmdAesCbc(aesDecrypt),
+		"AES-CTR/encrypt":        cmdAesCtr(aesEncrypt),
+		"AES-CTR/decrypt":        cmdAesCtr(aesDecrypt),
+		"AES-GCM/seal":           cmdAesGcmSeal(false),
+		"AES-GCM/open":           cmdAesGcmOpen(false),
+		"AES-GCM-randnonce/seal": cmdAesGcmSeal(true),
+		"AES-GCM-randnonce/open": cmdAesGcmOpen(true),
 	}
 )
 
@@ -397,6 +444,336 @@ func cmdPbkdf() command {
 	}
 }
 
+func cmdEddsaKeyGenAft() command {
+	return command{
+		requiredArgs: 1, // Curve name
+		handler: func(args [][]byte) ([][]byte, error) {
+			if string(args[0]) != "ED-25519" {
+				return nil, fmt.Errorf("unsupported EDDSA curve: %q", args[0])
+			}
+
+			sk, err := ed25519.GenerateKey()
+			if err != nil {
+				return nil, fmt.Errorf("generating EDDSA keypair: %w", err)
+			}
+
+			// EDDSA/keyGen/AFT responses are d & q, described[0] as:
+			//   d	The encoded private key point
+			//   q	The encoded public key point
+			//
+			// Contrary to the description of a "point", d is the private key
+			// seed bytes per FIPS.186-5[1] A.2.3.
+			//
+			// [0]: https://pages.nist.gov/ACVP/draft-celi-acvp-eddsa.html#section-9.1
+			// [1]: https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-5.pdf
+			return [][]byte{sk.Seed(), sk.PublicKey()}, nil
+		},
+	}
+}
+
+func cmdEddsaKeyVerAft() command {
+	return command{
+		requiredArgs: 2, // Curve name, Q
+		handler: func(args [][]byte) ([][]byte, error) {
+			if string(args[0]) != "ED-25519" {
+				return nil, fmt.Errorf("unsupported EDDSA curve: %q", args[0])
+			}
+
+			// Verify the point is on the curve. The higher-level ed25519 API does
+			// this at signature verification time so we have to use the lower-level
+			// edwards25519 package to do it here in absence of a signature to verify.
+			if _, err := new(edwards25519.Point).SetBytes(args[1]); err != nil {
+				return [][]byte{{0}}, nil
+			}
+
+			return [][]byte{{1}}, nil
+		},
+	}
+}
+
+func cmdEddsaSigGenAftBft() command {
+	return command{
+		requiredArgs: 5, // Curve name, private key seed, message, prehash, context
+		handler: func(args [][]byte) ([][]byte, error) {
+			if string(args[0]) != "ED-25519" {
+				return nil, fmt.Errorf("unsupported EDDSA curve: %q", args[0])
+			}
+
+			sk, err := ed25519.NewPrivateKeyFromSeed(args[1])
+			if err != nil {
+				return nil, fmt.Errorf("error creating private key: %w", err)
+			}
+			msg := args[2]
+			prehash := args[3]
+			context := string(args[4])
+
+			var sig []byte
+			if prehash[0] == 1 {
+				h := sha512.New()
+				h.Write(msg)
+				msg = h.Sum(nil)
+
+				// With ed25519 the context is only specified for sigGen tests when using prehashing.
+				// See https://pages.nist.gov/ACVP/draft-celi-acvp-eddsa.html#section-8.6
+				sig, err = ed25519.SignPH(sk, msg, context)
+				if err != nil {
+					return nil, fmt.Errorf("error signing message: %w", err)
+				}
+			} else {
+				sig = ed25519.Sign(sk, msg)
+			}
+
+			return [][]byte{sig}, nil
+		},
+	}
+}
+
+func cmdEddsaSigVerAft() command {
+	return command{
+		requiredArgs: 5, // Curve name, message, public key, signature, prehash
+		handler: func(args [][]byte) ([][]byte, error) {
+			if string(args[0]) != "ED-25519" {
+				return nil, fmt.Errorf("unsupported EDDSA curve: %q", args[0])
+			}
+
+			msg := args[1]
+			pk, err := ed25519.NewPublicKey(args[2])
+			if err != nil {
+				return nil, fmt.Errorf("invalid public key: %w", err)
+			}
+			sig := args[3]
+			prehash := args[4]
+
+			if prehash[0] == 1 {
+				h := sha512.New()
+				h.Write(msg)
+				msg = h.Sum(nil)
+				// Context is only specified for sigGen, not sigVer.
+				// See https://pages.nist.gov/ACVP/draft-celi-acvp-eddsa.html#section-8.6
+				err = ed25519.VerifyPH(pk, msg, sig, "")
+			} else {
+				err = ed25519.Verify(pk, msg, sig)
+			}
+
+			if err != nil {
+				return [][]byte{{0}}, nil
+			}
+
+			return [][]byte{{1}}, nil
+		},
+	}
+}
+
+func cmdEcdsaKeyGenAft() command {
+	return command{
+		requiredArgs: 1, // Curve name
+		handler: func(args [][]byte) ([][]byte, error) {
+			curve, err := lookupCurve(string(args[0]))
+			if err != nil {
+				return nil, err
+			}
+
+			var sk *ecdsa.PrivateKey
+			switch curve.Params() {
+			case elliptic.P224().Params():
+				sk, err = ecdsa.GenerateKey(ecdsa.P224(), rand.Reader)
+			case elliptic.P256().Params():
+				sk, err = ecdsa.GenerateKey(ecdsa.P256(), rand.Reader)
+			case elliptic.P384().Params():
+				sk, err = ecdsa.GenerateKey(ecdsa.P384(), rand.Reader)
+			case elliptic.P521().Params():
+				sk, err = ecdsa.GenerateKey(ecdsa.P521(), rand.Reader)
+			default:
+				return nil, fmt.Errorf("unsupported curve: %v", curve)
+			}
+
+			if err != nil {
+				return nil, err
+			}
+
+			pubBytes := sk.PublicKey().Bytes()
+			byteLen := (curve.Params().BitSize + 7) / 8
+
+			return [][]byte{
+				sk.Bytes(),
+				pubBytes[1 : 1+byteLen],
+				pubBytes[1+byteLen:],
+			}, nil
+		},
+	}
+}
+
+func cmdEcdsaKeyVerAft() command {
+	return command{
+		requiredArgs: 3, // Curve name, X, Y
+		handler: func(args [][]byte) ([][]byte, error) {
+			curve, err := lookupCurve(string(args[0]))
+			if err != nil {
+				return nil, err
+			}
+
+			x := new(big.Int).SetBytes(args[1])
+			y := new(big.Int).SetBytes(args[2])
+
+			if curve.IsOnCurve(x, y) {
+				return [][]byte{{1}}, nil
+			}
+
+			return [][]byte{{0}}, nil
+		},
+	}
+}
+
+// pointFromAffine is used to convert the PublicKey to a nistec SetBytes input.
+// Duplicated from crypto/ecdsa.go's pointFromAffine.
+func pointFromAffine(curve elliptic.Curve, x, y *big.Int) ([]byte, error) {
+	bitSize := curve.Params().BitSize
+	// Reject values that would not get correctly encoded.
+	if x.Sign() < 0 || y.Sign() < 0 {
+		return nil, errors.New("negative coordinate")
+	}
+	if x.BitLen() > bitSize || y.BitLen() > bitSize {
+		return nil, errors.New("overflowing coordinate")
+	}
+	// Encode the coordinates and let SetBytes reject invalid points.
+	byteLen := (bitSize + 7) / 8
+	buf := make([]byte, 1+2*byteLen)
+	buf[0] = 4 // uncompressed point
+	x.FillBytes(buf[1 : 1+byteLen])
+	y.FillBytes(buf[1+byteLen : 1+2*byteLen])
+	return buf, nil
+}
+
+func signEcdsa[P ecdsa.Point[P], H fips140.Hash](c *ecdsa.Curve[P], h func() H, sigType ecdsaSigType, q []byte, sk []byte, digest []byte) (*ecdsa.Signature, error) {
+	priv, err := ecdsa.NewPrivateKey(c, sk, q)
+	if err != nil {
+		return nil, fmt.Errorf("invalid private key: %w", err)
+	}
+
+	var sig *ecdsa.Signature
+	switch sigType {
+	case ecdsaSigTypeNormal:
+		sig, err = ecdsa.Sign(c, h, priv, rand.Reader, digest)
+	case ecdsaSigTypeDeterministic:
+		sig, err = ecdsa.SignDeterministic(c, h, priv, digest)
+	default:
+		return nil, fmt.Errorf("unsupported signature type: %v", sigType)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("signing failed: %w", err)
+	}
+
+	return sig, nil
+}
+
+func cmdEcdsaSigGenAft(sigType ecdsaSigType) command {
+	return command{
+		requiredArgs: 4, // Curve name, private key, hash name, message
+		handler: func(args [][]byte) ([][]byte, error) {
+			curve, err := lookupCurve(string(args[0]))
+			if err != nil {
+				return nil, err
+			}
+
+			sk := args[1]
+
+			newH, err := lookupHash(string(args[2]))
+			if err != nil {
+				return nil, err
+			}
+
+			msg := args[3]
+			hashFunc := newH()
+			hashFunc.Write(msg)
+			digest := hashFunc.Sum(nil)
+
+			d := new(big.Int).SetBytes(sk)
+			x, y := curve.ScalarBaseMult(d.Bytes())
+			q, err := pointFromAffine(curve, x, y)
+			if err != nil {
+				return nil, err
+			}
+
+			var sig *ecdsa.Signature
+			switch curve.Params() {
+			case elliptic.P224().Params():
+				sig, err = signEcdsa(ecdsa.P224(), newH, sigType, q, sk, digest)
+			case elliptic.P256().Params():
+				sig, err = signEcdsa(ecdsa.P256(), newH, sigType, q, sk, digest)
+			case elliptic.P384().Params():
+				sig, err = signEcdsa(ecdsa.P384(), newH, sigType, q, sk, digest)
+			case elliptic.P521().Params():
+				sig, err = signEcdsa(ecdsa.P521(), newH, sigType, q, sk, digest)
+			default:
+				return nil, fmt.Errorf("unsupported curve: %v", curve)
+			}
+			if err != nil {
+				return nil, err
+			}
+
+			return [][]byte{sig.R, sig.S}, nil
+		},
+	}
+}
+
+func cmdEcdsaSigVerAft() command {
+	return command{
+		requiredArgs: 7, // Curve name, hash name, message, X, Y, R, S
+		handler: func(args [][]byte) ([][]byte, error) {
+			curve, err := lookupCurve(string(args[0]))
+			if err != nil {
+				return nil, err
+			}
+
+			newH, err := lookupHash(string(args[1]))
+			if err != nil {
+				return nil, err
+			}
+
+			msg := args[2]
+			hashFunc := newH()
+			hashFunc.Write(msg)
+			digest := hashFunc.Sum(nil)
+
+			x, y := args[3], args[4]
+			q, err := pointFromAffine(curve, new(big.Int).SetBytes(x), new(big.Int).SetBytes(y))
+			if err != nil {
+				return nil, fmt.Errorf("invalid x/y coordinates: %v", err)
+			}
+
+			signature := &ecdsa.Signature{R: args[5], S: args[6]}
+
+			switch curve.Params() {
+			case elliptic.P224().Params():
+				err = verifyEcdsa(ecdsa.P224(), q, digest, signature)
+			case elliptic.P256().Params():
+				err = verifyEcdsa(ecdsa.P256(), q, digest, signature)
+			case elliptic.P384().Params():
+				err = verifyEcdsa(ecdsa.P384(), q, digest, signature)
+			case elliptic.P521().Params():
+				err = verifyEcdsa(ecdsa.P521(), q, digest, signature)
+			default:
+				return nil, fmt.Errorf("unsupported curve: %v", curve)
+			}
+
+			if err == nil {
+				return [][]byte{{1}}, nil
+			}
+
+			return [][]byte{{0}}, nil
+		},
+	}
+}
+
+func verifyEcdsa[P ecdsa.Point[P]](c *ecdsa.Curve[P], q []byte, digest []byte, sig *ecdsa.Signature) error {
+	pub, err := ecdsa.NewPublicKey(c, q)
+	if err != nil {
+		return fmt.Errorf("invalid public key: %w", err)
+	}
+
+	return ecdsa.Verify(c, pub, digest, sig)
+}
+
 func lookupHash(name string) (func() fips140.Hash, error) {
 	var h func() fips140.Hash
 
@@ -581,6 +958,198 @@ func cmdHmacDrbgAft(h func() fips140.Hash) command {
 			drbg.Generate(out)
 
 			return [][]byte{out}, nil
+		},
+	}
+}
+
+func lookupCurve(name string) (elliptic.Curve, error) {
+	var c elliptic.Curve
+
+	switch name {
+	case "P-224":
+		c = elliptic.P224()
+	case "P-256":
+		c = elliptic.P256()
+	case "P-384":
+		c = elliptic.P384()
+	case "P-521":
+		c = elliptic.P521()
+	default:
+		return nil, fmt.Errorf("unknown curve name: %q", name)
+	}
+
+	return c, nil
+}
+
+func cmdAesCbc(direction aesDirection) command {
+	return command{
+		requiredArgs: 4, // Key, ciphertext or plaintext, IV, num iterations
+		handler: func(args [][]byte) ([][]byte, error) {
+			if direction != aesEncrypt && direction != aesDecrypt {
+				panic("invalid AES direction")
+			}
+
+			key := args[0]
+			input := args[1]
+			iv := args[2]
+			numIterations := binary.LittleEndian.Uint32(args[3])
+
+			blockCipher, err := aes.New(key)
+			if err != nil {
+				return nil, fmt.Errorf("creating AES block cipher with key len %d: %w", len(key), err)
+			}
+
+			if len(input)%blockCipher.BlockSize() != 0 || len(input) == 0 {
+				return nil, fmt.Errorf("invalid ciphertext/plaintext size %d: not a multiple of block size %d",
+					len(input), blockCipher.BlockSize())
+			}
+
+			if blockCipher.BlockSize() != len(iv) {
+				return nil, fmt.Errorf("invalid IV size: expected %d, got %d", blockCipher.BlockSize(), len(iv))
+			}
+
+			result := make([]byte, len(input))
+			prevResult := make([]byte, len(input))
+			prevInput := make([]byte, len(input))
+
+			for i := uint32(0); i < numIterations; i++ {
+				copy(prevResult, result)
+
+				if i > 0 {
+					if direction == aesEncrypt {
+						copy(iv, result)
+					} else {
+						copy(iv, prevInput)
+					}
+				}
+
+				if direction == aesEncrypt {
+					cbcEnc := aes.NewCBCEncrypter(blockCipher, [16]byte(iv))
+					cbcEnc.CryptBlocks(result, input)
+				} else {
+					cbcDec := aes.NewCBCDecrypter(blockCipher, [16]byte(iv))
+					cbcDec.CryptBlocks(result, input)
+				}
+
+				if direction == aesDecrypt {
+					copy(prevInput, input)
+				}
+
+				if i == 0 {
+					copy(input, iv)
+				} else {
+					copy(input, prevResult)
+				}
+			}
+
+			return [][]byte{result, prevResult}, nil
+		},
+	}
+}
+
+func cmdAesCtr(direction aesDirection) command {
+	return command{
+		requiredArgs: 4, // Key, ciphertext or plaintext, initial counter, num iterations (constant 1)
+		handler: func(args [][]byte) ([][]byte, error) {
+			if direction != aesEncrypt && direction != aesDecrypt {
+				panic("invalid AES direction")
+			}
+
+			key := args[0]
+			input := args[1]
+			iv := args[2]
+			numIterations := binary.LittleEndian.Uint32(args[3])
+			if numIterations != 1 {
+				return nil, fmt.Errorf("invalid num iterations: expected 1, got %d", numIterations)
+			}
+
+			if len(iv) != aes.BlockSize {
+				return nil, fmt.Errorf("invalid IV size: expected %d, got %d", aes.BlockSize, len(iv))
+			}
+
+			blockCipher, err := aes.New(key)
+			if err != nil {
+				return nil, fmt.Errorf("creating AES block cipher with key len %d: %w", len(key), err)
+			}
+
+			result := make([]byte, len(input))
+			stream := aes.NewCTR(blockCipher, iv)
+			stream.XORKeyStream(result, input)
+
+			return [][]byte{result}, nil
+		},
+	}
+}
+
+func cmdAesGcmSeal(randNonce bool) command {
+	return command{
+		requiredArgs: 5, // tag len, key, plaintext, nonce (empty for randNonce), additional data
+		handler: func(args [][]byte) ([][]byte, error) {
+			tagLen := binary.LittleEndian.Uint32(args[0])
+			key := args[1]
+			plaintext := args[2]
+			nonce := args[3]
+			additionalData := args[4]
+
+			blockCipher, err := aes.New(key)
+			if err != nil {
+				return nil, fmt.Errorf("creating AES block cipher with key len %d: %w", len(key), err)
+			}
+
+			aesGCM, err := gcm.New(blockCipher, 12, int(tagLen))
+			if err != nil {
+				return nil, fmt.Errorf("creating AES-GCM with tag len %d: %w", tagLen, err)
+			}
+
+			var ct []byte
+			if !randNonce {
+				ct = aesGCM.Seal(nil, nonce, plaintext, additionalData)
+			} else {
+				var internalNonce [12]byte
+				ct = make([]byte, len(plaintext)+16)
+				gcm.SealWithRandomNonce(aesGCM, internalNonce[:], ct, plaintext, additionalData)
+				// acvptool expects the internally generated nonce to be appended to the end of the ciphertext.
+				ct = append(ct, internalNonce[:]...)
+			}
+
+			return [][]byte{ct}, nil
+		},
+	}
+}
+
+func cmdAesGcmOpen(randNonce bool) command {
+	return command{
+		requiredArgs: 5, // tag len, key, ciphertext, nonce (empty for randNonce), additional data
+		handler: func(args [][]byte) ([][]byte, error) {
+
+			tagLen := binary.LittleEndian.Uint32(args[0])
+			key := args[1]
+			ciphertext := args[2]
+			nonce := args[3]
+			additionalData := args[4]
+
+			blockCipher, err := aes.New(key)
+			if err != nil {
+				return nil, fmt.Errorf("creating AES block cipher with key len %d: %w", len(key), err)
+			}
+
+			aesGCM, err := gcm.New(blockCipher, 12, int(tagLen))
+			if err != nil {
+				return nil, fmt.Errorf("creating AES-GCM with tag len %d: %w", tagLen, err)
+			}
+
+			if randNonce {
+				// for randNonce tests acvptool appends the nonce to the end of the ciphertext.
+				nonce = ciphertext[len(ciphertext)-12:]
+				ciphertext = ciphertext[:len(ciphertext)-12]
+			}
+
+			pt, err := aesGCM.Open(nil, nonce, ciphertext, additionalData)
+			if err != nil {
+				return [][]byte{{0}, nil}, nil
+			}
+
+			return [][]byte{{1}, pt}, nil
 		},
 	}
 }
