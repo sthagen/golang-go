@@ -11,8 +11,8 @@ import (
 	"slices"
 	"strings"
 
-	"internal/trace/event/go122"
 	"internal/trace/internal/tracev1"
+	"internal/trace/tracev2"
 	"internal/trace/version"
 )
 
@@ -22,6 +22,7 @@ import (
 // event as the first event, and a Sync event as the last event.
 // (There may also be any number of Sync events in the middle, too.)
 type Reader struct {
+	version    version.Version
 	r          *bufio.Reader
 	lastTs     Time
 	gen        *generation
@@ -54,8 +55,10 @@ func NewReader(r io.Reader) (*Reader, error) {
 		}, nil
 	case version.Go122, version.Go123:
 		return &Reader{
-			r: br,
+			version: v,
+			r:       br,
 			order: ordering{
+				traceVer:    v,
 				mStates:     make(map[ThreadID]*mState),
 				pStates:     make(map[ProcID]*pState),
 				gStates:     make(map[GoID]*gState),
@@ -149,12 +152,10 @@ func (r *Reader) ReadEvent() (e Event, err error) {
 			return syncEvent(nil, r.lastTs, r.syncs), nil
 		}
 		// Read the next generation.
-		var err error
-		r.gen, r.spill, err = readGeneration(r.r, r.spill)
+		r.gen, r.spill, r.spillErr = readGeneration(r.r, r.spill)
 		if r.gen == nil {
-			return Event{}, err
+			return syncEvent(nil, r.lastTs, r.syncs), nil
 		}
-		r.spillErr = err
 
 		// Reset CPU samples cursor.
 		r.cpuSamples = r.gen.cpuSamples
@@ -248,7 +249,7 @@ func (r *Reader) ReadEvent() (e Event, err error) {
 func dumpFrontier(frontier []*batchCursor) string {
 	var sb strings.Builder
 	for _, bc := range frontier {
-		spec := go122.Specs()[bc.ev.typ]
+		spec := tracev2.Specs()[bc.ev.typ]
 		fmt.Fprintf(&sb, "M %d [%s time=%d", bc.m, spec.Name, bc.ev.time)
 		for i, arg := range spec.Args[1:] {
 			fmt.Fprintf(&sb, " %s=%d", arg, bc.ev.args[i])

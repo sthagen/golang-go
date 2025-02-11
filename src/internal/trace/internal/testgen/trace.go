@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package testkit
+package testgen
 
 import (
 	"bytes"
@@ -13,14 +13,13 @@ import (
 	"strings"
 
 	"internal/trace"
-	"internal/trace/event"
-	"internal/trace/event/go122"
 	"internal/trace/raw"
+	"internal/trace/tracev2"
 	"internal/trace/version"
 	"internal/txtar"
 )
 
-func Main(f func(*Trace)) {
+func Main(ver version.Version, f func(*Trace)) {
 	// Create an output file.
 	out, err := os.Create(os.Args[1])
 	if err != nil {
@@ -29,7 +28,7 @@ func Main(f func(*Trace)) {
 	defer out.Close()
 
 	// Create a new trace.
-	trace := NewTrace()
+	trace := NewTrace(ver)
 
 	// Call the generator.
 	f(trace)
@@ -51,8 +50,8 @@ func Main(f func(*Trace)) {
 type Trace struct {
 	// Trace data state.
 	ver             version.Version
-	names           map[string]event.Type
-	specs           []event.Spec
+	names           map[string]tracev2.EventType
+	specs           []tracev2.EventSpec
 	events          []raw.Event
 	gens            []*Generation
 	validTimestamps bool
@@ -63,10 +62,9 @@ type Trace struct {
 }
 
 // NewTrace creates a new trace.
-func NewTrace() *Trace {
-	ver := version.Go122
+func NewTrace(ver version.Version) *Trace {
 	return &Trace{
-		names:           event.Names(ver.Specs()),
+		names:           tracev2.EventNames(ver.Specs()),
 		specs:           ver.Specs(),
 		validTimestamps: true,
 	}
@@ -87,7 +85,7 @@ func (t *Trace) ExpectSuccess() {
 // RawEvent emits an event into the trace. name must correspond to one
 // of the names in Specs() result for the version that was passed to
 // this trace.
-func (t *Trace) RawEvent(typ event.Type, data []byte, args ...uint64) {
+func (t *Trace) RawEvent(typ tracev2.EventType, data []byte, args ...uint64) {
 	t.events = append(t.events, t.createEvent(typ, data, args...))
 }
 
@@ -147,9 +145,9 @@ func (t *Trace) Generate() []byte {
 	})
 }
 
-func (t *Trace) createEvent(ev event.Type, data []byte, args ...uint64) raw.Event {
+func (t *Trace) createEvent(ev tracev2.EventType, data []byte, args ...uint64) raw.Event {
 	spec := t.specs[ev]
-	if ev != go122.EvStack {
+	if ev != tracev2.EvStack {
 		if arity := len(spec.Args); len(args) != arity {
 			panic(fmt.Sprintf("expected %d args for %s, got %d", arity, spec.Name, len(args)))
 		}
@@ -248,22 +246,22 @@ func (g *Generation) writeEventsTo(tw *raw.TextWriter) {
 
 	// Write frequency.
 	b := g.newStructuralBatch()
-	b.RawEvent(go122.EvFrequency, nil, 15625000)
+	b.RawEvent(tracev2.EvFrequency, nil, 15625000)
 	b.writeEventsTo(tw)
 
 	// Write stacks.
 	b = g.newStructuralBatch()
-	b.RawEvent(go122.EvStacks, nil)
+	b.RawEvent(tracev2.EvStacks, nil)
 	for stk, id := range g.stacks {
 		stk := stk.stk[:stk.len]
 		args := []uint64{id}
 		for _, f := range stk {
 			args = append(args, f.PC, g.String(f.Func), g.String(f.File), f.Line)
 		}
-		b.RawEvent(go122.EvStack, nil, args...)
+		b.RawEvent(tracev2.EvStack, nil, args...)
 
 		// Flush the batch if necessary.
-		if !g.ignoreStackBatchSizeLimit && b.size > go122.MaxBatchSize/2 {
+		if !g.ignoreStackBatchSizeLimit && b.size > tracev2.MaxBatchSize/2 {
 			b.writeEventsTo(tw)
 			b = g.newStructuralBatch()
 		}
@@ -272,12 +270,12 @@ func (g *Generation) writeEventsTo(tw *raw.TextWriter) {
 
 	// Write strings.
 	b = g.newStructuralBatch()
-	b.RawEvent(go122.EvStrings, nil)
+	b.RawEvent(tracev2.EvStrings, nil)
 	for s, id := range g.strings {
-		b.RawEvent(go122.EvString, []byte(s), id)
+		b.RawEvent(tracev2.EvString, []byte(s), id)
 
 		// Flush the batch if necessary.
-		if !g.ignoreStringBatchSizeLimit && b.size > go122.MaxBatchSize/2 {
+		if !g.ignoreStringBatchSizeLimit && b.size > tracev2.MaxBatchSize/2 {
 			b.writeEventsTo(tw)
 			b = g.newStructuralBatch()
 		}
@@ -341,9 +339,9 @@ func (b *Batch) uintArgFor(arg any, argSpec string) uint64 {
 	case "seq":
 		u = uint64(arg.(Seq))
 	case "pstatus":
-		u = uint64(arg.(go122.ProcStatus))
+		u = uint64(arg.(tracev2.ProcStatus))
 	case "gstatus":
-		u = uint64(arg.(go122.GoStatus))
+		u = uint64(arg.(tracev2.GoStatus))
 	case "g":
 		u = uint64(arg.(trace.GoID))
 	case "m":
@@ -363,7 +361,7 @@ func (b *Batch) uintArgFor(arg any, argSpec string) uint64 {
 // RawEvent emits an event into a batch. name must correspond to one
 // of the names in Specs() result for the version that was passed to
 // this trace.
-func (b *Batch) RawEvent(typ event.Type, data []byte, args ...uint64) {
+func (b *Batch) RawEvent(typ tracev2.EventType, data []byte, args ...uint64) {
 	ev := b.gen.trace.createEvent(typ, data, args...)
 
 	// Compute the size of the event and add it to the batch.
@@ -385,7 +383,7 @@ func (b *Batch) RawEvent(typ event.Type, data []byte, args ...uint64) {
 func (b *Batch) writeEventsTo(tw *raw.TextWriter) {
 	tw.WriteEvent(raw.Event{
 		Version: version.Go122,
-		Ev:      go122.EvEventBatch,
+		Ev:      tracev2.EvEventBatch,
 		Args:    []uint64{b.gen.gen, uint64(b.thread), uint64(b.timestamp), b.size},
 	})
 	for _, e := range b.events {
