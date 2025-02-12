@@ -105,6 +105,8 @@ var (
 	//   https://pages.nist.gov/ACVP/draft-celi-acvp-sha.html#section-7.2
 	// SHA3 and SHAKE algorithm capabilities:
 	//   https://pages.nist.gov/ACVP/draft-celi-acvp-sha3.html#name-sha3-and-shake-algorithm-ca
+	// cSHAKE algorithm capabilities:
+	//   https://pages.nist.gov/ACVP/draft-celi-acvp-xof.html#section-7.2
 	// HMAC algorithm capabilities:
 	//   https://pages.nist.gov/ACVP/draft-fussell-acvp-mac.html#section-7
 	// PBKDF2 algorithm capabilities:
@@ -121,6 +123,8 @@ var (
 	//   https://pages.nist.gov/ACVP/draft-celi-acvp-symmetric.html#section-7.3
 	// HKDF KDA algorithm capabilities:
 	//   https://pages.nist.gov/ACVP/draft-hammett-acvp-kas-kdf-hkdf.html#section-7.3
+	// OneStepNoCounter KDA algorithm capabilities:
+	//   https://pages.nist.gov/ACVP/draft-hammett-acvp-kas-kdf-onestepnocounter.html#section-7.2
 	// TLS 1.2 KDF algorithm capabilities:
 	//   https://pages.nist.gov/ACVP/draft-celi-acvp-kdf-tls.html#section-7.2
 	// TLS 1.3 KDF algorithm capabilities:
@@ -176,6 +180,11 @@ var (
 		"SHAKE-256":     cmdShakeAftVot(sha3.NewShake256()),
 		"SHAKE-256/VOT": cmdShakeAftVot(sha3.NewShake256()),
 		"SHAKE-256/MCT": cmdShakeMct(sha3.NewShake256()),
+
+		"cSHAKE-128":     cmdCShakeAft(func(N, S []byte) *sha3.SHAKE { return sha3.NewCShake128(N, S) }),
+		"cSHAKE-128/MCT": cmdCShakeMct(func(N, S []byte) *sha3.SHAKE { return sha3.NewCShake128(N, S) }),
+		"cSHAKE-256":     cmdCShakeAft(func(N, S []byte) *sha3.SHAKE { return sha3.NewCShake256(N, S) }),
+		"cSHAKE-256/MCT": cmdCShakeMct(func(N, S []byte) *sha3.SHAKE { return sha3.NewCShake256(N, S) }),
 
 		"HMAC-SHA2-224":     cmdHmacAft(func() fips140.Hash { return sha256.New224() }),
 		"HMAC-SHA2-256":     cmdHmacAft(func() fips140.Hash { return sha256.New() }),
@@ -294,6 +303,38 @@ var (
 
 		"KDF-counter":  cmdKdfCounterAft(),
 		"KDF-feedback": cmdKdfFeedbackAft(),
+
+		"OneStepNoCounter/HMAC-SHA2-224":     cmdOneStepNoCounterHmacAft(func() fips140.Hash { return sha256.New224() }),
+		"OneStepNoCounter/HMAC-SHA2-256":     cmdOneStepNoCounterHmacAft(func() fips140.Hash { return sha256.New() }),
+		"OneStepNoCounter/HMAC-SHA2-384":     cmdOneStepNoCounterHmacAft(func() fips140.Hash { return sha512.New384() }),
+		"OneStepNoCounter/HMAC-SHA2-512":     cmdOneStepNoCounterHmacAft(func() fips140.Hash { return sha512.New() }),
+		"OneStepNoCounter/HMAC-SHA2-512/224": cmdOneStepNoCounterHmacAft(func() fips140.Hash { return sha512.New512_224() }),
+		"OneStepNoCounter/HMAC-SHA2-512/256": cmdOneStepNoCounterHmacAft(func() fips140.Hash { return sha512.New512_256() }),
+		"OneStepNoCounter/HMAC-SHA3-224":     cmdOneStepNoCounterHmacAft(func() fips140.Hash { return sha3.New224() }),
+		"OneStepNoCounter/HMAC-SHA3-256":     cmdOneStepNoCounterHmacAft(func() fips140.Hash { return sha3.New256() }),
+		"OneStepNoCounter/HMAC-SHA3-384":     cmdOneStepNoCounterHmacAft(func() fips140.Hash { return sha3.New384() }),
+		"OneStepNoCounter/HMAC-SHA3-512":     cmdOneStepNoCounterHmacAft(func() fips140.Hash { return sha3.New512() }),
+
+		"KTS-IFC/SHA2-224/initiator":     cmdKtsIfcInitiatorAft(func() fips140.Hash { return sha256.New224() }),
+		"KTS-IFC/SHA2-224/responder":     cmdKtsIfcResponderAft(func() fips140.Hash { return sha256.New224() }),
+		"KTS-IFC/SHA2-256/initiator":     cmdKtsIfcInitiatorAft(func() fips140.Hash { return sha256.New() }),
+		"KTS-IFC/SHA2-256/responder":     cmdKtsIfcResponderAft(func() fips140.Hash { return sha256.New() }),
+		"KTS-IFC/SHA2-384/initiator":     cmdKtsIfcInitiatorAft(func() fips140.Hash { return sha512.New384() }),
+		"KTS-IFC/SHA2-384/responder":     cmdKtsIfcResponderAft(func() fips140.Hash { return sha512.New384() }),
+		"KTS-IFC/SHA2-512/initiator":     cmdKtsIfcInitiatorAft(func() fips140.Hash { return sha512.New() }),
+		"KTS-IFC/SHA2-512/responder":     cmdKtsIfcResponderAft(func() fips140.Hash { return sha512.New() }),
+		"KTS-IFC/SHA2-512/224/initiator": cmdKtsIfcInitiatorAft(func() fips140.Hash { return sha512.New512_224() }),
+		"KTS-IFC/SHA2-512/224/responder": cmdKtsIfcResponderAft(func() fips140.Hash { return sha512.New512_224() }),
+		"KTS-IFC/SHA2-512/256/initiator": cmdKtsIfcInitiatorAft(func() fips140.Hash { return sha512.New512_256() }),
+		"KTS-IFC/SHA2-512/256/responder": cmdKtsIfcResponderAft(func() fips140.Hash { return sha512.New512_256() }),
+		"KTS-IFC/SHA3-224/initiator":     cmdKtsIfcInitiatorAft(func() fips140.Hash { return sha3.New224() }),
+		"KTS-IFC/SHA3-224/responder":     cmdKtsIfcResponderAft(func() fips140.Hash { return sha3.New224() }),
+		"KTS-IFC/SHA3-256/initiator":     cmdKtsIfcInitiatorAft(func() fips140.Hash { return sha3.New256() }),
+		"KTS-IFC/SHA3-256/responder":     cmdKtsIfcResponderAft(func() fips140.Hash { return sha3.New256() }),
+		"KTS-IFC/SHA3-384/initiator":     cmdKtsIfcInitiatorAft(func() fips140.Hash { return sha3.New384() }),
+		"KTS-IFC/SHA3-384/responder":     cmdKtsIfcResponderAft(func() fips140.Hash { return sha3.New384() }),
+		"KTS-IFC/SHA3-512/initiator":     cmdKtsIfcInitiatorAft(func() fips140.Hash { return sha3.New512() }),
+		"KTS-IFC/SHA3-512/responder":     cmdKtsIfcResponderAft(func() fips140.Hash { return sha3.New512() }),
 	}
 )
 
@@ -571,6 +612,90 @@ func cmdShakeMct(h *sha3.SHAKE) command {
 			binary.LittleEndian.PutUint32(encodedOutputLenBytes, outputLenBytes)
 
 			return [][]byte{md, encodedOutputLenBytes}, nil
+		},
+	}
+}
+
+func cmdCShakeAft(hFn func(N, S []byte) *sha3.SHAKE) command {
+	return command{
+		requiredArgs: 4, // Message, output length bytes, function name, customization
+		handler: func(args [][]byte) ([][]byte, error) {
+			msg := args[0]
+			outLenBytes := binary.LittleEndian.Uint32(args[1])
+			functionName := args[2]
+			customization := args[3]
+
+			h := hFn(functionName, customization)
+			h.Write(msg)
+
+			out := make([]byte, outLenBytes)
+			h.Read(out)
+
+			return [][]byte{out}, nil
+		},
+	}
+}
+
+func cmdCShakeMct(hFn func(N, S []byte) *sha3.SHAKE) command {
+	return command{
+		requiredArgs: 6, // Message, min output length (bits), max output length (bits), output length (bits), increment (bits), customization
+		handler: func(args [][]byte) ([][]byte, error) {
+			message := args[0]
+			minOutLenBytes := binary.LittleEndian.Uint32(args[1])
+			maxOutLenBytes := binary.LittleEndian.Uint32(args[2])
+			outputLenBytes := binary.LittleEndian.Uint32(args[3])
+			incrementBytes := binary.LittleEndian.Uint32(args[4])
+			customization := args[5]
+
+			if outputLenBytes < 2 {
+				return nil, fmt.Errorf("invalid output length: %d", outputLenBytes)
+			}
+
+			rangeBits := (maxOutLenBytes*8 - minOutLenBytes*8) + 1
+			if rangeBits == 0 {
+				return nil, fmt.Errorf("invalid maxOutLenBytes and minOutLenBytes: %d, %d", maxOutLenBytes, minOutLenBytes)
+			}
+
+			// cSHAKE Monte Carlo test inner loop:
+			//   https://pages.nist.gov/ACVP/draft-celi-acvp-xof.html#section-6.2.1
+			for i := 0; i < 1000; i++ {
+				// InnerMsg = Left(Output[i-1] || ZeroBits(128), 128);
+				boundary := min(len(message), 16)
+				innerMsg := make([]byte, 16)
+				copy(innerMsg, message[:boundary])
+
+				// Output[i] = CSHAKE(InnerMsg, OutputLen, FunctionName, Customization);
+				h := hFn(nil, customization) // Note: function name fixed to "" for MCT.
+				h.Write(innerMsg)
+				digest := make([]byte, outputLenBytes)
+				h.Read(digest)
+				message = digest
+
+				// Rightmost_Output_bits = Right(Output[i], 16);
+				rightmostOutput := digest[outputLenBytes-2:]
+				// IMPORTANT: the specification says:
+				//   NOTE: For the "Rightmost_Output_bits % Range" operation, the Rightmost_Output_bits bit string
+				//   should be interpretted as a little endian-encoded number.
+				// This is **a lie**! It has to be interpreted as a big-endian number.
+				rightmostOutputBE := binary.BigEndian.Uint16(rightmostOutput)
+
+				// OutputLen = MinOutLen + (floor((Rightmost_Output_bits % Range) / OutLenIncrement) * OutLenIncrement);
+				incrementBits := incrementBytes * 8
+				outputLenBits := (minOutLenBytes * 8) + (((uint32)(rightmostOutputBE)%rangeBits)/incrementBits)*incrementBits
+				outputLenBytes = outputLenBits / 8
+
+				// Customization = BitsToString(InnerMsg || Rightmost_Output_bits);
+				msgWithBits := append(innerMsg, rightmostOutput...)
+				customization = make([]byte, len(msgWithBits))
+				for i, b := range msgWithBits {
+					customization[i] = (b % 26) + 65
+				}
+			}
+
+			encodedOutputLenBytes := make([]byte, 4)
+			binary.LittleEndian.PutUint32(encodedOutputLenBytes, outputLenBytes)
+
+			return [][]byte{message, encodedOutputLenBytes, customization}, nil
 		},
 	}
 }
@@ -1829,14 +1954,117 @@ func getRSAKey(bits int) (*rsa.PrivateKey, error) {
 	return key, nil
 }
 
+func cmdOneStepNoCounterHmacAft(h func() fips140.Hash) command {
+	return command{
+		requiredArgs: 4, // key, info, salt, outBytes
+		handler: func(args [][]byte) ([][]byte, error) {
+			key := args[0]
+			info := args[1]
+			salt := args[2]
+			outBytes := binary.LittleEndian.Uint32(args[3])
+
+			mac := hmac.New(h, salt)
+			mac.Size()
+
+			if outBytes != uint32(mac.Size()) {
+				return nil, fmt.Errorf("invalid output length: got %d, want %d", outBytes, mac.Size())
+			}
+
+			data := make([]byte, 0, len(key)+len(info))
+			data = append(data, key...)
+			data = append(data, info...)
+
+			mac.Write(data)
+			out := mac.Sum(nil)
+
+			return [][]byte{out}, nil
+		},
+	}
+}
+
+func cmdKtsIfcInitiatorAft(h func() fips140.Hash) command {
+	return command{
+		requiredArgs: 3, // output bytes, n bytes, e bytes
+		handler: func(args [][]byte) ([][]byte, error) {
+			outputBytes := binary.LittleEndian.Uint32(args[0])
+			nBytes := args[1]
+			eBytes := args[2]
+
+			n, err := bigmod.NewModulus(nBytes)
+			if err != nil {
+				return nil, fmt.Errorf("invalid RSA modulus: %w", err)
+			}
+
+			paddedE := make([]byte, 4)
+			copy(paddedE[4-len(eBytes):], eBytes)
+			e := int(binary.BigEndian.Uint32(paddedE))
+			if e != 0x10001 {
+				return nil, errors.New("e must be 0x10001")
+			}
+
+			pub := &rsa.PublicKey{
+				N: n,
+				E: e,
+			}
+
+			dkm := make([]byte, outputBytes)
+			if _, err := rand.Read(dkm); err != nil {
+				return nil, fmt.Errorf("failed to generate random DKM: %v", err)
+			}
+
+			iutC, err := rsa.EncryptOAEP(h(), h(), rand.Reader, pub, dkm, nil)
+			if err != nil {
+				return nil, fmt.Errorf("OAEP encryption failed: %v", err)
+			}
+
+			return [][]byte{iutC, dkm}, nil
+		},
+	}
+}
+
+func cmdKtsIfcResponderAft(h func() fips140.Hash) command {
+	return command{
+		requiredArgs: 6, // n bytes, e bytes, p bytes, q bytes, d bytes, c bytes
+		handler: func(args [][]byte) ([][]byte, error) {
+			nBytes := args[0]
+			eBytes := args[1]
+
+			pBytes := args[2]
+			qBytes := args[3]
+			dBytes := args[4]
+
+			cBytes := args[5]
+
+			paddedE := make([]byte, 4)
+			copy(paddedE[4-len(eBytes):], eBytes)
+			e := int(binary.BigEndian.Uint32(paddedE))
+			if e != 0x10001 {
+				return nil, errors.New("e must be 0x10001")
+			}
+
+			priv, err := rsa.NewPrivateKey(nBytes, int(e), dBytes, pBytes, qBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create private key: %v", err)
+			}
+
+			dkm, err := rsa.DecryptOAEP(h(), h(), priv, cBytes, nil)
+			if err != nil {
+				return nil, fmt.Errorf("OAEP decryption failed: %v", err)
+			}
+
+			return [][]byte{dkm}, nil
+		},
+	}
+}
+
 func TestACVP(t *testing.T) {
 	testenv.SkipIfShortAndSlow(t)
 
 	const (
 		bsslModule    = "boringssl.googlesource.com/boringssl.git"
-		bsslVersion   = "v0.0.0-20250123161947-ba24bde161f7"
+		bsslVersion   = "v0.0.0-20250207174145-0bb19f6126cb"
 		goAcvpModule  = "github.com/cpu/go-acvp"
-		goAcvpVersion = "v0.0.0-20250110181646-e47fea3b5d7d"
+		goAcvpVersion = "v0.0.0-20250126154732-de1ba727a0be"
 	)
 
 	// In crypto/tls/bogo_shim_test.go the test is skipped if run on a builder with runtime.GOOS == "windows"
