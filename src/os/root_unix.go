@@ -52,7 +52,7 @@ func newRoot(fd int, name string) (*Root, error) {
 		fd:   fd,
 		name: name,
 	}}
-	runtime.SetFinalizer(r.root, (*root).Close)
+	r.root.cleanup = runtime.AddCleanup(r, func(f *root) { f.Close() }, r.root)
 	return r, nil
 }
 
@@ -153,6 +153,14 @@ func chmodat(parent int, name string, mode FileMode) error {
 	return afterResolvingSymlink(parent, name, func() error {
 		return ignoringEINTR(func() error {
 			return unix.Fchmodat(parent, name, syscallMode(mode), unix.AT_SYMLINK_NOFOLLOW)
+		})
+	})
+}
+
+func chownat(parent int, name string, uid, gid int) error {
+	return afterResolvingSymlink(parent, name, func() error {
+		return ignoringEINTR(func() error {
+			return unix.Fchownat(parent, name, uid, gid, unix.AT_SYMLINK_NOFOLLOW)
 		})
 	})
 }

@@ -109,7 +109,7 @@ func newRoot(fd syscall.Handle, name string) (*Root, error) {
 		fd:   fd,
 		name: name,
 	}}
-	runtime.SetFinalizer(r.root, (*root).Close)
+	r.root.cleanup = runtime.AddCleanup(r, func(f *root) { f.Close() }, r.root)
 	return r, nil
 }
 
@@ -274,6 +274,10 @@ func chmodat(parent syscall.Handle, name string, mode FileMode) error {
 	var fbi windows.FILE_BASIC_INFO
 	fbi.FileAttributes = attrs
 	return windows.SetFileInformationByHandle(h, windows.FileBasicInfo, unsafe.Pointer(&fbi), uint32(unsafe.Sizeof(fbi)))
+}
+
+func chownat(parent syscall.Handle, name string, uid, gid int) error {
+	return syscall.EWINDOWS // matches syscall.Chown
 }
 
 func mkdirat(dirfd syscall.Handle, name string, perm FileMode) error {
