@@ -181,16 +181,20 @@ func (z *Int) Sub(x, y *Int) *Int {
 
 // Mul sets z to the product x*y and returns z.
 func (z *Int) Mul(x, y *Int) *Int {
+	return z.mul(nil, x, y)
+}
+
+func (z *Int) mul(stk *stack, x, y *Int) *Int {
 	// x * y == x * y
 	// x * (-y) == -(x * y)
 	// (-x) * y == -(x * y)
 	// (-x) * (-y) == x * y
 	if x == y {
-		z.abs = z.abs.sqr(x.abs)
+		z.abs = z.abs.sqr(stk, x.abs)
 		z.neg = false
 		return z
 	}
-	z.abs = z.abs.mul(x.abs, y.abs)
+	z.abs = z.abs.mul(stk, x.abs, y.abs)
 	z.neg = len(z.abs) > 0 && x.neg != y.neg // 0 has no sign
 	return z
 }
@@ -213,7 +217,7 @@ func (z *Int) MulRange(a, b int64) *Int {
 		a, b = -b, -a
 	}
 
-	z.abs = z.abs.mulRange(uint64(a), uint64(b))
+	z.abs = z.abs.mulRange(nil, uint64(a), uint64(b))
 	z.neg = neg
 	return z
 }
@@ -264,7 +268,7 @@ func (z *Int) Binomial(n, k int64) *Int {
 // If y == 0, a division-by-zero run-time panic occurs.
 // Quo implements truncated division (like Go); see [Int.QuoRem] for more details.
 func (z *Int) Quo(x, y *Int) *Int {
-	z.abs, _ = z.abs.div(nil, x.abs, y.abs)
+	z.abs, _ = z.abs.div(nil, nil, x.abs, y.abs)
 	z.neg = len(z.abs) > 0 && x.neg != y.neg // 0 has no sign
 	return z
 }
@@ -273,7 +277,7 @@ func (z *Int) Quo(x, y *Int) *Int {
 // If y == 0, a division-by-zero run-time panic occurs.
 // Rem implements truncated modulus (like Go); see [Int.QuoRem] for more details.
 func (z *Int) Rem(x, y *Int) *Int {
-	_, z.abs = nat(nil).div(z.abs, x.abs, y.abs)
+	_, z.abs = nat(nil).div(nil, z.abs, x.abs, y.abs)
 	z.neg = len(z.abs) > 0 && x.neg // 0 has no sign
 	return z
 }
@@ -290,7 +294,7 @@ func (z *Int) Rem(x, y *Int) *Int {
 // (See Daan Leijen, “Division and Modulus for Computer Scientists”.)
 // See [Int.DivMod] for Euclidean division and modulus (unlike Go).
 func (z *Int) QuoRem(x, y, r *Int) (*Int, *Int) {
-	z.abs, r.abs = z.abs.div(r.abs, x.abs, y.abs)
+	z.abs, r.abs = z.abs.div(nil, r.abs, x.abs, y.abs)
 	z.neg, r.neg = len(z.abs) > 0 && x.neg != y.neg, len(r.abs) > 0 && x.neg // 0 has no sign
 	return z, r
 }
@@ -589,7 +593,7 @@ func (z *Int) exp(x, y, m *Int, slow bool) *Int {
 		mWords = m.abs // m.abs may be nil for m == 0
 	}
 
-	z.abs = z.abs.expNN(xWords, yWords, mWords, slow)
+	z.abs = z.abs.expNN(nil, xWords, yWords, mWords, slow)
 	z.neg = len(z.abs) > 0 && x.neg && len(yWords) > 0 && yWords[0]&1 == 1 // 0 has no sign
 	if z.neg && len(mWords) > 0 {
 		// make modulus result positive
@@ -707,42 +711,36 @@ func lehmerSimulate(A, B *Int) (u0, u1, v0, v1 Word, even bool) {
 // For even == true: u0, v1 >= 0 && u1, v0 <= 0
 // For even == false: u0, v1 <= 0 && u1, v0 >= 0
 // q, r, s, t are temporary variables to avoid allocations in the multiplication.
-func lehmerUpdate(A, B, q, r, s, t *Int, u0, u1, v0, v1 Word, even bool) {
+func lehmerUpdate(A, B, q, r *Int, u0, u1, v0, v1 Word, even bool) {
+	mulW(q, B, even, v0)
+	mulW(r, A, even, u1)
+	mulW(A, A, !even, u0)
+	mulW(B, B, !even, v1)
+	A.Add(A, q)
+	B.Add(B, r)
+}
 
-	t.abs = t.abs.setWord(u0)
-	s.abs = s.abs.setWord(v0)
-	t.neg = !even
-	s.neg = even
-
-	t.Mul(A, t)
-	s.Mul(B, s)
-
-	r.abs = r.abs.setWord(u1)
-	q.abs = q.abs.setWord(v1)
-	r.neg = even
-	q.neg = !even
-
-	r.Mul(A, r)
-	q.Mul(B, q)
-
-	A.Add(t, s)
-	B.Add(r, q)
+// mulW sets z = x * (-?)w
+// where the minus sign is present when neg is true.
+func mulW(z, x *Int, neg bool, w Word) {
+	z.abs = z.abs.mulAddWW(x.abs, w, 0)
+	z.neg = x.neg != neg
 }
 
 // euclidUpdate performs a single step of the Euclidean GCD algorithm
 // if extended is true, it also updates the cosequence Ua, Ub.
-func euclidUpdate(A, B, Ua, Ub, q, r, s, t *Int, extended bool) {
-	q, r = q.QuoRem(A, B, r)
-
-	*A, *B, *r = *B, *r, *A
+// q and r are used as temporaries; the initial values are ignored.
+func euclidUpdate(A, B, Ua, Ub, q, r *Int, extended bool) (nA, nB, nr, nUa, nUb *Int) {
+	q.QuoRem(A, B, r)
 
 	if extended {
-		// Ua, Ub = Ub, Ua - q*Ub
-		t.Set(Ub)
-		s.Mul(Ub, q)
-		Ub.Sub(Ua, s)
-		Ua.Set(t)
+		// Ua, Ub = Ub, Ua-q*Ub
+		q.Mul(q, Ub)
+		Ua, Ub = Ub, Ua
+		Ub.Sub(Ub, q)
 	}
+
+	return B, r, A, Ua, Ub
 }
 
 // lehmerGCD sets z to the greatest common divisor of a and b,
@@ -772,8 +770,6 @@ func (z *Int) lehmerGCD(x, y, a, b *Int) *Int {
 	// temp variables for multiprecision update
 	q := new(Int)
 	r := new(Int)
-	s := new(Int)
-	t := new(Int)
 
 	// ensure A >= B
 	if A.abs.cmp(B.abs) < 0 {
@@ -791,18 +787,18 @@ func (z *Int) lehmerGCD(x, y, a, b *Int) *Int {
 			// Simulate the effect of the single-precision steps using the cosequences.
 			// A = u0*A + v0*B
 			// B = u1*A + v1*B
-			lehmerUpdate(A, B, q, r, s, t, u0, u1, v0, v1, even)
+			lehmerUpdate(A, B, q, r, u0, u1, v0, v1, even)
 
 			if extended {
 				// Ua = u0*Ua + v0*Ub
 				// Ub = u1*Ua + v1*Ub
-				lehmerUpdate(Ua, Ub, q, r, s, t, u0, u1, v0, v1, even)
+				lehmerUpdate(Ua, Ub, q, r, u0, u1, v0, v1, even)
 			}
 
 		} else {
 			// Single-digit calculations failed to simulate any quotients.
 			// Do a standard Euclidean step.
-			euclidUpdate(A, B, Ua, Ub, q, r, s, t, extended)
+			A, B, r, Ua, Ub = euclidUpdate(A, B, Ua, Ub, q, r, extended)
 		}
 	}
 
@@ -810,7 +806,7 @@ func (z *Int) lehmerGCD(x, y, a, b *Int) *Int {
 		// extended Euclidean algorithm base case if B is a single Word
 		if len(A.abs) > 1 {
 			// A is longer than a single Word, so one update is needed.
-			euclidUpdate(A, B, Ua, Ub, q, r, s, t, extended)
+			A, B, r, Ua, Ub = euclidUpdate(A, B, Ua, Ub, q, r, extended)
 		}
 		if len(B.abs) > 0 {
 			// A and B are both a single Word.
@@ -828,15 +824,9 @@ func (z *Int) lehmerGCD(x, y, a, b *Int) *Int {
 					even = !even
 				}
 
-				t.abs = t.abs.setWord(ua)
-				s.abs = s.abs.setWord(va)
-				t.neg = !even
-				s.neg = even
-
-				t.Mul(Ua, t)
-				s.Mul(Ub, s)
-
-				Ua.Add(t, s)
+				mulW(Ua, Ua, !even, ua)
+				mulW(Ub, Ub, even, va)
+				Ua.Add(Ua, Ub)
 			} else {
 				for bWord != 0 {
 					aWord, bWord = bWord, aWord%bWord
@@ -863,13 +853,13 @@ func (z *Int) lehmerGCD(x, y, a, b *Int) *Int {
 	}
 
 	if x != nil {
-		*x = *Ua
+		x.Set(Ua)
 		if negA {
 			x.neg = !x.neg
 		}
 	}
 
-	*z = *A
+	z.Set(A)
 
 	return z
 }
@@ -1312,6 +1302,6 @@ func (z *Int) Sqrt(x *Int) *Int {
 		panic("square root of negative number")
 	}
 	z.neg = false
-	z.abs = z.abs.sqrt(x.abs)
+	z.abs = z.abs.sqrt(nil, x.abs)
 	return z
 }
