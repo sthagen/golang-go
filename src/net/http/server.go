@@ -2006,6 +2006,9 @@ func (c *conn) serve(ctx context.Context) {
 			// If we read any bytes off the wire, we're active.
 			c.setState(c.rwc, StateActive, runHooks)
 		}
+		if c.server.shuttingDown() {
+			return
+		}
 		if err != nil {
 			const errorHeaders = "\r\nContent-Type: text/plain; charset=utf-8\r\nConnection: close\r\n\r\n"
 
@@ -3518,6 +3521,12 @@ func (s *Server) protocols() Protocols {
 // adjustNextProtos adds or removes "http/1.1" and "h2" entries from
 // a tls.Config.NextProtos list, according to the set of protocols in protos.
 func adjustNextProtos(nextProtos []string, protos Protocols) []string {
+	// Make a copy of NextProtos since it might be shared with some other tls.Config.
+	// (tls.Config.Clone doesn't do a deep copy.)
+	//
+	// We could avoid an allocation in the common case by checking to see if the slice
+	// is already in order, but this is just one small allocation per connection.
+	nextProtos = slices.Clone(nextProtos)
 	var have Protocols
 	nextProtos = slices.DeleteFunc(nextProtos, func(s string) bool {
 		switch s {
