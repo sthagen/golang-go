@@ -244,18 +244,19 @@ func (check *Checker) callExpr(x *operand, call *syntax.CallExpr) exprKind {
 
 	// If the operand type is a type parameter, all types in its type set
 	// must have a common underlying type, which must be a signature.
-	var cause string
-	sig, _ := commonUnder(check, x.typ, &cause).(*Signature)
-	if sig == nil {
-		if cause != "" {
-			check.errorf(x, InvalidCall, invalidOp+"cannot call %s: %s", x, cause)
-		} else {
-			check.errorf(x, InvalidCall, invalidOp+"cannot call non-function %s", x)
+	u, err := commonUnder(x.typ, func(t, u Type) *typeError {
+		if _, ok := u.(*Signature); u != nil && !ok {
+			return typeErrorf("%s is not a function", t)
 		}
+		return nil
+	})
+	if err != nil {
+		check.errorf(x, InvalidCall, invalidOp+"cannot call %s: %s", x, err.format(check))
 		x.mode = invalid
 		x.expr = call
 		return statement
 	}
+	sig := u.(*Signature) // u must be a signature per the commonUnder condition
 
 	// Capture wasGeneric before sig is potentially instantiated below.
 	wasGeneric := sig.TypeParams().Len() > 0
