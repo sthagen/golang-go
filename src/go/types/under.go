@@ -86,7 +86,6 @@ func commonUnder(t Type, cond func(t, u Type) *typeError) (Type, *typeError) {
 	var err *typeError
 
 	bad := func(format string, args ...any) bool {
-		cu = nil
 		err = typeErrorf(format, args...)
 		return false
 	}
@@ -94,7 +93,6 @@ func commonUnder(t Type, cond func(t, u Type) *typeError) (Type, *typeError) {
 	typeset(t, func(t, u Type) bool {
 		if cond != nil {
 			if err = cond(t, u); err != nil {
-				cu = nil
 				return false
 			}
 		}
@@ -135,72 +133,8 @@ func commonUnder(t Type, cond func(t, u Type) *typeError) (Type, *typeError) {
 		return true
 	})
 
-	return cu, err
-}
-
-// coreString is like coreType but also considers []byte
-// and strings as identical. In this case, if successful and we saw
-// a string, the result is of type (possibly untyped) string.
-func coreString(t Type) Type {
-	// This explicit case is needed because otherwise the
-	// result would be string if t is an untyped string.
-	if !isTypeParam(t) {
-		return under(t) // untyped string remains untyped
+	if err != nil {
+		return nil, err
 	}
-
-	var su Type
-	hasString := false
-	typeset(t, func(_, u Type) bool {
-		if u == nil {
-			return false
-		}
-		if isString(u) {
-			u = NewSlice(universeByte)
-			hasString = true
-		}
-		if su != nil {
-			u = match(su, u)
-			if u == nil {
-				su = nil
-				hasString = false
-				return false
-			}
-		}
-		// su == nil || match(su, u) != nil
-		su = u
-		return true
-	})
-	if hasString {
-		return Typ[String]
-	}
-	return su
-}
-
-// If x and y are identical, match returns x.
-// If x and y are identical channels but for their direction
-// and one of them is unrestricted, match returns the channel
-// with the restricted direction.
-// In all other cases, match returns nil.
-func match(x, y Type) Type {
-	// Common case: we don't have channels.
-	if Identical(x, y) {
-		return x
-	}
-
-	// We may have channels that differ in direction only.
-	if x, _ := x.(*Chan); x != nil {
-		if y, _ := y.(*Chan); y != nil && Identical(x.elem, y.elem) {
-			// We have channels that differ in direction only.
-			// If there's an unrestricted channel, select the restricted one.
-			switch {
-			case x.dir == SendRecv:
-				return y
-			case y.dir == SendRecv:
-				return x
-			}
-		}
-	}
-
-	// types are different
-	return nil
+	return cu, nil
 }
