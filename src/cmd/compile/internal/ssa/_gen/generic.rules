@@ -66,6 +66,15 @@
 (BitLen32 (Const32 [c])) && config.PtrSize == 4 => (Const32 [int32(bits.Len32(uint32(c)))])
 (BitLen16 (Const16 [c])) && config.PtrSize == 4 => (Const32 [int32(bits.Len16(uint16(c)))])
 (BitLen8  (Const8  [c])) && config.PtrSize == 4 => (Const32 [int32(bits.Len8(uint8(c)))])
+(PopCount64 (Const64 [c])) && config.PtrSize == 8 => (Const64 [int64(bits.OnesCount64(uint64(c)))])
+(PopCount32 (Const32 [c])) && config.PtrSize == 8 => (Const64 [int64(bits.OnesCount32(uint32(c)))])
+(PopCount16 (Const16 [c])) && config.PtrSize == 8 => (Const64 [int64(bits.OnesCount16(uint16(c)))])
+(PopCount8  (Const8  [c])) && config.PtrSize == 8 => (Const64 [int64(bits.OnesCount8(uint8(c)))])
+(PopCount64 (Const64 [c])) && config.PtrSize == 4 => (Const32 [int32(bits.OnesCount64(uint64(c)))])
+(PopCount32 (Const32 [c])) && config.PtrSize == 4 => (Const32 [int32(bits.OnesCount32(uint32(c)))])
+(PopCount16 (Const16 [c])) && config.PtrSize == 4 => (Const32 [int32(bits.OnesCount16(uint16(c)))])
+(PopCount8  (Const8  [c])) && config.PtrSize == 4 => (Const32 [int32(bits.OnesCount8(uint8(c)))])
+(Add64carry (Const64 <t> [x]) (Const64 [y]) (Const64 [c])) && c >= 0 && c <= 1 => (MakeTuple (Const64 <t> [bitsAdd64(x, y, c).sum]) (Const64 <t> [bitsAdd64(x, y, c).carry]))
 
 (Trunc16to8  (ZeroExt8to16  x)) => x
 (Trunc32to8  (ZeroExt8to32  x)) => x
@@ -166,8 +175,7 @@
 (Div64u (Const64 [c])  (Const64 [d])) && d != 0 => (Const64 [int64(uint64(c)/uint64(d))])
 (Div32F (Const32F [c]) (Const32F [d])) && c/d == c/d => (Const32F [c/d])
 (Div64F (Const64F [c]) (Const64F [d])) && c/d == c/d => (Const64F [c/d])
-(Select0 (Div128u (Const64 [0]) lo y)) => (Div64u lo y)
-(Select1 (Div128u (Const64 [0]) lo y)) => (Mod64u lo y)
+(Div128u <t> (Const64 [0]) lo y) => (MakeTuple (Div64u <t.FieldType(0)> lo y) (Mod64u <t.FieldType(1)> lo y))
 
 (Not (ConstBool [c])) => (ConstBool [!c])
 
@@ -178,8 +186,7 @@
 
 // Convert x * 1 to x.
 (Mul(8|16|32|64)  (Const(8|16|32|64)  [1]) x) => x
-(Select0 (Mul(32|64)uover (Const(32|64) [1]) x)) => x
-(Select1 (Mul(32|64)uover (Const(32|64) [1]) x)) => (ConstBool [false])
+(Mul(32|64)uover <t> (Const(32|64) [1]) x) => (MakeTuple x (ConstBool <t.FieldType(1)> [false]))
 
 // Convert x * -1 to -x.
 (Mul(8|16|32|64)  (Const(8|16|32|64)  [-1]) x) => (Neg(8|16|32|64)  x)
@@ -584,8 +591,7 @@
 (Add(64|32|16|8) (Const(64|32|16|8) [0]) x) => x
 (Sub(64|32|16|8) x x) => (Const(64|32|16|8) [0])
 (Mul(64|32|16|8) (Const(64|32|16|8) [0]) _) => (Const(64|32|16|8) [0])
-(Select0 (Mul(64|32)uover (Const(64|32) [0]) x)) => (Const(64|32) [0])
-(Select1 (Mul(64|32)uover (Const(64|32) [0]) x)) => (ConstBool [false])
+(Mul(64|32)uover <t> (Const(64|32) [0]) x) => (MakeTuple (Const(64|32) <t.FieldType(0)> [0]) (ConstBool <t.FieldType(1)> [false]))
 
 (Com(64|32|16|8) (Com(64|32|16|8)  x)) => x
 (Com(64|32|16|8) (Const(64|32|16|8) [c])) => (Const(64|32|16|8) [^c])
@@ -2037,6 +2043,10 @@
 (Cvt64Fto32F sqrt0:(Sqrt (Cvt32Fto64F x))) && sqrt0.Uses==1 => (Sqrt32 x)
 
 (Sqrt (Const64F [c])) && !math.IsNaN(math.Sqrt(c)) => (Const64F [math.Sqrt(c)])
+
+// for rewriting constant folded math/bits ops
+(Select0 (MakeTuple x y)) => x
+(Select1 (MakeTuple x y)) => y
 
 // for rewriting results of some late-expanded rewrites (below)
 (SelectN [0] (MakeResult x ___)) => x
