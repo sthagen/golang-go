@@ -722,7 +722,7 @@ func greaterThan(x1, x2, y1, y2 Word) bool {
 
 // divRecursiveThreshold is the number of divisor digits
 // at which point divRecursive is faster than divBasic.
-const divRecursiveThreshold = 100
+var divRecursiveThreshold = 40 // see calibrate_test.go
 
 // divRecursive implements recursive division as described above.
 // It overwrites z with ⌊u/v⌋ and overwrites u with the remainder r.
@@ -831,7 +831,7 @@ func (z nat) divRecursiveStep(stk *stack, u, v nat, depth int) {
 			if len(qhatv) > s {
 				subVW(qhatv[s:], qhatv[s:], c)
 			}
-			addAt(uu[s:], v[s:], 0)
+			addTo(uu[s:], v[s:])
 		}
 		if qhatv.cmp(uu.norm()) > 0 {
 			panic("impossible")
@@ -840,7 +840,7 @@ func (z nat) divRecursiveStep(stk *stack, u, v nat, depth int) {
 		if c > 0 {
 			subVW(uu[len(qhatv):], uu[len(qhatv):], c)
 		}
-		addAt(z, qhat, j-B)
+		addTo(z[j-B:], qhat)
 		j -= B
 		stk.restore(mark)
 	}
@@ -865,7 +865,7 @@ func (z nat) divRecursiveStep(stk *stack, u, v nat, depth int) {
 			if len(qhatv) > s {
 				subVW(qhatv[s:], qhatv[s:], c)
 			}
-			addAt(u[s:], v[s:], 0)
+			addTo(u[s:], v[s:])
 		}
 	}
 	if qhatv.cmp(u.norm()) > 0 {
@@ -880,5 +880,5 @@ func (z nat) divRecursiveStep(stk *stack, u, v nat, depth int) {
 	}
 
 	// Done!
-	addAt(z, qhat.norm(), 0)
+	addTo(z, qhat.norm())
 }
