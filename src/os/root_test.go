@@ -858,6 +858,29 @@ func testRootMoveTo(t *testing.T, rename bool) {
 	}
 }
 
+func TestRootSymlink(t *testing.T) {
+	testenv.MustHaveSymlink(t)
+	for _, test := range rootTestCases {
+		test.run(t, func(t *testing.T, target string, root *os.Root) {
+			wantError := test.wantError
+			if test.ltarget != "" {
+				// We can't create a symlink over an existing symlink.
+				wantError = true
+			}
+
+			const wantTarget = "linktarget"
+			err := root.Symlink(wantTarget, test.open)
+			if errEndsTest(t, err, wantError, "root.Symlink(%q)", test.open) {
+				return
+			}
+			got, err := os.Readlink(target)
+			if err != nil || got != wantTarget {
+				t.Fatalf("ReadLink(%q) = %q, %v; want %q, nil", target, got, err, wantTarget)
+			}
+		})
+	}
+}
+
 // A rootConsistencyTest is a test case comparing os.Root behavior with
 // the corresponding non-Root function.
 //
@@ -1364,6 +1387,25 @@ func testRootConsistencyMove(t *testing.T, rename bool) {
 	}
 }
 
+func TestRootConsistencySymlink(t *testing.T) {
+	testenv.MustHaveSymlink(t)
+	for _, test := range rootConsistencyTestCases {
+		test.run(t, func(t *testing.T, path string, r *os.Root) (string, error) {
+			const target = "linktarget"
+			var err error
+			var got string
+			if r == nil {
+				err = os.Symlink(target, path)
+				got, _ = os.Readlink(target)
+			} else {
+				err = r.Symlink(target, path)
+				got, _ = r.Readlink(target)
+			}
+			return got, err
+		})
+	}
+}
+
 func TestRootRenameAfterOpen(t *testing.T) {
 	switch runtime.GOOS {
 	case "windows":
@@ -1593,6 +1635,33 @@ func TestRootRaceRenameDir(t *testing.T) {
 		if len(got) > 0 && string(got) != "public" {
 			t.Errorf("read file: %q; want error or 'public'", got)
 		}
+	}
+}
+
+func TestRootSymlinkToRoot(t *testing.T) {
+	dir := makefs(t, []string{
+		"d/d => ..",
+	})
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := root.Mkdir("d/d/new", 0777); err != nil {
+		t.Fatal(err)
+	}
+	f, err := root.Open("d/d")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	names, err := f.Readdirnames(-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(names)
+	if got, want := names, []string{"d", "new"}; !slices.Equal(got, want) {
+		t.Errorf("root contains: %q, want %q", got, want)
 	}
 }
 
