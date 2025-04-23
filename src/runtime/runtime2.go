@@ -8,7 +8,6 @@ import (
 	"internal/abi"
 	"internal/chacha8rand"
 	"internal/goarch"
-	"internal/goexperiment"
 	"internal/runtime/atomic"
 	"internal/runtime/sys"
 	"unsafe"
@@ -628,9 +627,9 @@ type mPadded struct {
 
 	// Size the runtime.m structure so it fits in the 2048-byte size class, and
 	// not in the next-smallest (1792-byte) size class. That leaves the 11 low
-	// bits of muintptr values available for flags, as required for
-	// GOEXPERIMENT=spinbitmutex.
-	_ [goexperiment.SpinbitMutexInt * (2048 - mallocHeaderSize - mRedZoneSize - unsafe.Sizeof(m{}))]byte
+	// bits of muintptr values available for flags, as required by
+	// lock_spinbit.go.
+	_ [(1 - goarch.IsWasm) * (2048 - mallocHeaderSize - mRedZoneSize - unsafe.Sizeof(m{}))]byte
 }
 
 type p struct {
@@ -757,10 +756,9 @@ type p struct {
 }
 
 type schedt struct {
-	goidgen    atomic.Uint64
-	lastpoll   atomic.Int64 // time of last network poll, 0 if currently polling
-	pollUntil  atomic.Int64 // time to which current poll is sleeping
-	pollingNet atomic.Int32 // 1 if some P doing non-blocking network poll
+	goidgen   atomic.Uint64
+	lastpoll  atomic.Int64 // time of last network poll, 0 if currently polling
+	pollUntil atomic.Int64 // time to which current poll is sleeping
 
 	lock mutex
 
