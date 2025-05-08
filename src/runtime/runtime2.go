@@ -487,8 +487,8 @@ type g struct {
 	// current in-progress goroutine profile
 	goroutineProfiled goroutineProfileStateHolder
 
-	coroarg   *coro // argument during coroutine transfers
-	syncGroup *synctestGroup
+	coroarg *coro // argument during coroutine transfers
+	bubble  *synctestBubble
 
 	// Per-G tracer state.
 	trace gTraceState
@@ -1013,7 +1013,7 @@ type _panic struct {
 	slotsPtr     unsafe.Pointer
 
 	recovered   bool // whether this panic has been recovered
-	reraised    bool // whether this panic was reraised
+	repanicked  bool // whether this panic repanicked
 	goexit      bool
 	deferreturn bool
 }
