@@ -1419,13 +1419,14 @@ func (fd *FD) WriteMsgInet4(p []byte, oob []byte, sa *syscall.SockaddrInet4) (in
 	defer fd.writeUnlock()
 
 	o := &fd.wop
-	if o.rsa == nil {
-		o.rsa = new(syscall.RawSockaddrAny)
-	}
-	len := sockaddrInet4ToRaw(o.rsa, sa)
 	msg := newWSAMsg(p, oob, 0)
-	msg.Name = (syscall.Pointer)(unsafe.Pointer(o.rsa))
-	msg.Namelen = len
+	if sa != nil {
+		if o.rsa == nil {
+			o.rsa = new(syscall.RawSockaddrAny)
+		}
+		msg.Name = (syscall.Pointer)(unsafe.Pointer(o.rsa))
+		msg.Namelen = sockaddrInet4ToRaw(o.rsa, sa)
+	}
 	n, err := fd.execIO(o, func(o *operation) (qty uint32, err error) {
 		err = windows.WSASendMsg(fd.Sysfd, &msg, 0, nil, &o.o, nil)
 		return qty, err
@@ -1445,13 +1446,14 @@ func (fd *FD) WriteMsgInet6(p []byte, oob []byte, sa *syscall.SockaddrInet6) (in
 	defer fd.writeUnlock()
 
 	o := &fd.wop
-	if o.rsa == nil {
-		o.rsa = new(syscall.RawSockaddrAny)
-	}
 	msg := newWSAMsg(p, oob, 0)
-	len := sockaddrInet6ToRaw(o.rsa, sa)
-	msg.Name = (syscall.Pointer)(unsafe.Pointer(o.rsa))
-	msg.Namelen = len
+	if sa != nil {
+		if o.rsa == nil {
+			o.rsa = new(syscall.RawSockaddrAny)
+		}
+		msg.Name = (syscall.Pointer)(unsafe.Pointer(o.rsa))
+		msg.Namelen = sockaddrInet6ToRaw(o.rsa, sa)
+	}
 	n, err := fd.execIO(o, func(o *operation) (qty uint32, err error) {
 		err = windows.WSASendMsg(fd.Sysfd, &msg, 0, nil, &o.o, nil)
 		return qty, err
