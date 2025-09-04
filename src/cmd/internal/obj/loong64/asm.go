@@ -440,8 +440,6 @@ var optab = []Optab{
 	{obj.ANOP, C_DCON, C_NONE, C_NONE, C_NONE, C_NONE, 0, 0, 0, 0},  // nop variants, see #40689
 	{obj.ANOP, C_REG, C_NONE, C_NONE, C_NONE, C_NONE, 0, 0, 0, 0},
 	{obj.ANOP, C_FREG, C_NONE, C_NONE, C_NONE, C_NONE, 0, 0, 0, 0},
-	{obj.ADUFFZERO, C_NONE, C_NONE, C_NONE, C_BRAN, C_NONE, 11, 4, 0, 0}, // same as AJMP
-	{obj.ADUFFCOPY, C_NONE, C_NONE, C_NONE, C_BRAN, C_NONE, 11, 4, 0, 0}, // same as AJMP
 }
 
 var atomicInst = map[obj.As]uint32{
@@ -1526,9 +1524,7 @@ func buildop(ctxt *obj.Link) {
 			obj.ATEXT,
 			obj.AFUNCDATA,
 			obj.APCALIGN,
-			obj.APCDATA,
-			obj.ADUFFZERO,
-			obj.ADUFFCOPY:
+			obj.APCDATA:
 			break
 
 		case ARDTIMELW:
@@ -1981,6 +1977,18 @@ func OP_12IR_5I(op uint32, i1 uint32, r2 uint32, i2 uint32) uint32 {
 
 func OP_12IRR(op uint32, i uint32, r2 uint32, r3 uint32) uint32 {
 	return op | (i&0xFFF)<<10 | (r2&0x1F)<<5 | (r3&0x1F)<<0
+}
+
+func OP_11IRR(op uint32, i uint32, r2 uint32, r3 uint32) uint32 {
+	return op | (i&0x7FF)<<10 | (r2&0x1F)<<5 | (r3&0x1F)<<0
+}
+
+func OP_10IRR(op uint32, i uint32, r2 uint32, r3 uint32) uint32 {
+	return op | (i&0x3FF)<<10 | (r2&0x1F)<<5 | (r3&0x1F)<<0
+}
+
+func OP_9IRR(op uint32, i uint32, r2 uint32, r3 uint32) uint32 {
+	return op | (i&0x1FF)<<10 | (r2&0x1F)<<5 | (r3&0x1F)<<0
 }
 
 func OP_8IRR(op uint32, i uint32, r2 uint32, r3 uint32) uint32 {
@@ -2535,7 +2543,28 @@ func (c *ctxt0) asmout(p *obj.Prog, o *Optab, out []uint32) {
 		si := c.regoff(&p.From)
 		Rj := uint32(p.From.Reg & EXT_REG_MASK)
 		Vd := uint32(p.To.Reg & EXT_REG_MASK)
-		o1 = v | uint32(si<<10) | (Rj << 5) | Vd
+		switch v & 0xc00000 {
+		case 0x800000: // [x]vldrepl.b
+			o1 = OP_12IRR(v, uint32(si), Rj, Vd)
+		case 0x400000: // [x]vldrepl.h
+			if si&1 != 0 {
+				c.ctxt.Diag("%v: offset must be a multiple of 2.\n", p)
+			}
+			o1 = OP_11IRR(v, uint32(si>>1), Rj, Vd)
+		case 0x0:
+			switch v & 0x300000 {
+			case 0x200000: // [x]vldrepl.w
+				if si&3 != 0 {
+					c.ctxt.Diag("%v: offset must be a multiple of 4.\n", p)
+				}
+				o1 = OP_10IRR(v, uint32(si>>2), Rj, Vd)
+			case 0x100000: // [x]vldrepl.d
+				if si&7 != 0 {
+					c.ctxt.Diag("%v: offset must be a multiple of 8.\n", p)
+				}
+				o1 = OP_9IRR(v, uint32(si>>3), Rj, Vd)
+			}
+		}
 
 	case 47: // preld  offset(Rbase), $hint
 		offs := c.regoff(&p.From)
@@ -4007,9 +4036,7 @@ func (c *ctxt0) opirr(a obj.As) uint32 {
 
 	case AJMP:
 		return 0x14 << 26
-	case AJAL,
-		obj.ADUFFZERO,
-		obj.ADUFFCOPY:
+	case AJAL:
 		return 0x15 << 26
 
 	case AJIRL:
