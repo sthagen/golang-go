@@ -3125,7 +3125,7 @@ func handoffp(pp *p) {
 		return
 	}
 	// if it has GC work, start it straight away
-	if gcBlackenEnabled != 0 && gcMarkWorkAvailable(pp) {
+	if gcBlackenEnabled != 0 && gcShouldScheduleWorker(pp) {
 		startm(pp, false, false)
 		return
 	}
@@ -3506,7 +3506,7 @@ top:
 	//
 	// If we're in the GC mark phase, can safely scan and blacken objects,
 	// and have work to do, run idle-time marking rather than give up the P.
-	if gcBlackenEnabled != 0 && gcMarkWorkAvailable(pp) && gcController.addIdleMarkWorker() {
+	if gcBlackenEnabled != 0 && gcShouldScheduleWorker(pp) && gcController.addIdleMarkWorker() {
 		node := (*gcBgMarkWorkerNode)(gcBgMarkWorkerPool.pop())
 		if node != nil {
 			pp.gcMarkWorkerMode = gcMarkWorkerIdleMode
@@ -3913,7 +3913,7 @@ func checkIdleGCNoP() (*p, *g) {
 	if atomic.Load(&gcBlackenEnabled) == 0 || !gcController.needIdleMarkWorker() {
 		return nil, nil
 	}
-	if !gcMarkWorkAvailable(nil) {
+	if !gcShouldScheduleWorker(nil) {
 		return nil, nil
 	}
 
@@ -5873,8 +5873,6 @@ func procresize(nprocs int32) *p {
 	}
 	sched.procresizetime = now
 
-	maskWords := (nprocs + 31) / 32
-
 	// Grow allp if necessary.
 	if nprocs > int32(len(allp)) {
 		// Synchronize with retake, which could be running
@@ -5890,19 +5888,8 @@ func procresize(nprocs int32) *p {
 			allp = nallp
 		}
 
-		if maskWords <= int32(cap(idlepMask)) {
-			idlepMask = idlepMask[:maskWords]
-			timerpMask = timerpMask[:maskWords]
-		} else {
-			nidlepMask := make([]uint32, maskWords)
-			// No need to copy beyond len, old Ps are irrelevant.
-			copy(nidlepMask, idlepMask)
-			idlepMask = nidlepMask
-
-			ntimerpMask := make([]uint32, maskWords)
-			copy(ntimerpMask, timerpMask)
-			timerpMask = ntimerpMask
-		}
+		idlepMask = idlepMask.resize(nprocs)
+		timerpMask = timerpMask.resize(nprocs)
 		unlock(&allpLock)
 	}
 
@@ -5965,8 +5952,8 @@ func procresize(nprocs int32) *p {
 	if int32(len(allp)) != nprocs {
 		lock(&allpLock)
 		allp = allp[:nprocs]
-		idlepMask = idlepMask[:maskWords]
-		timerpMask = timerpMask[:maskWords]
+		idlepMask = idlepMask.resize(nprocs)
+		timerpMask = timerpMask.resize(nprocs)
 		unlock(&allpLock)
 	}
 
@@ -6903,6 +6890,22 @@ func (p pMask) clear(id int32) {
 	word := id / 32
 	mask := uint32(1) << (id % 32)
 	atomic.And(&p[word], ^mask)
+}
+
+// resize resizes the pMask and returns a new one.
+//
+// The result may alias p, so callers are encouraged to
+// discard p. Not safe for concurrent use.
+func (p pMask) resize(nprocs int32) pMask {
+	maskWords := (nprocs + 31) / 32
+
+	if maskWords <= int32(cap(p)) {
+		return p[:maskWords]
+	}
+	newMask := make([]uint32, maskWords)
+	// No need to copy beyond len, old Ps are irrelevant.
+	copy(newMask, p)
+	return newMask
 }
 
 // pidleput puts p on the _Pidle list. now must be a relatively recent call
