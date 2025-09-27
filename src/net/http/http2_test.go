@@ -2,12 +2,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package runtime_test
+//go:build !nethttpomithttp2
 
-import "syscall"
+package http
 
-func pipe() (r, w syscall.Handle, err error) {
-	var p [2]syscall.Handle
-	err = syscall.Pipe(p[:])
-	return p[0], p[1], err
+func init() {
+	// Disable HTTP/2 internal channel pooling which interferes with synctest.
+	http2inTests = true
 }
