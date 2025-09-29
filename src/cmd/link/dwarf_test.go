@@ -364,6 +364,10 @@ func TestFlagW(t *testing.T) {
 	if runtime.GOOS == "aix" {
 		t.Skip("internal/xcoff cannot parse file without symbol table")
 	}
+	if !platform.ExecutableHasDWARF(runtime.GOOS, runtime.GOARCH) {
+		t.Skipf("skipping on %s/%s: no DWARF symbol table in executables", runtime.GOOS, runtime.GOARCH)
+	}
+
 	t.Parallel()
 
 	tmpdir := t.TempDir()
@@ -382,7 +386,7 @@ func TestFlagW(t *testing.T) {
 		{"-s", false},     // -s implies -w
 		{"-s -w=0", true}, // -w=0 negates the implied -w
 	}
-	if testenv.HasCGO() {
+	if testenv.HasCGO() && runtime.GOOS != "solaris" { // Solaris linker doesn't support the -S flag
 		tests = append(tests,
 			testCase{"-w -linkmode=external", false},
 			testCase{"-s -linkmode=external", false},
