@@ -38,13 +38,6 @@ import (
 //
 // TODO(#40775): See if these can be plumbed as explicit parameters.
 var (
-	// RootMode determines whether a module root is needed.
-	RootMode Root
-
-	// ForceUseModules may be set to force modules to be enabled when
-	// GO111MODULE=auto or to report an error when GO111MODULE=off.
-	ForceUseModules bool
-
 	allowMissingModuleImports bool
 
 	// ExplicitWriteGoMod prevents LoadPackages, ListModules, and other functions
@@ -60,7 +53,6 @@ var (
 
 // Variables set in Init.
 var (
-	initialized bool
 
 	// These are primarily used to initialize the MainModules, and should be
 	// eventually superseded by them but are still used in cases where the module
@@ -96,8 +88,8 @@ func EnterWorkspace(ctx context.Context) (exit func(), err error) {
 	}
 
 	// Reset the state to a clean state.
-	oldstate := setState(state{})
-	ForceUseModules = true
+	oldstate := setState(State{})
+	LoaderState.ForceUseModules = true
 
 	// Load in workspace mode.
 	InitWorkfile()
@@ -375,7 +367,7 @@ func InitWorkfile() {
 // It is exported mainly for Go toolchain switching, which must process
 // the go.work very early at startup.
 func FindGoWork(wd string) string {
-	if RootMode == NoRoot {
+	if LoaderState.RootMode == NoRoot {
 		return ""
 	}
 
@@ -401,22 +393,22 @@ func WorkFilePath() string {
 // Reset clears all the initialized, cached state about the use of modules,
 // so that we can start over.
 func Reset() {
-	setState(state{})
+	setState(State{})
 }
 
-func setState(s state) state {
-	oldState := state{
-		initialized:     initialized,
-		forceUseModules: ForceUseModules,
-		rootMode:        RootMode,
+func setState(s State) State {
+	oldState := State{
+		initialized:     LoaderState.initialized,
+		ForceUseModules: LoaderState.ForceUseModules,
+		RootMode:        LoaderState.RootMode,
 		modRoots:        modRoots,
 		modulesEnabled:  cfg.ModulesEnabled,
 		mainModules:     MainModules,
 		requirements:    requirements,
 	}
-	initialized = s.initialized
-	ForceUseModules = s.forceUseModules
-	RootMode = s.rootMode
+	LoaderState.initialized = s.initialized
+	LoaderState.ForceUseModules = s.ForceUseModules
+	LoaderState.RootMode = s.RootMode
 	modRoots = s.modRoots
 	cfg.ModulesEnabled = s.modulesEnabled
 	MainModules = s.mainModules
@@ -429,27 +421,36 @@ func setState(s state) state {
 	return oldState
 }
 
-type state struct {
-	initialized     bool
-	forceUseModules bool
-	rootMode        Root
-	modRoots        []string
-	modulesEnabled  bool
-	mainModules     *MainModuleSet
-	requirements    *Requirements
-	workFilePath    string
-	modfetchState   modfetch.State
+type State struct {
+	initialized bool
+
+	// ForceUseModules may be set to force modules to be enabled when
+	// GO111MODULE=auto or to report an error when GO111MODULE=off.
+	ForceUseModules bool
+
+	// RootMode determines whether a module root is needed.
+	RootMode       Root
+	modRoots       []string
+	modulesEnabled bool
+	mainModules    *MainModuleSet
+	requirements   *Requirements
+	workFilePath   string
+	modfetchState  modfetch.State
 }
+
+func NewState() *State { return &State{} }
+
+var LoaderState = NewState()
 
 // Init determines whether module mode is enabled, locates the root of the
 // current module (if any), sets environment variables for Git subprocesses, and
 // configures the cfg, codehost, load, modfetch, and search packages for use
 // with modules.
 func Init() {
-	if initialized {
+	if LoaderState.initialized {
 		return
 	}
-	initialized = true
+	LoaderState.initialized = true
 
 	fips140.Init()
 
@@ -462,11 +463,11 @@ func Init() {
 	default:
 		base.Fatalf("go: unknown environment setting GO111MODULE=%s", env)
 	case "auto":
-		mustUseModules = ForceUseModules
+		mustUseModules = LoaderState.ForceUseModules
 	case "on", "":
 		mustUseModules = true
 	case "off":
-		if ForceUseModules {
+		if LoaderState.ForceUseModules {
 			base.Fatalf("go: modules disabled by GO111MODULE=off; see 'go help modules'")
 		}
 		mustUseModules = false
@@ -493,7 +494,7 @@ func Init() {
 	if modRoots != nil {
 		// modRoot set before Init was called ("go mod init" does this).
 		// No need to search for go.mod.
-	} else if RootMode == NoRoot {
+	} else if LoaderState.RootMode == NoRoot {
 		if cfg.ModFile != "" && !base.InGOFLAGS("-modfile") {
 			base.Fatalf("go: -modfile cannot be used with commands that ignore the current module")
 		}
@@ -508,7 +509,7 @@ func Init() {
 			if cfg.ModFile != "" {
 				base.Fatalf("go: cannot find main module, but -modfile was set.\n\t-modfile cannot be used to set the module root directory.")
 			}
-			if RootMode == NeedRoot {
+			if LoaderState.RootMode == NeedRoot {
 				base.Fatal(ErrNoModRoot)
 			}
 			if !mustUseModules {
@@ -523,7 +524,7 @@ func Init() {
 			// It's a bit of a peculiar thing to disallow but quite mysterious
 			// when it happens. See golang.org/issue/26708.
 			fmt.Fprintf(os.Stderr, "go: warning: ignoring go.mod in system temp root %v\n", os.TempDir())
-			if RootMode == NeedRoot {
+			if LoaderState.RootMode == NeedRoot {
 				base.Fatal(ErrNoModRoot)
 			}
 			if !mustUseModules {
@@ -545,7 +546,7 @@ func Init() {
 		gopath = list[0]
 		if _, err := fsys.Stat(filepath.Join(gopath, "go.mod")); err == nil {
 			fmt.Fprintf(os.Stderr, "go: warning: ignoring go.mod in $GOPATH %v\n", gopath)
-			if RootMode == NeedRoot {
+			if LoaderState.RootMode == NeedRoot {
 				base.Fatal(ErrNoModRoot)
 			}
 			if !mustUseModules {
@@ -569,7 +570,7 @@ func WillBeEnabled() bool {
 		// Already enabled.
 		return true
 	}
-	if initialized {
+	if LoaderState.initialized {
 		// Initialized, not enabled.
 		return false
 	}
@@ -636,7 +637,7 @@ func VendorDir() string {
 }
 
 func inWorkspaceMode() bool {
-	if !initialized {
+	if !LoaderState.initialized {
 		panic("inWorkspaceMode called before modload.Init called")
 	}
 	if !Enabled() {
@@ -1249,7 +1250,7 @@ func fixVersion(ctx context.Context, fixed *bool) modfile.VersionFixer {
 // This function affects the default cfg.BuildMod when outside of a module,
 // so it can only be called prior to Init.
 func AllowMissingModuleImports() {
-	if initialized {
+	if LoaderState.initialized {
 		panic("AllowMissingModuleImports after Init")
 	}
 	allowMissingModuleImports = true
