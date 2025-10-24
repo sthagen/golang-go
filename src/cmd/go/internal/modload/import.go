@@ -63,7 +63,7 @@ func (e *ImportMissingError) Error() string {
 			}
 			return msg
 		}
-		if e.QueryErr != nil && e.QueryErr != ErrNoModRoot {
+		if e.QueryErr != nil && !errors.Is(e.QueryErr, ErrNoModRoot) {
 			return fmt.Sprintf("cannot find module providing package %s: %v", e.Path, e.QueryErr)
 		}
 		if cfg.BuildMod == "mod" || (cfg.BuildMod == "readonly" && allowMissingModuleImports) {
@@ -484,7 +484,7 @@ func importFromModules(loaderstate *State, ctx context.Context, path string, rs 
 			// requested package.
 			var queryErr error
 			if !HasModRoot(loaderstate) {
-				queryErr = ErrNoModRoot
+				queryErr = NewNoMainModulesError(loaderstate)
 			}
 			return module.Version{}, "", "", nil, &ImportMissingError{Path: path, QueryErr: queryErr, isStd: pathIsStd}
 		}
@@ -612,7 +612,7 @@ func queryImport(loaderstate *State, ctx context.Context, path string, rs *Requi
 		return module.Version{}, err
 	}
 
-	candidates, err := QueryPackages(loaderstate, ctx, path, "latest", mg.Selected, CheckAllowed)
+	candidates, err := QueryPackages(loaderstate, ctx, path, "latest", mg.Selected, loaderstate.CheckAllowed)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			// Return "cannot find module providing package […]" instead of whatever
