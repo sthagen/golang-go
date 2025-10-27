@@ -218,7 +218,7 @@ func NewNamed(obj *TypeName, underlying Type, methods []*Func) *Named {
 // All others:
 // Effectively, nothing happens.
 func (n *Named) unpack() *Named {
-	if n.stateHas(unpacked | lazyLoaded) { // avoid locking below
+	if n.stateHas(lazyLoaded | unpacked) { // avoid locking below
 		return n
 	}
 
@@ -228,7 +228,7 @@ func (n *Named) unpack() *Named {
 	defer n.mu.Unlock()
 
 	// only atomic for consistency; we are holding the mutex
-	if n.stateHas(unpacked | lazyLoaded) {
+	if n.stateHas(lazyLoaded | unpacked) {
 		return n
 	}
 
@@ -246,10 +246,10 @@ func (n *Named) unpack() *Named {
 		n.tparams = orig.tparams
 
 		if len(orig.methods) == 0 {
-			n.setState(unpacked | hasMethods) // nothing further to do
+			n.setState(lazyLoaded | unpacked | hasMethods) // nothing further to do
 			n.inst.ctxt = nil
 		} else {
-			n.setState(unpacked)
+			n.setState(lazyLoaded | unpacked)
 		}
 		return n
 	}
@@ -278,19 +278,36 @@ func (n *Named) unpack() *Named {
 		}
 	}
 
-	n.setState(unpacked | hasMethods)
+	n.setState(lazyLoaded | unpacked | hasMethods)
 	return n
 }
 
 // stateHas atomically determines whether the current state includes any active bit in sm.
-func (n *Named) stateHas(sm stateMask) bool {
-	return atomic.LoadUint32(&n.state_)&uint32(sm) != 0
+func (n *Named) stateHas(m stateMask) bool {
+	return stateMask(atomic.LoadUint32(&n.state_))&m != 0
 }
 
 // setState atomically sets the current state to include each active bit in sm.
 // Must only be called while holding n.mu.
-func (n *Named) setState(sm stateMask) {
-	atomic.OrUint32(&n.state_, uint32(sm))
+func (n *Named) setState(m stateMask) {
+	atomic.OrUint32(&n.state_, uint32(m))
+	// verify state transitions
+	if debug {
+		m := stateMask(atomic.LoadUint32(&n.state_))
+		u := m&unpacked != 0
+		// unpacked => lazyLoaded
+		if u {
+			assert(m&lazyLoaded != 0)
+		}
+		// hasMethods => unpacked
+		if m&hasMethods != 0 {
+			assert(u)
+		}
+		// hasUnder => unpacked
+		if m&hasUnder != 0 {
+			assert(u)
+		}
+	}
 }
 
 // newNamed is like NewNamed but with a *Checker receiver.
@@ -506,7 +523,7 @@ func (t *Named) SetUnderlying(u Type) {
 
 	t.fromRHS = u
 	t.allowNilRHS = false
-	t.setState(unpacked | hasMethods) // TODO(markfreeman): Why hasMethods?
+	t.setState(lazyLoaded | unpacked | hasMethods) // TODO(markfreeman): Why hasMethods?
 
 	t.underlying = u
 	t.allowNilUnderlying = false
@@ -548,6 +565,16 @@ func (t *Named) methodIndex(name string, foldCase bool) int {
 	return -1
 }
 
+// rhs returns [Named.fromRHS].
+//
+// In debug mode, it also asserts that n is in an appropriate state.
+func (n *Named) rhs() Type {
+	if debug {
+		assert(n.stateHas(lazyLoaded | unpacked))
+	}
+	return n.fromRHS
+}
+
 // Underlying returns the [underlying type] of the named type t, resolving all
 // forwarding declarations. Underlying types are never Named, TypeParam, or
 // Alias types.
@@ -559,7 +586,7 @@ func (n *Named) Underlying() Type {
 	// The gccimporter depends on writing a nil underlying via NewNamed and
 	// immediately reading it back. Rather than putting that in Named.under
 	// and complicating things there, we just check for that special case here.
-	if n.fromRHS == nil {
+	if n.rhs() == nil {
 		assert(n.allowNilRHS)
 		if n.allowNilUnderlying {
 			return nil
@@ -583,15 +610,14 @@ func (t *Named) String() string { return TypeString(t, nil) }
 
 // resolveUnderlying computes the underlying type of n.
 //
-// It does so by following RHS type chains. If a type literal is found, each
-// named type in the chain has its underlying set to that type. Aliases are
-// skipped because their underlying type is not memoized.
+// It does so by following RHS type chains for alias and named types. If any
+// other type T is found, each named type in the chain has its underlying
+// type set to T. Aliases are skipped because their underlying type is
+// not memoized.
 //
-// This function also checks for instantiated layout cycles, which are
-// reachable only in the case where unpack() expanded an instantiated
-// type which became self-referencing without indirection.
-// If such a cycle is found, the underlying type is set to Typ[Invalid]
-// and a cycle is reported.
+// This method also checks for cycles among alias and named types, which will
+// yield no underlying type. If such a cycle is found, the underlying type is
+// set to Typ[Invalid] and a cycle is reported.
 func (n *Named) resolveUnderlying() {
 	assert(n.stateHas(unpacked))
 
@@ -635,11 +661,11 @@ func (n *Named) resolveUnderlying() {
 			t.mu.Lock()
 			defer t.mu.Unlock()
 
-			assert(t.fromRHS != nil || t.allowNilRHS)
-			rhs = t.fromRHS
+			assert(t.rhs() != nil || t.allowNilRHS)
+			rhs = t.rhs()
 
 		default:
-			u = rhs // any type literal works
+			u = rhs // any type literal or predeclared type works
 		}
 	}
 
@@ -721,7 +747,7 @@ func (n *Named) expandRHS() (rhs Type) {
 	}
 
 	assert(!n.stateHas(unpacked))
-	assert(n.inst.orig.stateHas(unpacked | lazyLoaded))
+	assert(n.inst.orig.stateHas(lazyLoaded | unpacked))
 
 	if n.inst.ctxt == nil {
 		n.inst.ctxt = NewContext()
@@ -746,7 +772,7 @@ func (n *Named) expandRHS() (rhs Type) {
 		ctxt = check.context()
 	}
 
-	rhs = check.subst(n.obj.pos, orig.fromRHS, m, n, ctxt)
+	rhs = check.subst(n.obj.pos, orig.rhs(), m, n, ctxt)
 
 	// TODO(markfreeman): Can we handle this in substitution?
 	// If the RHS is an interface, we must set the receiver of interface methods
@@ -755,7 +781,7 @@ func (n *Named) expandRHS() (rhs Type) {
 		if methods, copied := replaceRecvType(iface.methods, orig, n); copied {
 			// If the RHS doesn't use type parameters, it may not have been
 			// substituted; we need to craft a new interface first.
-			if iface == orig.fromRHS {
+			if iface == orig.rhs() {
 				assert(iface.complete) // otherwise we are copying incomplete data
 
 				crafted := check.newInterface()
