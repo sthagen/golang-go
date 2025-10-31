@@ -288,13 +288,6 @@ func main() {
 	fn := main_main // make an indirect call, as the linker doesn't know the address of the main package when laying down the runtime
 	fn()
 
-	exitHooksRun := false
-	if raceenabled {
-		runExitHooks(0) // run hooks now, since racefini does not return
-		exitHooksRun = true
-		racefini()
-	}
-
 	// Check for C memory leaks if using ASAN and we've made cgo calls,
 	// or if we are running as a library in a C program.
 	// We always make one cgo call, above, to notify_runtime_init_done,
@@ -302,6 +295,7 @@ func main() {
 	// No point in leak checking if no cgo calls, since leak checking
 	// just looks for objects allocated using malloc and friends.
 	// Just checking iscgo doesn't help because asan implies iscgo.
+	exitHooksRun := false
 	if asanenabled && (isarchive || islibrary || NumCgoCall() > 1) {
 		runExitHooks(0) // lsandoleakcheck may not return
 		exitHooksRun = true
@@ -326,6 +320,9 @@ func main() {
 	}
 	if !exitHooksRun {
 		runExitHooks(0)
+	}
+	if raceenabled {
+		racefini() // does not return
 	}
 
 	exit(0)
@@ -4622,7 +4619,12 @@ func reentersyscall(pc, sp, bp uintptr) {
 	}
 	// As soon as we switch to _Gsyscall, we are in danger of losing our P.
 	// We must not touch it after this point.
-	casgstatus(gp, _Grunning, _Gsyscall)
+	//
+	// Try to do a quick CAS to avoid calling into casgstatus in the common case.
+	// If we have a bubble, we need to fall into casgstatus.
+	if gp.bubble != nil || !gp.atomicstatus.CompareAndSwap(_Grunning, _Gsyscall) {
+		casgstatus(gp, _Grunning, _Gsyscall)
+	}
 	if staticLockRanking {
 		// casgstatus clobbers gp.sched via systemstack under staticLockRanking. Restore it.
 		save(pc, sp, bp)
@@ -4825,7 +4827,12 @@ func exitsyscall() {
 	// need to be held ahead of time. We're effectively atomic with respect to
 	// the tracer because we're non-preemptible and in the runtime. It can't stop
 	// us to read a bad status.
-	casgstatus(gp, _Gsyscall, _Grunning)
+	//
+	// Try to do a quick CAS to avoid calling into casgstatus in the common case.
+	// If we have a bubble, we need to fall into casgstatus.
+	if gp.bubble != nil || !gp.atomicstatus.CompareAndSwap(_Gsyscall, _Grunning) {
+		casgstatus(gp, _Gsyscall, _Grunning)
+	}
 
 	// Caution: we're in a window where we may be in _Grunning without a P.
 	// Either we will grab a P or call exitsyscall0, where we'll switch to
