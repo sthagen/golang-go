@@ -1628,9 +1628,9 @@ type dodataState struct {
 	// Link context
 	ctxt *Link
 	// Data symbols bucketed by type.
-	data [sym.SXREF][]loader.Sym
+	data [sym.SFirstUnallocated][]loader.Sym
 	// Max alignment for each flavor of data symbol.
-	dataMaxAlign [sym.SXREF]int32
+	dataMaxAlign [sym.SFirstUnallocated]int32
 	// Overridden sym type
 	symGroupType []sym.SymKind
 	// Current data size so far.
@@ -1687,7 +1687,7 @@ func (ctxt *Link) dodata(symGroupType []sym.SymKind) {
 
 		st := state.symType(s)
 
-		if st <= sym.STEXTFIPSEND || st >= sym.SXREF {
+		if st <= sym.STEXTEND || st >= sym.SFirstUnallocated {
 			continue
 		}
 		state.data[st] = append(state.data[st], s)
@@ -2238,11 +2238,6 @@ func (state *dodataState) allocateDataSections(ctxt *Link) {
 	state.checkdatsize(sym.SITABLINK)
 	sect.Length = uint64(state.datsize) - sect.Vaddr
 
-	/* gosymtab */
-	sect = state.allocateNamedSectionAndAssignSyms(seg, genrelrosecname(".gosymtab"), sym.SSYMTAB, sym.SRODATA, relroSecPerm)
-	ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.symtab", 0), sect)
-	ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.esymtab", 0), sect)
-
 	/* gopclntab */
 	sect = state.allocateNamedSectionAndAssignSyms(seg, genrelrosecname(".gopclntab"), sym.SPCLNTAB, sym.SRODATA, relroSecPerm)
 	ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.pclntab", 0), sect)
@@ -2264,11 +2259,11 @@ func (state *dodataState) allocateDataSections(ctxt *Link) {
 	}
 
 	siz := 0
-	for symn := sym.SELFRXSECT; symn < sym.SXREF; symn++ {
+	for symn := sym.SELFRXSECT; symn < sym.SFirstUnallocated; symn++ {
 		siz += len(state.data[symn])
 	}
 	ctxt.datap = make([]loader.Sym, 0, siz)
-	for symn := sym.SELFRXSECT; symn < sym.SXREF; symn++ {
+	for symn := sym.SELFRXSECT; symn < sym.SFirstUnallocated; symn++ {
 		ctxt.datap = append(ctxt.datap, state.data[symn]...)
 	}
 }
@@ -2852,9 +2847,6 @@ func (ctxt *Link) address() []*sym.Segment {
 		// will be such that the last page of the text segment will be
 		// mapped twice, once r-x and once starting out rw- and, after
 		// relocation processing, changed to r--.
-		//
-		// Ideally the last page of the text segment would not be
-		// writable even for this short period.
 		va = uint64(Rnd(int64(va), *FlagRound))
 
 		order = append(order, &Segrodata)
@@ -2988,7 +2980,6 @@ func (ctxt *Link) address() []*sym.Segment {
 	ldr := ctxt.loader
 	var (
 		rodata  = ldr.SymSect(ldr.LookupOrCreateSym("runtime.rodata", 0))
-		symtab  = ldr.SymSect(ldr.LookupOrCreateSym("runtime.symtab", 0))
 		pclntab = ldr.SymSect(ldr.LookupOrCreateSym("runtime.pclntab", 0))
 		types   = ldr.SymSect(ldr.LookupOrCreateSym("runtime.types", 0))
 	)
@@ -3068,8 +3059,6 @@ func (ctxt *Link) address() []*sym.Segment {
 	ctxt.xdefine("runtime.egcbss", sym.SRODATA, ldr.SymAddr(s)+ldr.SymSize(s))
 	ldr.SetSymSect(ldr.LookupOrCreateSym("runtime.egcbss", 0), ldr.SymSect(s))
 
-	ctxt.xdefine("runtime.symtab", sym.SRODATA, int64(symtab.Vaddr))
-	ctxt.xdefine("runtime.esymtab", sym.SRODATA, int64(symtab.Vaddr+symtab.Length))
 	ctxt.xdefine("runtime.pclntab", sym.SRODATA, int64(pclntab.Vaddr))
 	ctxt.defineInternal("runtime.pcheader", sym.SRODATA)
 	ctxt.defineInternal("runtime.funcnametab", sym.SRODATA)
