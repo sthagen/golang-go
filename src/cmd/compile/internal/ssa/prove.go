@@ -2503,15 +2503,13 @@ func addLocalFacts(ft *factsTable, b *Block) {
 				xl := ft.limits[x.ID]
 				y := add.Args[1]
 				yl := ft.limits[y.ID]
-				if unsignedAddOverflows(xl.umax, yl.umax, add.Type) {
-					continue
-				}
-
-				if xl.umax < uminDivisor {
-					ft.update(b, v, y, unsigned, lt|eq)
-				}
-				if yl.umax < uminDivisor {
-					ft.update(b, v, x, unsigned, lt|eq)
+				if !unsignedAddOverflows(xl.umax, yl.umax, add.Type) {
+					if xl.umax < uminDivisor {
+						ft.update(b, v, y, unsigned, lt|eq)
+					}
+					if yl.umax < uminDivisor {
+						ft.update(b, v, x, unsigned, lt|eq)
+					}
 				}
 			}
 			ft.update(b, v, v.Args[0], unsigned, lt|eq)
@@ -3030,16 +3028,14 @@ func (ft *factsTable) topoSortValuesInBlock(b *Block) {
 	want := f.NumValues()
 
 	scores := ft.reusedTopoSortScoresTable
-	if len(scores) < want {
-		if want <= cap(scores) {
-			scores = scores[:want]
-		} else {
-			if cap(scores) > 0 {
-				f.Cache.freeUintSlice(scores)
-			}
-			scores = f.Cache.allocUintSlice(want)
-			ft.reusedTopoSortScoresTable = scores
+	if want <= cap(scores) {
+		scores = scores[:want]
+	} else {
+		if cap(scores) > 0 {
+			f.Cache.freeUintSlice(scores)
 		}
+		scores = f.Cache.allocUintSlice(want)
+		ft.reusedTopoSortScoresTable = scores
 	}
 
 	for _, v := range b.Values {
