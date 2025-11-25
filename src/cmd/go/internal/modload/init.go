@@ -80,7 +80,7 @@ func EnterWorkspace(loaderstate *State, ctx context.Context) (exit func(), err e
 	}
 
 	// Reset the state to a clean state.
-	oldstate := loaderstate.setState(State{})
+	oldstate := loaderstate.setState(NewState())
 	loaderstate.ForceUseModules = true
 
 	// Load in workspace mode.
@@ -385,11 +385,11 @@ func WorkFilePath(loaderstate *State) string {
 // Reset clears all the initialized, cached state about the use of modules,
 // so that we can start over.
 func (s *State) Reset() {
-	s.setState(State{})
+	s.setState(NewState())
 }
 
-func (s *State) setState(new State) State {
-	oldState := State{
+func (s *State) setState(new *State) (old *State) {
+	old = &State{
 		initialized:     s.initialized,
 		ForceUseModules: s.ForceUseModules,
 		RootMode:        s.RootMode,
@@ -397,6 +397,8 @@ func (s *State) setState(new State) State {
 		modulesEnabled:  cfg.ModulesEnabled,
 		MainModules:     s.MainModules,
 		requirements:    s.requirements,
+		workFilePath:    s.workFilePath,
+		fetcher:         s.fetcher,
 	}
 	s.initialized = new.initialized
 	s.ForceUseModules = new.ForceUseModules
@@ -409,8 +411,10 @@ func (s *State) setState(new State) State {
 	// The modfetch package's global state is used to compute
 	// the go.sum file, so save and restore it along with the
 	// modload state.
-	oldState.modfetchState = modfetch.SetState(new.modfetchState)
-	return oldState
+	s.fetcher = new.fetcher
+	old.fetcher = modfetch.SetState(s.fetcher) // TODO(jitsu): remove after completing global state elimination
+
+	return old
 }
 
 type State struct {
@@ -447,11 +451,15 @@ type State struct {
 
 	// Set to the path to the go.work file, or "" if workspace mode is
 	// disabled
-	workFilePath  string
-	modfetchState modfetch.State
+	workFilePath string
+	fetcher      *modfetch.Fetcher
 }
 
-func NewState() *State { return &State{} }
+func NewState() *State {
+	s := new(State)
+	s.fetcher = modfetch.NewFetcher()
+	return s
+}
 
 // Init determines whether module mode is enabled, locates the root of the
 // current module (if any), sets environment variables for Git subprocesses, and
@@ -929,9 +937,9 @@ func loadModFile(loaderstate *State, ctx context.Context, opts *PackageOpts) (*R
 		}
 		for _, modRoot := range loaderstate.modRoots {
 			sumFile := strings.TrimSuffix(modFilePath(modRoot), ".mod") + ".sum"
-			modfetch.ModuleFetchState.WorkspaceGoSumFiles = append(modfetch.ModuleFetchState.WorkspaceGoSumFiles, sumFile)
+			modfetch.Fetcher_.AddWorkspaceGoSumFile(sumFile)
 		}
-		modfetch.ModuleFetchState.GoSumFile = loaderstate.workFilePath + ".sum"
+		modfetch.Fetcher_.SetGoSumFile(loaderstate.workFilePath + ".sum")
 	} else if len(loaderstate.modRoots) == 0 {
 		// We're in module mode, but not inside a module.
 		//
@@ -951,7 +959,7 @@ func loadModFile(loaderstate *State, ctx context.Context, opts *PackageOpts) (*R
 		//
 		// See golang.org/issue/32027.
 	} else {
-		modfetch.ModuleFetchState.GoSumFile = strings.TrimSuffix(modFilePath(loaderstate.modRoots[0]), ".mod") + ".sum"
+		modfetch.Fetcher_.SetGoSumFile(strings.TrimSuffix(modFilePath(loaderstate.modRoots[0]), ".mod") + ".sum")
 	}
 	if len(loaderstate.modRoots) == 0 {
 		// TODO(#49228): Instead of creating a fake module with an empty modroot,

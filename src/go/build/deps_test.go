@@ -58,6 +58,7 @@ var depsRules = `
 	  internal/nettrace,
 	  internal/platform,
 	  internal/profilerecord,
+	  internal/runtime/pprof/label,
 	  internal/syslist,
 	  internal/trace/tracev2,
 	  internal/trace/traceviewer/format,
@@ -85,6 +86,7 @@ var depsRules = `
 	internal/goos,
 	internal/itoa,
 	internal/profilerecord,
+	internal/runtime/pprof/label,
 	internal/strconv,
 	internal/trace/tracev2,
 	math/bits,
@@ -602,9 +604,11 @@ var depsRules = `
 	< golang.org/x/crypto/internal/poly1305
 	< golang.org/x/crypto/chacha20poly1305;
 
-	CRYPTO-MATH, NET, container/list, encoding/hex, encoding/pem,
+	CRYPTO-MATH, golang.org/x/crypto/chacha20poly1305
+	< crypto/hpke;
+
+	CRYPTO-MATH, NET, container/list, encoding/hex, encoding/pem, crypto/hpke,
 	golang.org/x/crypto/chacha20poly1305, crypto/tls/internal/fips140tls
-	< crypto/internal/hpke
 	< crypto/x509/internal/macos
 	< crypto/x509/pkix
 	< crypto/x509
@@ -672,7 +676,8 @@ var depsRules = `
 	< net/http/fcgi;
 
 	# Profiling
-	FMT, compress/gzip, encoding/binary, sort, text/tabwriter
+	internal/runtime/pprof/label, runtime, context < internal/runtime/pprof;
+	FMT, compress/gzip, encoding/binary, sort, text/tabwriter, internal/runtime/pprof, internal/runtime/pprof/label
 	< runtime/pprof;
 
 	OS, compress/gzip, internal/lazyregexp
