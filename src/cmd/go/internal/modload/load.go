@@ -490,7 +490,7 @@ func LoadPackages(loaderstate *State, ctx context.Context, opts PackageOpts, pat
 			// loaded.requirements, but here we may have also loaded (and want to
 			// preserve checksums for) additional entities from compatRS, which are
 			// only needed for compatibility with ld.TidyCompatibleVersion.
-			if err := modfetch.WriteGoSum(ctx, keep, mustHaveCompleteRequirements(loaderstate)); err != nil {
+			if err := loaderstate.Fetcher().WriteGoSum(ctx, keep, mustHaveCompleteRequirements(loaderstate)); err != nil {
 				base.Fatal(err)
 			}
 		}

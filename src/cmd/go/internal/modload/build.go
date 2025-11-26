@@ -329,7 +329,7 @@ func moduleInfo(loaderstate *State, ctx context.Context, rs *Requirements, m mod
 
 		checksumOk := func(suffix string) bool {
 			return rs == nil || m.Version == "" || !mustHaveSums(loaderstate) ||
-				modfetch.HaveSum(module.Version{Path: m.Path, Version: m.Version + suffix})
+				modfetch.HaveSum(loaderstate.Fetcher(), module.Version{Path: m.Path, Version: m.Version + suffix})
 		}
 
 		mod := module.Version{Path: m.Path, Version: m.Version}

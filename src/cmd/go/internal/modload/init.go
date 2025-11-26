@@ -457,8 +457,12 @@ type State struct {
 
 func NewState() *State {
 	s := new(State)
-	s.fetcher = modfetch.NewFetcher()
+	s.fetcher = modfetch.Fetcher_
 	return s
+}
+
+func (s *State) Fetcher() *modfetch.Fetcher {
+	return s.fetcher
 }
 
 // Init determines whether module mode is enabled, locates the root of the
@@ -937,9 +941,9 @@ func loadModFile(loaderstate *State, ctx context.Context, opts *PackageOpts) (*R
 		}
 		for _, modRoot := range loaderstate.modRoots {
 			sumFile := strings.TrimSuffix(modFilePath(modRoot), ".mod") + ".sum"
-			modfetch.Fetcher_.AddWorkspaceGoSumFile(sumFile)
+			loaderstate.Fetcher().AddWorkspaceGoSumFile(sumFile)
 		}
-		modfetch.Fetcher_.SetGoSumFile(loaderstate.workFilePath + ".sum")
+		loaderstate.Fetcher().SetGoSumFile(loaderstate.workFilePath + ".sum")
 	} else if len(loaderstate.modRoots) == 0 {
 		// We're in module mode, but not inside a module.
 		//
@@ -959,7 +963,7 @@ func loadModFile(loaderstate *State, ctx context.Context, opts *PackageOpts) (*R
 		//
 		// See golang.org/issue/32027.
 	} else {
-		modfetch.Fetcher_.SetGoSumFile(strings.TrimSuffix(modFilePath(loaderstate.modRoots[0]), ".mod") + ".sum")
+		loaderstate.Fetcher().SetGoSumFile(strings.TrimSuffix(modFilePath(loaderstate.modRoots[0]), ".mod") + ".sum")
 	}
 	if len(loaderstate.modRoots) == 0 {
 		// TODO(#49228): Instead of creating a fake module with an empty modroot,
@@ -1965,7 +1969,7 @@ func commitRequirements(loaderstate *State, ctx context.Context, opts WriteOpts)
 	if loaderstate.inWorkspaceMode() {
 		// go.mod files aren't updated in workspace mode, but we still want to
 		// update the go.work.sum file.
-		return modfetch.WriteGoSum(ctx, keepSums(loaderstate, ctx, loaded, loaderstate.requirements, addBuildListZipSums), mustHaveCompleteRequirements(loaderstate))
+		return loaderstate.Fetcher().WriteGoSum(ctx, keepSums(loaderstate, ctx, loaded, loaderstate.requirements, addBuildListZipSums), mustHaveCompleteRequirements(loaderstate))
 	}
 	_, updatedGoMod, modFile, err := UpdateGoModFromReqs(loaderstate, ctx, opts)
 	if err != nil {
@@ -1989,7 +1993,7 @@ func commitRequirements(loaderstate *State, ctx context.Context, opts WriteOpts)
 		// Don't write go.mod, but write go.sum in case we added or trimmed sums.
 		// 'go mod init' shouldn't write go.sum, since it will be incomplete.
 		if cfg.CmdName != "mod init" {
-			if err := modfetch.WriteGoSum(ctx, keepSums(loaderstate, ctx, loaded, loaderstate.requirements, addBuildListZipSums), mustHaveCompleteRequirements(loaderstate)); err != nil {
+			if err := loaderstate.Fetcher().WriteGoSum(ctx, keepSums(loaderstate, ctx, loaded, loaderstate.requirements, addBuildListZipSums), mustHaveCompleteRequirements(loaderstate)); err != nil {
 				return err
 			}
 		}
@@ -2012,7 +2016,7 @@ func commitRequirements(loaderstate *State, ctx context.Context, opts WriteOpts)
 		// 'go mod init' shouldn't write go.sum, since it will be incomplete.
 		if cfg.CmdName != "mod init" {
 			if err == nil {
-				err = modfetch.WriteGoSum(ctx, keepSums(loaderstate, ctx, loaded, loaderstate.requirements, addBuildListZipSums), mustHaveCompleteRequirements(loaderstate))
+				err = loaderstate.Fetcher().WriteGoSum(ctx, keepSums(loaderstate, ctx, loaded, loaderstate.requirements, addBuildListZipSums), mustHaveCompleteRequirements(loaderstate))
 			}
 		}
 	}()
