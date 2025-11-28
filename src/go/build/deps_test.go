@@ -108,6 +108,7 @@ var depsRules = `
 	< internal/runtime/cgroup
 	< internal/runtime/gc/scan
 	< runtime
+	< runtime/secret
 	< sync/atomic
 	< internal/sync
 	< weak
@@ -537,7 +538,7 @@ var depsRules = `
 	< crypto/internal/fips140/edwards25519
 	< crypto/internal/fips140/ed25519
 	< crypto/internal/fips140/rsa
-	< FIPS < crypto/fips140;
+	< crypto/fips140 < FIPS;
 
 	crypto !< FIPS;
 
@@ -559,6 +560,7 @@ var depsRules = `
 	< crypto/cipher
 	< crypto/internal/boring
 	< crypto/boring
+	< crypto/internal/rand
 	< crypto/aes,
 	  crypto/des,
 	  crypto/rc4,
@@ -711,6 +713,9 @@ var depsRules = `
 
 	log/slog, testing
 	< testing/slogtest;
+
+	testing, crypto/rand
+	< testing/cryptotest;
 
 	FMT, crypto/sha256, encoding/binary, encoding/json,
 	go/ast, go/parser, go/token,
