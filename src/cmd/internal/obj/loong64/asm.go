@@ -140,7 +140,7 @@ var optab = []Optab{
 	{AMOVB, C_REG, C_NONE, C_NONE, C_TLS_IE, C_NONE, 56, 16, 0, 0},
 	{AMOVB, C_TLS_IE, C_NONE, C_NONE, C_REG, C_NONE, 57, 16, 0, 0},
 	// moving data between registers
-	{AMOVB, C_REG, C_NONE, C_NONE, C_REG, C_NONE, 12, 4, 0, 0},
+	{AMOVB, C_REG, C_NONE, C_NONE, C_REG, C_NONE, 1, 4, 0, 0},
 
 	// memory access
 	{AMOVBU, C_REG, C_NONE, C_NONE, C_SAUTO, C_NONE, 7, 4, REGSP, 0},
@@ -161,7 +161,7 @@ var optab = []Optab{
 	{AMOVBU, C_REG, C_NONE, C_NONE, C_TLS_IE, C_NONE, 56, 16, 0, 0},
 	{AMOVBU, C_TLS_IE, C_NONE, C_NONE, C_REG, C_NONE, 57, 16, 0, 0},
 	// moving data between registers
-	{AMOVBU, C_REG, C_NONE, C_NONE, C_REG, C_NONE, 12, 4, 0, 0},
+	{AMOVBU, C_REG, C_NONE, C_NONE, C_REG, C_NONE, 1, 4, 0, 0},
 
 	// memory access
 	{AMOVW, C_REG, C_NONE, C_NONE, C_SAUTO, C_NONE, 7, 4, REGSP, 0},
@@ -194,29 +194,6 @@ var optab = []Optab{
 	// get a stack address
 	{AMOVW, C_SACON, C_NONE, C_NONE, C_REG, C_NONE, 3, 4, REGSP, 0},
 	{AMOVW, C_LACON, C_NONE, C_NONE, C_REG, C_NONE, 27, 12, REGSP, 0},
-	// get an external address, need relocation
-	{AMOVW, C_EXTADDR, C_NONE, C_NONE, C_REG, C_NONE, 52, 8, 0, NOTUSETMP},
-
-	// memory access
-	{AMOVWU, C_REG, C_NONE, C_NONE, C_SAUTO, C_NONE, 7, 4, REGSP, 0},
-	{AMOVWU, C_REG, C_NONE, C_NONE, C_LAUTO, C_NONE, 35, 12, REGSP, 0},
-	{AMOVWU, C_SAUTO, C_NONE, C_NONE, C_REG, C_NONE, 8, 4, REGSP, 0},
-	{AMOVWU, C_LAUTO, C_NONE, C_NONE, C_REG, C_NONE, 36, 12, REGSP, 0},
-	{AMOVWU, C_REG, C_NONE, C_NONE, C_SOREG_12, C_NONE, 7, 4, REGZERO, 0},
-	{AMOVWU, C_REG, C_NONE, C_NONE, C_LOREG_32, C_NONE, 35, 12, REGZERO, 0},
-	{AMOVWU, C_SOREG_12, C_NONE, C_NONE, C_REG, C_NONE, 8, 4, REGZERO, 0},
-	{AMOVWU, C_LOREG_32, C_NONE, C_NONE, C_REG, C_NONE, 36, 12, REGZERO, 0},
-	{AMOVWU, C_ROFF, C_NONE, C_NONE, C_REG, C_NONE, 21, 4, 0, 0},
-	// variable access
-	{AMOVWU, C_REG, C_NONE, C_NONE, C_ADDR, C_NONE, 50, 8, 0, 0},
-	{AMOVWU, C_ADDR, C_NONE, C_NONE, C_REG, C_NONE, 51, 8, 0, 0},
-	// TLS access
-	{AMOVWU, C_REG, C_NONE, C_NONE, C_TLS_LE, C_NONE, 53, 16, 0, 0},
-	{AMOVWU, C_TLS_LE, C_NONE, C_NONE, C_REG, C_NONE, 54, 16, 0, 0},
-	{AMOVWU, C_REG, C_NONE, C_NONE, C_TLS_IE, C_NONE, 56, 16, 0, 0},
-	{AMOVWU, C_TLS_IE, C_NONE, C_NONE, C_REG, C_NONE, 57, 16, 0, 0},
-	// moving data between registers
-	{AMOVWU, C_REG, C_NONE, C_NONE, C_REG, C_NONE, 12, 4, 0, 0},
 
 	// memory access
 	{AMOVV, C_REG, C_NONE, C_NONE, C_SAUTO, C_NONE, 7, 4, REGSP, 0},
@@ -347,7 +324,6 @@ var optab = []Optab{
 
 	{ACLOW, C_REG, C_NONE, C_NONE, C_REG, C_NONE, 9, 4, 0, 0},
 	{AABSF, C_FREG, C_NONE, C_NONE, C_FREG, C_NONE, 9, 4, 0, 0},
-	{AMOVVF, C_FREG, C_NONE, C_NONE, C_FREG, C_NONE, 9, 4, 0, 0},
 
 	{AVSETEQV, C_VREG, C_NONE, C_NONE, C_FCCREG, C_NONE, 9, 4, 0, 0},
 	{AXVSETEQV, C_XREG, C_NONE, C_NONE, C_FCCREG, C_NONE, 9, 4, 0, 0},
@@ -373,25 +349,6 @@ var optab = []Optab{
 	// store data to stack
 	{AMOVF, C_FREG, C_NONE, C_NONE, C_SAUTO, C_NONE, 29, 4, REGSP, 0},
 	{AMOVF, C_FREG, C_NONE, C_NONE, C_LAUTO, C_NONE, 29, 12, REGSP, 0},
-
-	// memory access
-	{AMOVD, C_SOREG_12, C_NONE, C_NONE, C_FREG, C_NONE, 28, 4, REGZERO, 0},
-	{AMOVD, C_LOREG_32, C_NONE, C_NONE, C_FREG, C_NONE, 28, 12, REGZERO, 0},
-	{AMOVD, C_FREG, C_NONE, C_NONE, C_SOREG_12, C_NONE, 29, 4, REGZERO, 0},
-	{AMOVD, C_FREG, C_NONE, C_NONE, C_LOREG_32, C_NONE, 29, 12, REGZERO, 0},
-	{AMOVD, C_FREG, C_NONE, C_NONE, C_ROFF, C_NONE, 20, 4, 0, 0},
-	{AMOVD, C_ROFF, C_NONE, C_NONE, C_FREG, C_NONE, 21, 4, 0, 0},
-	// variable access
-	{AMOVD, C_FREG, C_NONE, C_NONE, C_ADDR, C_NONE, 50, 8, 0, 0},
-	{AMOVD, C_ADDR, C_NONE, C_NONE, C_FREG, C_NONE, 51, 8, 0, 0},
-	// moving data between registers
-	{AMOVD, C_FREG, C_NONE, C_NONE, C_FREG, C_NONE, 9, 4, 0, 0},
-	// load data from stack
-	{AMOVD, C_SAUTO, C_NONE, C_NONE, C_FREG, C_NONE, 28, 4, REGSP, 0},
-	{AMOVD, C_LAUTO, C_NONE, C_NONE, C_FREG, C_NONE, 28, 12, REGSP, 0},
-	// store data to stack
-	{AMOVD, C_FREG, C_NONE, C_NONE, C_SAUTO, C_NONE, 29, 4, REGSP, 0},
-	{AMOVD, C_FREG, C_NONE, C_NONE, C_LAUTO, C_NONE, 29, 12, REGSP, 0},
 
 	{AVSHUFB, C_VREG, C_VREG, C_VREG, C_VREG, C_NONE, 37, 4, 0, 0},
 	{AXVSHUFB, C_XREG, C_XREG, C_XREG, C_XREG, C_NONE, 37, 4, 0, 0},
@@ -1416,6 +1373,18 @@ func buildop(ctxt *obj.Link) {
 			opset(AMOVFW, r0)
 			opset(AMOVWD, r0)
 			opset(AMOVDW, r0)
+			opset(AMOVVF, r0)
+			opset(AMOVVD, r0)
+			opset(AMOVFV, r0)
+			opset(AMOVDV, r0)
+			opset(AFFINTFW, r0)
+			opset(AFFINTFV, r0)
+			opset(AFFINTDW, r0)
+			opset(AFFINTDV, r0)
+			opset(AFTINTWF, r0)
+			opset(AFTINTWD, r0)
+			opset(AFTINTVF, r0)
+			opset(AFTINTVD, r0)
 			opset(ANEGF, r0)
 			opset(ANEGD, r0)
 			opset(AABSD, r0)
@@ -1427,21 +1396,8 @@ func buildop(ctxt *obj.Link) {
 			opset(AFCLASSD, r0)
 			opset(AFLOGBF, r0)
 			opset(AFLOGBD, r0)
-
-		case AMOVVF:
-			opset(AMOVVD, r0)
-			opset(AMOVFV, r0)
-			opset(AMOVDV, r0)
 			opset(ATRUNCDV, r0)
 			opset(ATRUNCFV, r0)
-			opset(AFFINTFW, r0)
-			opset(AFFINTFV, r0)
-			opset(AFFINTDW, r0)
-			opset(AFFINTDV, r0)
-			opset(AFTINTWF, r0)
-			opset(AFTINTWD, r0)
-			opset(AFTINTVF, r0)
-			opset(AFTINTVD, r0)
 			opset(AFTINTRPWF, r0)
 			opset(AFTINTRPWD, r0)
 			opset(AFTINTRPVF, r0)
@@ -1520,6 +1476,7 @@ func buildop(ctxt *obj.Link) {
 
 		case AMOVBU:
 			opset(AMOVHU, r0)
+			opset(AMOVWU, r0)
 
 		case AMOVWP:
 			opset(AMOVVP, r0)
@@ -1592,14 +1549,14 @@ func buildop(ctxt *obj.Link) {
 		case ANEGW:
 			opset(ANEGV, r0)
 
+		case AMOVF:
+			opset(AMOVD, r0)
+
 		case AMOVW,
-			AMOVD,
-			AMOVF,
 			AMOVV,
 			ARFE,
 			AJAL,
 			AJMP,
-			AMOVWU,
 			AVMOVQ,
 			AXVMOVQ,
 			AVSHUFB,
@@ -2337,10 +2294,20 @@ func (c *ctxt0) asmout(p *obj.Prog, o *Optab, out []uint32) {
 
 	case 1: // mov rj, rd
 		switch p.As {
+		case AMOVB:
+			o1 = OP_RR(c.oprr(AEXTWB), uint32(p.From.Reg), uint32(p.To.Reg))
+		case AMOVH:
+			o1 = OP_RR(c.oprr(AEXTWH), uint32(p.From.Reg), uint32(p.To.Reg))
 		case AMOVW:
 			o1 = OP_RRR(c.oprrr(ASLL), uint32(REGZERO), uint32(p.From.Reg), uint32(p.To.Reg))
 		case AMOVV:
 			o1 = OP_RRR(c.oprrr(AOR), uint32(REGZERO), uint32(p.From.Reg), uint32(p.To.Reg))
+		case AMOVBU:
+			o1 = OP_12IRR(c.opirr(AAND), uint32(0xff), uint32(p.From.Reg), uint32(p.To.Reg))
+		case AMOVHU:
+			o1 = OP_IRIR(c.opirir(ABSTRPICKV), 15, uint32(p.From.Reg), 0, uint32(p.To.Reg))
+		case AMOVWU:
+			o1 = OP_IRIR(c.opirir(ABSTRPICKV), 31, uint32(p.From.Reg), 0, uint32(p.To.Reg))
 		case AVMOVQ:
 			o1 = OP_6IRR(c.opirr(AVSLLV), uint32(0), uint32(p.From.Reg), uint32(p.To.Reg))
 		case AXVMOVQ:
@@ -2482,22 +2449,6 @@ func (c *ctxt0) asmout(p *obj.Prog, o *Optab, out []uint32) {
 				Sym:  p.To.Sym,
 				Add:  p.To.Offset,
 			})
-		}
-
-	case 12: // movbs r,r
-		switch p.As {
-		case AMOVB:
-			o1 = OP_RR(c.oprr(AEXTWB), uint32(p.From.Reg), uint32(p.To.Reg))
-		case AMOVH:
-			o1 = OP_RR(c.oprr(AEXTWH), uint32(p.From.Reg), uint32(p.To.Reg))
-		case AMOVBU:
-			o1 = OP_12IRR(c.opirr(AAND), uint32(0xff), uint32(p.From.Reg), uint32(p.To.Reg))
-		case AMOVHU:
-			o1 = OP_IRIR(c.opirir(ABSTRPICKV), 15, uint32(p.From.Reg), 0, uint32(p.To.Reg))
-		case AMOVWU:
-			o1 = OP_IRIR(c.opirir(ABSTRPICKV), 31, uint32(p.From.Reg), 0, uint32(p.To.Reg))
-		default:
-			c.ctxt.Diag("unexpected encoding\n%v", p)
 		}
 
 	case 13: // vsll $ui3, [vr1], vr2
@@ -4436,26 +4387,26 @@ func (c *ctxt0) oprr(a obj.As) uint32 {
 		return 0x46a1 << 10
 	case ATRUNCDW:
 		return 0x46a2 << 10
-	case AMOVFV:
-		return 0x46c9 << 10
-	case AMOVDV:
-		return 0x46ca << 10
-	case AMOVVF:
-		return 0x4746 << 10
-	case AMOVVD:
-		return 0x474a << 10
-	case AMOVFW:
-		return 0x46c1 << 10
-	case AMOVDW:
-		return 0x46c2 << 10
-	case AMOVWF:
-		return 0x4744 << 10
+	case AMOVWF, AFFINTFW:
+		return 0x4744 << 10 // ffint.s.w
+	case AMOVVF, AFFINTFV:
+		return 0x4746 << 10 // ffint.s.l
+	case AMOVWD, AFFINTDW:
+		return 0x4748 << 10 // ffint.d.w
+	case AMOVVD, AFFINTDV:
+		return 0x474a << 10 // ffint.d.l
+	case AMOVFW, AFTINTWF:
+		return 0x46c1 << 10 // ftint.w.s
+	case AMOVDW, AFTINTWD:
+		return 0x46c2 << 10 // ftint.w.d
+	case AMOVFV, AFTINTVF:
+		return 0x46c9 << 10 // ftint.l.s
+	case AMOVDV, AFTINTVD:
+		return 0x46ca << 10 // ftint.l.d
 	case AMOVDF:
-		return 0x4646 << 10
-	case AMOVWD:
-		return 0x4748 << 10
+		return 0x4646 << 10 // fcvt.s.d
 	case AMOVFD:
-		return 0x4649 << 10
+		return 0x4649 << 10 // fcvt.d.s
 	case AABSF:
 		return 0x4501 << 10
 	case AABSD:
@@ -4480,22 +4431,6 @@ func (c *ctxt0) oprr(a obj.As) uint32 {
 		return 0x450d << 10 // fclass.s
 	case AFCLASSD:
 		return 0x450e << 10 // fclass.d
-	case AFFINTFW:
-		return 0x4744 << 10 // ffint.s.w
-	case AFFINTFV:
-		return 0x4746 << 10 // ffint.s.l
-	case AFFINTDW:
-		return 0x4748 << 10 // ffint.d.w
-	case AFFINTDV:
-		return 0x474a << 10 // ffint.d.l
-	case AFTINTWF:
-		return 0x46c1 << 10 // ftint.w.s
-	case AFTINTWD:
-		return 0x46c2 << 10 // ftint.w.d
-	case AFTINTVF:
-		return 0x46c9 << 10 // ftint.l.s
-	case AFTINTVD:
-		return 0x46ca << 10 // ftint.l.d
 	case AFTINTRMWF:
 		return 0x4681 << 10 // ftintrm.w.s
 	case AFTINTRMWD:
