@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"internal/synctest"
 	"internal/testenv"
 	"io"
 	"log"
@@ -44,6 +43,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -1609,6 +1609,65 @@ func testHeadReaderFrom(t *testing.T, mode testMode) {
 	}
 	if string(gotBody) != wantBody {
 		t.Errorf("got unexpected body len=%v, want %v", len(gotBody), len(wantBody))
+	}
+}
+
+// Ensure ResponseWriter.ReadFrom respects declared Content-Length header.
+// https://go.dev/issue/78179.
+func TestReaderFromTooLong(t *testing.T) { run(t, testReaderFromTooLong, []testMode{http1Mode}) }
+func testReaderFromTooLong(t *testing.T, mode testMode) {
+	contentLen := 600 // Longer than content-sniffing length.
+	tests := []struct {
+		name           string
+		reader         io.Reader
+		wantHandlerErr error
+	}{
+		{
+			name:   "reader of correct length",
+			reader: strings.NewReader(strings.Repeat("a", contentLen)),
+		},
+		{
+			name:   "wrapped reader of correct outer length",
+			reader: io.LimitReader(strings.NewReader(strings.Repeat("a", 2*contentLen)), int64(contentLen)),
+		},
+		{
+			name:   "wrapped reader of correct inner length",
+			reader: io.LimitReader(io.LimitReader(strings.NewReader(strings.Repeat("a", 2*contentLen)), int64(contentLen)), int64(2*contentLen)),
+		},
+		{
+			name:           "reader that is too long",
+			reader:         strings.NewReader(strings.Repeat("a", 2*contentLen)),
+			wantHandlerErr: ErrContentLength,
+		},
+		{
+			name:           "wrapped reader that is too long",
+			reader:         io.LimitReader(strings.NewReader(strings.Repeat("a", 2*contentLen)), int64(2*contentLen)),
+			wantHandlerErr: ErrContentLength,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cst := newClientServerTest(t, mode, HandlerFunc(func(w ResponseWriter, r *Request) {
+				w.Header().Set("Content-Length", strconv.Itoa(contentLen))
+				n, err := w.(io.ReaderFrom).ReadFrom(tc.reader)
+				if int(n) != contentLen || !errors.Is(err, tc.wantHandlerErr) {
+					t.Errorf("got %v, %v from w.ReadFrom; want %v, %v", n, err, contentLen, tc.wantHandlerErr)
+				}
+			}))
+			res, err := cst.c.Get(cst.ts.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer res.Body.Close()
+			gotBody, err := io.ReadAll(res.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(gotBody) != contentLen {
+				t.Errorf("got unexpected body len=%v, want %v", len(gotBody), contentLen)
+			}
+		})
 	}
 }
 
@@ -7588,4 +7647,18 @@ func testServerTLSNextProtos(t *testing.T, mode testMode) {
 	if !slices.Equal(nextProtos, wantNextProtos) {
 		t.Fatalf("after running test: original NextProtos slice = %v, want %v", nextProtos, wantNextProtos)
 	}
+}
+
+// Verifies that starting a server with HTTP/2 disabled and an empty TLSConfig does not panic.
+// (Tests fix in CL 758560.)
+func TestServerHTTP2Disabled(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		li := fakeNetListen()
+		srv := &Server{}
+		srv.Protocols = new(Protocols)
+		srv.Protocols.SetHTTP1(true)
+		go srv.ServeTLS(li, "", "")
+		synctest.Wait()
+		srv.Shutdown(t.Context())
+	})
 }
