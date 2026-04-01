@@ -12,6 +12,7 @@ import (
 	"internal/buildcfg"
 	"internal/pkgbits"
 	"os"
+	"slices"
 	"strings"
 
 	"cmd/compile/internal/base"
@@ -85,8 +86,11 @@ type pkgWriter struct {
 	typDecls map[*types2.TypeName]typeDeclGen
 
 	// linknames maps package-scope objects to their linker symbol name,
-	// if specified by a //go:linkname directive.
-	linknames map[types2.Object]string
+	// if specified by a //go:linkname or //go:linknamestd directive.
+	linknames map[types2.Object]struct {
+		remote string
+		std    bool
+	}
 
 	// cgoPragmas accumulates any //go:cgo_* pragmas that need to be
 	// passed through to cmd/link.
@@ -113,7 +117,10 @@ func newPkgWriter(m posMap, pkg *types2.Package, info *types2.Info, otherInfo ma
 		funDecls: make(map[*types2.Func]*syntax.FuncDecl),
 		typDecls: make(map[*types2.TypeName]typeDeclGen),
 
-		linknames: make(map[types2.Object]string),
+		linknames: make(map[types2.Object]struct {
+			remote string
+			std    bool
+		}),
 	}
 }
 
@@ -877,9 +884,24 @@ func (w *writer) doObj(wext *writer, obj types2.Object) pkgbits.CodeObj {
 		wext.typeExt(obj)
 		w.typ(named.Underlying())
 
-		w.Len(named.NumMethods())
-		for i := 0; i < named.NumMethods(); i++ {
-			w.method(wext, named.Method(i))
+		// separate generic and non-generic methods
+		var methods, gmethods []*types2.Func
+		for i := range named.NumMethods() {
+			m := named.Method(i)
+			if isGenericMethod(m.Type()) {
+				gmethods = append(gmethods, m)
+			} else {
+				methods = append(methods, m)
+			}
+		}
+		// encode non-generic methods inline
+		w.Len(len(methods))
+		for _, m := range methods {
+			w.method(wext, m)
+		}
+		// encode generic methods elsewhere
+		for _, m := range gmethods {
+			w.p.objIdx(m)
 		}
 
 		return pkgbits.ObjType
@@ -993,8 +1015,8 @@ func (w *writer) method(wext *writer, meth *types2.Func) {
 	wext.funcExt(meth)
 }
 
-// qualifiedIdent writes out the name of an object declared at package
-// scope. (For now, it's also used to refer to local defined types.)
+// qualifiedIdent writes out the name of an object typically declared at package
+// scope. It's also used to refer to generic methods and locally defined types.
 func (w *writer) qualifiedIdent(obj types2.Object) {
 	w.Sync(pkgbits.SyncSym)
 
@@ -1010,6 +1032,13 @@ func (w *writer) qualifiedIdent(obj types2.Object) {
 			// TODO(mdempsky): Find a better solution; this is terrible.
 			name = fmt.Sprintf("%s·%v", name, decl.gen)
 		}
+	}
+
+	// Generic methods are promoted to objects and thus need qualified identifiers.
+	// They must be contextualized by their defining type.
+	if isGenericMethod(obj.Type()) {
+		recv := types2.Unalias(deref2(obj.Type().(*types2.Signature).Recv().Type()))
+		name = fmt.Sprintf("%s.%s", recv.(*types2.Named).Obj().Name(), name)
 	}
 
 	w.pkg(obj.Pkg())
@@ -1152,7 +1181,9 @@ func (w *writer) varExt(obj *types2.Var) {
 func (w *writer) linkname(obj types2.Object) {
 	w.Sync(pkgbits.SyncLinkname)
 	w.Int64(-1)
-	w.String(w.p.linknames[obj])
+	info := w.p.linknames[obj]
+	w.String(info.remote)
+	w.Bool(info.std)
 }
 
 func (w *writer) pragmaFlag(p ir.PragmaFlag) {
@@ -2230,30 +2261,36 @@ func (w *writer) methodExpr(expr *syntax.SelectorExpr, recv types2.Type, sel *ty
 	}
 
 	if isConcreteMethod(sig) {
-		if named, ok := types2.Unalias(deref2(recv)).(*types2.Named); ok {
-			obj, targs := splitNamed(named)
-			info := w.p.objInstIdx(obj, targs, w.dict)
-
-			// Method on a derived receiver type. These can be handled by a
-			// static call to the shaped method, but require dynamically
-			// looking up the appropriate dictionary argument in the current
-			// function's runtime dictionary.
-			if w.p.hasImplicitTypeParams(obj) || info.anyDerived() {
-				w.Bool(true) // dynamic subdictionary
-				w.Len(w.dict.subdictIdx(info))
-				return
-			}
-
-			// Method on a fully known receiver type. These can be handled
-			// by a static call to the shaped method, and with a static
-			// reference to the receiver type's dictionary.
-			if len(targs) != 0 {
-				w.Bool(false) // no dynamic subdictionary
-				w.Bool(true)  // static dictionary
-				w.objInfo(info)
-				return
-			}
+		tname, tExplicits := splitNamed(types2.Unalias(deref2(recv)).(*types2.Named))
+		var info objInfo
+		if isGenericMethod(sig) {
+			// For generic methods, the shaped object is the method itself.
+			mExplicits := asTypeSlice(w.p.info.Instances[expr.Sel].TypeArgs)
+			info = w.p.objInstIdx(fun.Origin(), slices.Concat(tExplicits, mExplicits), w.dict)
+		} else {
+			// For non-generic concrete methods on generic types, the shaped object
+			// is the type. The method must be looked up on the type by name.
+			info = w.p.objInstIdx(tname, tExplicits, w.dict)
 		}
+		// We don't know all of the type arguments statically. These can be
+		// handled by a static call to the shaped method, but require
+		// dynamically looking up the appropriate dictionary argument
+		// in the current function's runtime dictionary.
+		if info.anyDerived() {
+			w.Bool(true) // dynamic subdictionary
+			w.Len(w.dict.subdictIdx(info))
+			return
+		}
+		// We know all of the type arguments statically. These can be handled
+		// by a static call to the shaped method, and with a static reference
+		// to either the receiver type's or method's dictionary (see above).
+		if len(info.explicits) > 0 {
+			w.Bool(false) // no dynamic subdictionary
+			w.Bool(true)  // static dictionary
+			w.objInfo(info)
+			return
+		}
+		// no type arguments
 	}
 
 	w.Bool(false) // no dynamic subdictionary
@@ -2770,26 +2807,33 @@ func (pw *pkgWriter) collectDecls(noders []*noder) {
 		pw.cgoPragmas = append(pw.cgoPragmas, p.pragcgobuf...)
 
 		for _, l := range p.linknames {
+			directive := "go:linkname"
+			if l.std {
+				directive = "go:linknamestd"
+			}
 			if !file.importedUnsafe {
-				pw.errorf(l.pos, "//go:linkname only allowed in Go files that import \"unsafe\"")
+				pw.errorf(l.pos, "//%s only allowed in Go files that import \"unsafe\"", directive)
 				continue
 			}
 			if strings.Contains(l.remote, "[") && strings.Contains(l.remote, "]") {
-				pw.errorf(l.pos, "//go:linkname reference of an instantiation is not allowed")
+				pw.errorf(l.pos, "//%s reference of an instantiation is not allowed", directive)
 				continue
 			}
 
 			switch obj := pw.curpkg.Scope().Lookup(l.local).(type) {
 			case *types2.Func, *types2.Var:
 				if _, ok := pw.linknames[obj]; !ok {
-					pw.linknames[obj] = l.remote
+					pw.linknames[obj] = struct {
+						remote string
+						std    bool
+					}{l.remote, l.std}
 				} else {
-					pw.errorf(l.pos, "duplicate //go:linkname for %s", l.local)
+					pw.errorf(l.pos, "duplicate //%s for %s", directive, l.local)
 				}
 
 			default:
 				if types.AllowsGoVersion(1, 18) {
-					pw.errorf(l.pos, "//go:linkname must refer to declared function or variable")
+					pw.errorf(l.pos, "//%s must refer to declared function or variable", directive)
 				}
 			}
 		}
