@@ -203,9 +203,10 @@ type writer struct {
 
 // A writerDict tracks types and objects that are used by a declaration.
 type writerDict struct {
-	// implicits is a slice of type parameters from the enclosing
-	// declarations.
+	// implicits contains type parameters from enclosing declarations.
 	implicits []*types2.TypeParam
+	// receivers contains receiver type parameters of the declaration.
+	receivers []*types2.TypeParam
 
 	// derived is a slice of type indices for computing derived types
 	// (i.e., types that depend on the declaration's type parameters).
@@ -229,8 +230,7 @@ type itabInfo struct {
 
 // typeParamIndex returns the index of the given type parameter within
 // the dictionary. This may differ from typ.Index() when there are
-// implicit type parameters due to defined types declared within a
-// generic function or method.
+// implicit or receiver type parameters.
 func (dict *writerDict) typeParamIndex(typ *types2.TypeParam) int {
 	for idx, implicit := range dict.implicits {
 		if implicit == typ {
@@ -238,7 +238,13 @@ func (dict *writerDict) typeParamIndex(typ *types2.TypeParam) int {
 		}
 	}
 
-	return len(dict.implicits) + typ.Index()
+	for idx, receiver := range dict.receivers {
+		if receiver == typ {
+			return len(dict.implicits) + idx
+		}
+	}
+
+	return len(dict.implicits) + len(dict.receivers) + typ.Index()
 }
 
 // A derivedInfo represents a reference to an encoded generic Go type.
@@ -778,6 +784,10 @@ func (pw *pkgWriter) objIdx(obj types2.Object) index {
 		dict.implicits = decl.implicits
 	}
 
+	if isGenericMethod(obj.Type()) {
+		dict.receivers = asTypeParamSlice(obj.Type().(*types2.Signature).RecvTypeParams())
+	}
+
 	// We encode objects into 4 elements across different sections, all
 	// sharing the same index:
 	//
@@ -934,11 +944,21 @@ func (w *writer) objDict(obj types2.Object, dict *writerDict) {
 	// doesn't care about referenced functions.
 
 	w.dict = dict // TODO(mdempsky): This is a bit sketchy.
-
 	w.Len(len(dict.implicits))
 
+	rtparams := objRecvTypeParams(obj)
 	tparams := objTypeParams(obj)
+
+	if w.Version().Has(pkgbits.GenericMethods) {
+		w.Len(len(rtparams))
+	} else {
+		assert(len(rtparams) == 0)
+	}
 	w.Len(len(tparams))
+
+	for _, rtparam := range rtparams {
+		w.typ(rtparam.Constraint())
+	}
 	for _, tparam := range tparams {
 		w.typ(tparam.Constraint())
 	}
@@ -969,6 +989,9 @@ func (w *writer) objDict(obj types2.Object, dict *writerDict) {
 	// arithmetic/conversions/etc, we could shape those together.
 	for _, implicit := range dict.implicits {
 		w.Bool(implicit.Underlying().(*types2.Interface).IsMethodSet())
+	}
+	for _, rtparam := range rtparams {
+		w.Bool(rtparam.Underlying().(*types2.Interface).IsMethodSet())
 	}
 	for _, tparam := range tparams {
 		w.Bool(tparam.Underlying().(*types2.Interface).IsMethodSet())
@@ -1936,41 +1959,30 @@ func (w *writer) expr(expr syntax.Expr) {
 			w.selector(sel.Obj())
 
 		case types2.MethodVal:
-			w.Code(exprMethodVal)
-			typ := w.recvExpr(expr, sel)
-			w.pos(expr)
-			w.methodExpr(expr, typ, sel)
+			w.methVal(expr, sel)
 
 		case types2.MethodExpr:
-			w.Code(exprMethodExpr)
-
-			tv := w.p.typeAndValue(expr.X)
-			assert(tv.IsType())
-
-			index := sel.Index()
-			implicits := index[:len(index)-1]
-
-			typ := tv.Type
-			w.typ(typ)
-
-			w.Len(len(implicits))
-			for _, ix := range implicits {
-				w.Len(ix)
-				typ = deref2(typ).Underlying().(*types2.Struct).Field(ix).Type()
-			}
-
-			recv := sel.Obj().(*types2.Func).Type().(*types2.Signature).Recv().Type()
-			if w.Bool(isPtrTo(typ, recv)) { // need deref
-				typ = recv
-			} else if w.Bool(isPtrTo(recv, typ)) { // need addr
-				typ = recv
-			}
-
-			w.pos(expr)
-			w.methodExpr(expr, typ, sel)
+			w.methExpr(expr, sel)
 		}
 
 	case *syntax.IndexExpr:
+		// might be explicit instantiation of a generic method
+		if selector, ok := expr.X.(*syntax.SelectorExpr); ok {
+			if sel, ok := w.p.info.Selections[selector]; ok {
+				switch sel.Kind() {
+				default:
+					w.p.fatalf(selector, "unexpected selection kind: %v", sel.Kind())
+				case types2.FieldVal:
+					// not a method
+				case types2.MethodVal:
+					w.methVal(selector, sel)
+					return
+				case types2.MethodExpr:
+					w.methExpr(selector, sel)
+					return
+				}
+			}
+		}
 		_ = w.p.typeOf(expr.Index) // ensure this is an index expression, not an instantiation
 
 		xtyp := w.p.typeOf(expr.X)
@@ -2142,7 +2154,11 @@ func (w *writer) expr(expr syntax.Expr) {
 		writeFunExpr := func() {
 			fun := syntax.Unparen(expr.Fun)
 
-			if selector, ok := fun.(*syntax.SelectorExpr); ok {
+			expr := fun
+			if idx, ok := expr.(*syntax.IndexExpr); ok {
+				expr = idx.X
+			}
+			if selector, ok := expr.(*syntax.SelectorExpr); ok {
 				if sel, ok := w.p.info.Selections[selector]; ok && sel.Kind() == types2.MethodVal {
 					w.Bool(true) // method call
 					typ := w.recvExpr(selector, sel)
@@ -2194,6 +2210,42 @@ func (w *writer) optExpr(expr syntax.Expr) {
 	if w.Bool(expr != nil) {
 		w.expr(expr)
 	}
+}
+
+func (w *writer) methVal(expr *syntax.SelectorExpr, sel *types2.Selection) {
+	w.Code(exprMethodVal)
+	typ := w.recvExpr(expr, sel)
+	w.pos(expr)
+	w.methodExpr(expr, typ, sel)
+}
+
+func (w *writer) methExpr(expr *syntax.SelectorExpr, sel *types2.Selection) {
+	w.Code(exprMethodExpr)
+
+	tv := w.p.typeAndValue(expr.X)
+	assert(tv.IsType())
+
+	index := sel.Index()
+	implicits := index[:len(index)-1]
+
+	typ := tv.Type
+	w.typ(typ)
+
+	w.Len(len(implicits))
+	for _, ix := range implicits {
+		w.Len(ix)
+		typ = deref2(typ).Underlying().(*types2.Struct).Field(ix).Type()
+	}
+
+	recv := sel.Obj().(*types2.Func).Type().(*types2.Signature).Recv().Type()
+	if w.Bool(isPtrTo(typ, recv)) { // need deref
+		typ = recv
+	} else if w.Bool(isPtrTo(recv, typ)) { // need addr
+		typ = recv
+	}
+
+	w.pos(expr)
+	w.methodExpr(expr, typ, sel)
 }
 
 // recvExpr writes out expr.X, but handles any implicit addressing,
@@ -2253,7 +2305,18 @@ func (w *writer) methodExpr(expr *syntax.SelectorExpr, recv types2.Type, sel *ty
 	sig := fun.Type().(*types2.Signature)
 
 	w.typ(recv)
-	w.typ(sig)
+
+	// only pass the signature if it's not a generic method
+	if isGenericMethod(sig) {
+		assert(w.Version().Has(pkgbits.GenericMethods))
+		w.Bool(true)
+	} else {
+		if w.Version().Has(pkgbits.GenericMethods) {
+			w.Bool(false)
+		}
+		w.typ(sig)
+	}
+
 	w.pos(expr)
 	w.selector(fun)
 
