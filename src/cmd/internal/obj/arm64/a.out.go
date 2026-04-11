@@ -218,12 +218,21 @@ const (
 
 // bits 0-4 indicates register: Vn
 // bits 5-8 indicates arrangement: <T>
+// TODO: consider putting the register and arrangement in different fields of an
+// [obj.Prog] to make the bit pattern less confusing.
 const (
-	REG_ARNG = obj.RBaseARM64 + 1<<10 + iota<<9 // Vn.<T>
-	REG_ELEM                                    // Vn.<T>[index]
-	REG_ELEM_END
-	REG_ZARNG   // Zn.<T>
+	REG_ARNG      = obj.RBaseARM64 + 1<<10 + iota<<9 // Vn.<T>
+	REG_ELEM                                         // Vn.<T>[index]
+	REG_ZARNG                                        // Zn.<T>
+	REG_ZARNGELEM                                    // Zn.<T>[index]
+	// PZELEM is taking a portion of the P or Z register.
+	// Since it does not have an arrangement, it interpret bit 5 differently:
+	// bit 5 = 0: Z register
+	// bit 5 = 1: P register
+	REG_PZELEM  // Zn[index] or Pn[index] or PNd[index]
 	REG_PARNGZM // Pn.<T> or Pn/M, Pn/Z
+	// This currently overlaps with REG_EXT, if more arrangements are to be added,
+	// move REG_EXT to a higher range and update RBase.*.
 	REG_PARNGZM_END
 )
 
@@ -614,18 +623,18 @@ type AClass uint16 // operand type
 
 // [insts] is sorted based on the order of these constants and the first match is chosen.
 const (
-	AC_NONE    AClass = iota
-	AC_REG            // general purpose registers R0..R30 and ZR
-	AC_RSP            // general purpose registers R0..R30 and RSP
-	AC_VREG           // vector registers, such as V1
-	AC_ZREG           // the scalable vector registers, such as Z1
-	AC_PREG           // the scalable predicate registers, such as P1
-	AC_PREGZM         // Pg.Z or Pg.M
-	AC_REGIDX         // P8[1]
-	AC_ZREGIDX        // Z1[1]
-	AC_PREGIDX        // P0[R1, 1]
-	AC_ARNG           // vector register with arrangement, such as Z1.D
-	AC_ARNGIDX        // vector register with arrangement and index, such as Z1.D[1]
+	AC_NONE AClass = iota
+	// TODO: probably make this AClass split into AC_REG (R0...R30), AC_RSP (R0...R30, RSP), AC_ZR (R0...R30, ZR).
+	AC_SPZGREG // general purpose registers R0..R30 and RSP and ZR
+	AC_VREG    // vector registers, such as V1
+	AC_ZREG    // the scalable vector registers, such as Z1
+	AC_PREG    // the scalable predicate registers, such as P1
+	AC_PREGZM  // Pg.Z or Pg.M
+	AC_PREGIDX // P8[1] or PN1[1] or Z1[1]
+	AC_ZREGIDX // P8[1] or PN1[1] or Z1[1]
+	AC_PREGSEL // P0[R1, 1], index is calculated as R1 + 1
+	AC_ARNG    // vector register with arrangement, such as Z1.D
+	AC_ARNGIDX // vector register with arrangement and index, such as Z1.D[1]
 
 	AC_IMM // constants
 
