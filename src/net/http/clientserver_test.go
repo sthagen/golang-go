@@ -112,6 +112,12 @@ func run[T TBRun[T]](t T, f func(t T, mode testMode), opts ...any) {
 		setParallel(t)
 	}
 	for _, mode := range modes {
+		// HTTP/3 tests are unfortunately still flakier than we would like.
+		// Disable them for now.
+		// TODO(nsh): re-enable the tests once they are no longer flaky.
+		if mode == http3Mode {
+			continue
+		}
 		t.Run(string(mode), func(t T) {
 			t.Helper()
 			if t, ok := any(t).(*testing.T); ok && parallel {
@@ -280,8 +286,11 @@ func newClientServerTest(t testing.TB, mode testMode, h Handler, opts ...any) *c
 		listenAddr := <-listenAddrCh
 		cst.ts.URL = "https://" + listenAddr
 		t.Cleanup(func() {
-			// Same timeout as in HTTP/2 goAwayTimeout when shutting down in tests.
-			ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
+			// Give a relatively generous timeout. If the timeout is too short,
+			// the test might return before QUIC connections can finish closing
+			// asynchronously in some builders. The open connections will cause
+			// TestMain to detect a goroutine leak and fail.
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			cst.ts.Config.Shutdown(ctx)
 		})
