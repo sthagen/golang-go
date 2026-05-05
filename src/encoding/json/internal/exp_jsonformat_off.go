@@ -2,10 +2,8 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build wasm
+//go:build goexperiment.jsonv2 && !goexperiment.jsonformat
 
-package drbg
+package internal
 
-func getEntropy() *[SeedSize]byte {
-	panic("FIPS 140-3 entropy generation is not supported on Wasm")
-}
+const ExpJSONFormat = false
