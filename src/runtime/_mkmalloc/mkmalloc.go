@@ -25,7 +25,7 @@ var stdout = flag.Bool("stdout", false, "write sizeclasses source to stdout inst
 
 func makeSizeToSizeClass(classes []class) []uint8 {
 	sc := uint8(0)
-	ret := make([]uint8, smallScanNoHeaderMax+1)
+	ret := make([]uint8, benchmarkMax+1)
 	for i := range ret {
 		if i > classes[sc].size {
 			sc++
@@ -63,6 +63,12 @@ func main() {
 	if err := os.WriteFile(tablefile, mustFormat(generateTable(sizeToSizeClass)), 0666); err != nil {
 		log.Fatal(err)
 	}
+
+	benchmarkFile := "../malloc_bench_generated_test.go"
+	if err := os.WriteFile(benchmarkFile, mustFormat(append(inline(benchmarkConfig(classes, sizeToSizeClass)), []byte(generateTopBenchmark(classes, sizeToSizeClass))...)), 0666); err != nil {
+		log.Fatal(err)
+	}
+
 }
 
 // withLineNumbers returns b with line numbers added to help debugging.
@@ -126,12 +132,7 @@ func smallScanNoHeaderSCFuncName(sc, scMax uint8) string {
 	return fmt.Sprintf("mallocgcSmallScanNoHeaderSC%d", sc)
 }
 
-func tinyFuncName(size uintptr) string {
-	if size == 0 || size > smallScanNoHeaderMax {
-		return "mallocPanic"
-	}
-	return fmt.Sprintf("mallocgcTinySize%d", size)
-}
+const tinyFuncName = "mallocgcTinySC2"
 
 func smallNoScanSCFuncName(sc, scMax uint8) string {
 	if sc < 2 || sc > scMax {
@@ -145,10 +146,10 @@ func smallNoScanSCFuncName(sc, scMax uint8) string {
 func specializedMallocConfig(classes []class, sizeToSizeClass []uint8) generatorConfig {
 	config := generatorConfig{file: "../malloc_stubs.go"}
 
-	// Only generate specialized functions for sizes that don't have
-	// a header on 64-bit platforms. (They may have a header on 32-bit, but
-	// we will fall back to the non-specialized versions in that case)
-	scMax := sizeToSizeClass[smallScanNoHeaderMax]
+	// Only generate specialized functions for sizes up to specializedMallocMax.
+	// We've noticed limited benefit (or sometimes worse performance) for specialized
+	// functions for larger sizes, and having too many functions causes icache issues.
+	scMax := sizeToSizeClass[specializedMallocMax]
 
 	str := fmt.Sprint
 
@@ -184,11 +185,8 @@ func specializedMallocConfig(classes []class, sizeToSizeClass []uint8) generator
 
 		// tiny
 		tinySizeClass := sizeToSizeClass[tinySize]
-		for s := range uintptr(16) {
-			if s == 0 {
-				continue
-			}
-			name := tinyFuncName(s)
+		{
+			name := tinyFuncName
 			elemsize := classes[tinySizeClass].size
 			config.specs = append(config.specs, spec{
 				templateFunc: "mallocStub",
@@ -196,9 +194,9 @@ func specializedMallocConfig(classes []class, sizeToSizeClass []uint8) generator
 				ops: []op{
 					{inlineFunc, "inlinedMalloc", "tinyStub"},
 					{inlineFunc, "nextFreeFastTiny", "nextFreeFastTiny"},
+					{inlineFunc, "deductAssistCredit", "deductAssistCredit"},
 					{subBasicLit, "elemsize_", str(elemsize)},
 					{subBasicLit, "sizeclass_", str(tinySizeClass)},
-					{subBasicLit, "size_", str(s)},
 					{subBasicLit, "noscanint_", str(noscan)},
 					{foldCondition, "isTiny_", str(true)},
 				},
@@ -356,7 +354,8 @@ func foldIfCondition(node ast.Node, from, to string) ast.Node {
 }
 
 // inlineFunction recursively replaces calls to the function 'from' with the body of the function
-// 'toDecl'. All calls to 'from' must appear in assignment statements.
+// 'toDecl'. All calls to 'from' must either have no return values and appear in standalone expression statements
+// or otherwise must appear in assignment statements.
 // The replacement is very simple: it doesn't substitute the arguments for the parameters, so the
 // arguments to the function call must be the same identifier as the parameters to the function
 // declared by 'toDecl'. If there are any calls to from where that's not the case there will be a fatal error.
@@ -374,13 +373,17 @@ func inlineFunction(node ast.Node, from string, toDecl *ast.FuncDecl) ast.Node {
 				replaceAssignment(cursor, node, toDecl)
 			}
 			return false
-		case *ast.CallExpr:
-			// double check that all calls to from appear within an assignment
-			if isCallTo(node, from) {
-				if _, ok := cursor.Parent().(*ast.AssignStmt); !ok {
-					log.Fatalf("applying op: all calls to function %q being replaced must appear in an assignment statement, appears in %T", from, cursor.Parent())
+		case *ast.ExprStmt:
+			if callExpr, ok := node.X.(*ast.CallExpr); ok && isCallTo(callExpr, from) {
+				if !argsMatchParameters(callExpr.Args, toDecl.Type.Params) {
+					log.Fatalf("applying op: arguments to %v don't match parameter names of %v: %v", from, toDecl.Name, debugPrint(callExpr.Args...))
 				}
+				if toDecl.Type.Results != nil {
+					log.Fatalf("applying op: call to %v, which does not appear in an assignment, is replaced with %v which has return values: %v", from, toDecl.Name, debugPrint(callExpr.Args...))
+				}
+				replaceCallExprStmt(cursor, toDecl)
 			}
+			return false
 		}
 		return true
 	}, nil)
@@ -423,6 +426,16 @@ func isCallTo(expr ast.Expr, name string) bool {
 		return false
 	}
 	return isIdentWithName(callexpr.Fun, name)
+}
+
+// replaceCallExprStmt replaces a standalone expression statement calling a function with no
+// return values with the body of the function.
+func replaceCallExprStmt(cursor *astutil.Cursor, funcdecl *ast.FuncDecl) {
+	body := internalastutil.CloneNode(funcdecl.Body)
+	for _, stmt := range body.List {
+		cursor.InsertBefore(stmt)
+	}
+	cursor.Delete()
 }
 
 // replaceAssignment replaces an assignment statement where the right hand side is a function call
@@ -619,29 +632,29 @@ func replaceWithAssignment(cursor *astutil.Cursor, lhs, rhs []ast.Expr, tok toke
 
 // generateTable generates the file with the jump tables for the specialized malloc functions.
 func generateTable(sizeToSizeClass []uint8) []byte {
-	scMax := sizeToSizeClass[smallScanNoHeaderMax]
+	scMax := sizeToSizeClass[specializedMallocMax]
 
 	var b bytes.Buffer
-	fmt.Fprintln(&b, `// Code generated by mkmalloc.go; DO NOT EDIT.
+	fmt.Fprintf(&b, `// Code generated by mkmalloc.go; DO NOT EDIT.
 //go:build !plan9
 
 package runtime
 
 import "unsafe"
 
-var mallocScanTable = [513]func(size uintptr, typ *_type, needzero bool) unsafe.Pointer{`)
+var mallocScanTable = [129]func(size uintptr, typ *_type, needzero bool) unsafe.Pointer{`)
 
-	for i := range uintptr(smallScanNoHeaderMax + 1) {
+	for i := range uintptr(specializedMallocMax + 1) {
 		fmt.Fprintf(&b, "%s,\n", smallScanNoHeaderSCFuncName(sizeToSizeClass[i], scMax))
 	}
 
 	fmt.Fprintln(&b, `
 }
 
-var mallocNoScanTable = [513]func(size uintptr, typ *_type, needzero bool) unsafe.Pointer{`)
-	for i := range uintptr(smallScanNoHeaderMax + 1) {
+var mallocNoScanTable = [129]func(size uintptr, typ *_type, needzero bool) unsafe.Pointer{`)
+	for i := range uintptr(specializedMallocMax + 1) {
 		if i < 16 {
-			fmt.Fprintf(&b, "%s,\n", tinyFuncName(i))
+			fmt.Fprintf(&b, "%s,\n", "mallocPanic")
 		} else {
 			fmt.Fprintf(&b, "%s,\n", smallNoScanSCFuncName(sizeToSizeClass[i], scMax))
 		}
@@ -651,4 +664,74 @@ var mallocNoScanTable = [513]func(size uintptr, typ *_type, needzero bool) unsaf
 }`)
 
 	return b.Bytes()
+}
+
+// Generate benchmarks for all potentially small sizes
+// (sizes for which smallScanNoHeader would be called)
+// gc.MinSizeForMallocHeader is defined as goarch.PtrSize * goarch.PtrBits.
+
+const benchmarkMax = maxPtrSize * maxPtrBits
+
+// benchmarkConfig produces an inlining config to stamp out microbenchmarks.
+func benchmarkConfig(classes []class, sizeToSizeClass []uint8) generatorConfig {
+	config := generatorConfig{file: "../malloc_stubs_test.go"}
+
+	scMax := sizeToSizeClass[benchmarkMax]
+
+	str := fmt.Sprint
+
+	for sc := uint8(1); sc <= scMax; sc++ {
+		elemsize := classes[sc].size
+		config.specs = append(config.specs, spec{
+			templateFunc: "benchmarkStub",
+			name:         fmt.Sprintf("benchmarkMallocgcNoscan%d", elemsize),
+			ops: []op{
+				{subBasicLit, "size_", str(elemsize)},
+				{foldCondition, "noscan_", str(true)},
+			},
+		})
+		config.specs = append(config.specs, spec{
+			templateFunc: "benchmarkStub",
+			name:         fmt.Sprintf("benchmarkMallocgcScan%d", elemsize),
+			ops: []op{
+				{subBasicLit, "size_", str(elemsize)},
+				{foldCondition, "noscan_", str(false)},
+			},
+		})
+	}
+
+	for size := 1; size < tinySize; size++ {
+		config.specs = append(config.specs, spec{
+			templateFunc: "benchmarkStubTiny",
+			name:         fmt.Sprintf("benchmarkMallocgcTiny%d", size),
+			ops:          []op{{subBasicLit, "size_", str(size)}, {foldCondition, "noscan_", str(true)}},
+		})
+	}
+
+	return config
+}
+
+func generateTopBenchmark(classes []class, sizeToSizeClass []uint8) string {
+	scMax := sizeToSizeClass[benchmarkMax]
+	bench := `func BenchmarkMallocgc(b *testing.B) {
+		b.Run("scan=noscan", func(b *testing.B) {
+`
+	for size := 1; size < tinySize; size++ {
+		bench += fmt.Sprintf(`b.Run("size=%d", benchmarkMallocgcTiny%d)`, size, size) + "\n"
+	}
+	for sc := uint8(2); sc <= scMax; sc++ {
+		elemsize := classes[sc].size
+		bench += fmt.Sprintf(`b.Run("size=%d", benchmarkMallocgcNoscan%d)`, elemsize, elemsize) + "\n"
+	}
+	bench += `})
+		b.Run("scan=scan", func(b *testing.B) {
+`
+	for sc := uint8(1); sc <= scMax; sc++ {
+		elemsize := classes[sc].size
+		bench += fmt.Sprintf(`b.Run("size=%d", benchmarkMallocgcScan%d)`, elemsize, elemsize) + "\n"
+	}
+	bench += `})
+}`
+
+	return bench
 }
