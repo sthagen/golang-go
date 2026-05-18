@@ -31,12 +31,13 @@ func mallocgcSmallScanNoHeaderSC1(size uintptr, typ *_type, needzero bool) unsaf
 	}
 
 	const sizeclass = 1
-
 	const elemsize = 8
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallScanNoHeader(size, typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -55,9 +56,7 @@ func mallocgcSmallScanNoHeaderSC1(size uintptr, typ *_type, needzero bool) unsaf
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					8 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*8 + span.base())
 			}
 		}
 	}
@@ -66,6 +65,7 @@ func mallocgcSmallScanNoHeaderSC1(size uintptr, typ *_type, needzero bool) unsaf
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -162,10 +162,6 @@ func mallocgcSmallScanNoHeaderSC1(size uintptr, typ *_type, needzero bool) unsaf
 		addSecret(x, size)
 	}
 
-	if valgrindenabled {
-		valgrindMalloc(x, size)
-	}
-
 	if gcBlackenEnabled != 0 && elemsize != 0 {
 		if assistG := getg().m.curg; assistG != nil {
 			assistG.gcAssistBytes -= int64(elemsize - size)
@@ -199,12 +195,13 @@ func mallocgcSmallScanNoHeaderSC2(size uintptr, typ *_type, needzero bool) unsaf
 	}
 
 	const sizeclass = 2
-
 	const elemsize = 16
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallScanNoHeader(size, typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -223,9 +220,7 @@ func mallocgcSmallScanNoHeaderSC2(size uintptr, typ *_type, needzero bool) unsaf
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					16 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*16 + span.base())
 			}
 		}
 	}
@@ -234,6 +229,7 @@ func mallocgcSmallScanNoHeaderSC2(size uintptr, typ *_type, needzero bool) unsaf
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -330,10 +326,6 @@ func mallocgcSmallScanNoHeaderSC2(size uintptr, typ *_type, needzero bool) unsaf
 		addSecret(x, size)
 	}
 
-	if valgrindenabled {
-		valgrindMalloc(x, size)
-	}
-
 	if gcBlackenEnabled != 0 && elemsize != 0 {
 		if assistG := getg().m.curg; assistG != nil {
 			assistG.gcAssistBytes -= int64(elemsize - size)
@@ -367,12 +359,13 @@ func mallocgcSmallScanNoHeaderSC3(size uintptr, typ *_type, needzero bool) unsaf
 	}
 
 	const sizeclass = 3
-
 	const elemsize = 24
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallScanNoHeader(size, typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -391,9 +384,7 @@ func mallocgcSmallScanNoHeaderSC3(size uintptr, typ *_type, needzero bool) unsaf
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					24 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*24 + span.base())
 			}
 		}
 	}
@@ -402,6 +393,7 @@ func mallocgcSmallScanNoHeaderSC3(size uintptr, typ *_type, needzero bool) unsaf
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -498,10 +490,6 @@ func mallocgcSmallScanNoHeaderSC3(size uintptr, typ *_type, needzero bool) unsaf
 		addSecret(x, size)
 	}
 
-	if valgrindenabled {
-		valgrindMalloc(x, size)
-	}
-
 	if gcBlackenEnabled != 0 && elemsize != 0 {
 		if assistG := getg().m.curg; assistG != nil {
 			assistG.gcAssistBytes -= int64(elemsize - size)
@@ -535,12 +523,13 @@ func mallocgcSmallScanNoHeaderSC4(size uintptr, typ *_type, needzero bool) unsaf
 	}
 
 	const sizeclass = 4
-
 	const elemsize = 32
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallScanNoHeader(size, typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -559,9 +548,7 @@ func mallocgcSmallScanNoHeaderSC4(size uintptr, typ *_type, needzero bool) unsaf
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					32 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*32 + span.base())
 			}
 		}
 	}
@@ -570,6 +557,7 @@ func mallocgcSmallScanNoHeaderSC4(size uintptr, typ *_type, needzero bool) unsaf
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -666,10 +654,6 @@ func mallocgcSmallScanNoHeaderSC4(size uintptr, typ *_type, needzero bool) unsaf
 		addSecret(x, size)
 	}
 
-	if valgrindenabled {
-		valgrindMalloc(x, size)
-	}
-
 	if gcBlackenEnabled != 0 && elemsize != 0 {
 		if assistG := getg().m.curg; assistG != nil {
 			assistG.gcAssistBytes -= int64(elemsize - size)
@@ -703,12 +687,13 @@ func mallocgcSmallScanNoHeaderSC5(size uintptr, typ *_type, needzero bool) unsaf
 	}
 
 	const sizeclass = 5
-
 	const elemsize = 48
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallScanNoHeader(size, typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -727,9 +712,7 @@ func mallocgcSmallScanNoHeaderSC5(size uintptr, typ *_type, needzero bool) unsaf
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					48 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*48 + span.base())
 			}
 		}
 	}
@@ -738,6 +721,7 @@ func mallocgcSmallScanNoHeaderSC5(size uintptr, typ *_type, needzero bool) unsaf
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -834,10 +818,6 @@ func mallocgcSmallScanNoHeaderSC5(size uintptr, typ *_type, needzero bool) unsaf
 		addSecret(x, size)
 	}
 
-	if valgrindenabled {
-		valgrindMalloc(x, size)
-	}
-
 	if gcBlackenEnabled != 0 && elemsize != 0 {
 		if assistG := getg().m.curg; assistG != nil {
 			assistG.gcAssistBytes -= int64(elemsize - size)
@@ -871,12 +851,13 @@ func mallocgcSmallScanNoHeaderSC6(size uintptr, typ *_type, needzero bool) unsaf
 	}
 
 	const sizeclass = 6
-
 	const elemsize = 64
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallScanNoHeader(size, typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -895,9 +876,7 @@ func mallocgcSmallScanNoHeaderSC6(size uintptr, typ *_type, needzero bool) unsaf
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					64 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*64 + span.base())
 			}
 		}
 	}
@@ -906,6 +885,7 @@ func mallocgcSmallScanNoHeaderSC6(size uintptr, typ *_type, needzero bool) unsaf
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -1002,10 +982,6 @@ func mallocgcSmallScanNoHeaderSC6(size uintptr, typ *_type, needzero bool) unsaf
 		addSecret(x, size)
 	}
 
-	if valgrindenabled {
-		valgrindMalloc(x, size)
-	}
-
 	if gcBlackenEnabled != 0 && elemsize != 0 {
 		if assistG := getg().m.curg; assistG != nil {
 			assistG.gcAssistBytes -= int64(elemsize - size)
@@ -1039,12 +1015,13 @@ func mallocgcSmallScanNoHeaderSC7(size uintptr, typ *_type, needzero bool) unsaf
 	}
 
 	const sizeclass = 7
-
 	const elemsize = 80
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallScanNoHeader(size, typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -1063,9 +1040,7 @@ func mallocgcSmallScanNoHeaderSC7(size uintptr, typ *_type, needzero bool) unsaf
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					80 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*80 + span.base())
 			}
 		}
 	}
@@ -1074,6 +1049,7 @@ func mallocgcSmallScanNoHeaderSC7(size uintptr, typ *_type, needzero bool) unsaf
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -1170,10 +1146,6 @@ func mallocgcSmallScanNoHeaderSC7(size uintptr, typ *_type, needzero bool) unsaf
 		addSecret(x, size)
 	}
 
-	if valgrindenabled {
-		valgrindMalloc(x, size)
-	}
-
 	if gcBlackenEnabled != 0 && elemsize != 0 {
 		if assistG := getg().m.curg; assistG != nil {
 			assistG.gcAssistBytes -= int64(elemsize - size)
@@ -1207,12 +1179,13 @@ func mallocgcSmallScanNoHeaderSC8(size uintptr, typ *_type, needzero bool) unsaf
 	}
 
 	const sizeclass = 8
-
 	const elemsize = 96
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallScanNoHeader(size, typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -1231,9 +1204,7 @@ func mallocgcSmallScanNoHeaderSC8(size uintptr, typ *_type, needzero bool) unsaf
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					96 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*96 + span.base())
 			}
 		}
 	}
@@ -1242,6 +1213,7 @@ func mallocgcSmallScanNoHeaderSC8(size uintptr, typ *_type, needzero bool) unsaf
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -1338,10 +1310,6 @@ func mallocgcSmallScanNoHeaderSC8(size uintptr, typ *_type, needzero bool) unsaf
 		addSecret(x, size)
 	}
 
-	if valgrindenabled {
-		valgrindMalloc(x, size)
-	}
-
 	if gcBlackenEnabled != 0 && elemsize != 0 {
 		if assistG := getg().m.curg; assistG != nil {
 			assistG.gcAssistBytes -= int64(elemsize - size)
@@ -1375,12 +1343,13 @@ func mallocgcSmallScanNoHeaderSC9(size uintptr, typ *_type, needzero bool) unsaf
 	}
 
 	const sizeclass = 9
-
 	const elemsize = 112
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallScanNoHeader(size, typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -1399,9 +1368,7 @@ func mallocgcSmallScanNoHeaderSC9(size uintptr, typ *_type, needzero bool) unsaf
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					112 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*112 + span.base())
 			}
 		}
 	}
@@ -1410,6 +1377,7 @@ func mallocgcSmallScanNoHeaderSC9(size uintptr, typ *_type, needzero bool) unsaf
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -1506,10 +1474,6 @@ func mallocgcSmallScanNoHeaderSC9(size uintptr, typ *_type, needzero bool) unsaf
 		addSecret(x, size)
 	}
 
-	if valgrindenabled {
-		valgrindMalloc(x, size)
-	}
-
 	if gcBlackenEnabled != 0 && elemsize != 0 {
 		if assistG := getg().m.curg; assistG != nil {
 			assistG.gcAssistBytes -= int64(elemsize - size)
@@ -1543,12 +1507,13 @@ func mallocgcSmallScanNoHeaderSC10(size uintptr, typ *_type, needzero bool) unsa
 	}
 
 	const sizeclass = 10
-
 	const elemsize = 128
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallScanNoHeader(size, typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -1567,9 +1532,7 @@ func mallocgcSmallScanNoHeaderSC10(size uintptr, typ *_type, needzero bool) unsa
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					128 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*128 + span.base())
 			}
 		}
 	}
@@ -1578,6 +1541,7 @@ func mallocgcSmallScanNoHeaderSC10(size uintptr, typ *_type, needzero bool) unsa
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -1674,10 +1638,6 @@ func mallocgcSmallScanNoHeaderSC10(size uintptr, typ *_type, needzero bool) unsa
 		addSecret(x, size)
 	}
 
-	if valgrindenabled {
-		valgrindMalloc(x, size)
-	}
-
 	if gcBlackenEnabled != 0 && elemsize != 0 {
 		if assistG := getg().m.curg; assistG != nil {
 			assistG.gcAssistBytes -= int64(elemsize - size)
@@ -1754,10 +1714,6 @@ func mallocgcTinySC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 		const elemsize = 0
 		{
 
-			if valgrindenabled {
-				valgrindMalloc(x, size)
-			}
-
 			if gcBlackenEnabled != 0 && elemsize != 0 {
 				if assistG := getg().m.curg; assistG != nil {
 					assistG.gcAssistBytes -= int64(elemsize - size)
@@ -1776,9 +1732,7 @@ func mallocgcTinySC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 	span := c.alloc[tinySpanClass]
 
 	const nbytes = 8192
-	const nelems = uint16((nbytes - unsafe.Sizeof(spanInlineMarkBits{})) /
-		16,
-	)
+	const nelems = uint16((nbytes - unsafe.Sizeof(spanInlineMarkBits{})) / 16)
 	var nextFreeFastResult gclinkptr
 	if span.allocCache != 0 {
 		theBit := sys.TrailingZeros64(span.allocCache)
@@ -1789,9 +1743,7 @@ func mallocgcTinySC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					16 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*16 + span.base())
 			}
 		}
 	}
@@ -1831,15 +1783,6 @@ func mallocgcTinySC2(size uintptr, typ *_type, needzero bool) unsafe.Pointer {
 			gcStart(t)
 		}
 	}
-
-	if raceenabled {
-
-		x = add(x, elemsize-size)
-	}
-	if valgrindenabled {
-		valgrindMalloc(x, size)
-	}
-
 	if gcBlackenEnabled != 0 && elemsize != 0 {
 		if assistG := getg().m.curg; assistG != nil {
 			assistG.gcAssistBytes -= int64(elemsize - size)
@@ -1873,12 +1816,13 @@ func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	}
 
 	const sizeclass = 2
-
 	const elemsize = 16
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallNoScan(typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -1899,10 +1843,6 @@ func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Poin
 			if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 				addSecret(x, size)
-			}
-
-			if valgrindenabled {
-				valgrindMalloc(x, size)
 			}
 
 			if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -1929,9 +1869,7 @@ func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Poin
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					16 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*16 + span.base())
 			}
 		}
 	}
@@ -1940,6 +1878,7 @@ func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Poin
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if needzero && span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -1970,10 +1909,6 @@ func mallocgcSmallNoScanSC2(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 		addSecret(x, size)
-	}
-
-	if valgrindenabled {
-		valgrindMalloc(x, size)
 	}
 
 	if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2009,12 +1944,13 @@ func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	}
 
 	const sizeclass = 3
-
 	const elemsize = 24
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallNoScan(typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -2035,10 +1971,6 @@ func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Poin
 			if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 				addSecret(x, size)
-			}
-
-			if valgrindenabled {
-				valgrindMalloc(x, size)
 			}
 
 			if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2065,9 +1997,7 @@ func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Poin
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					24 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*24 + span.base())
 			}
 		}
 	}
@@ -2076,6 +2006,7 @@ func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Poin
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if needzero && span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -2106,10 +2037,6 @@ func mallocgcSmallNoScanSC3(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 		addSecret(x, size)
-	}
-
-	if valgrindenabled {
-		valgrindMalloc(x, size)
 	}
 
 	if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2145,12 +2072,13 @@ func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	}
 
 	const sizeclass = 4
-
 	const elemsize = 32
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallNoScan(typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -2171,10 +2099,6 @@ func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Poin
 			if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 				addSecret(x, size)
-			}
-
-			if valgrindenabled {
-				valgrindMalloc(x, size)
 			}
 
 			if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2201,9 +2125,7 @@ func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Poin
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					32 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*32 + span.base())
 			}
 		}
 	}
@@ -2212,6 +2134,7 @@ func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Poin
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if needzero && span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -2242,10 +2165,6 @@ func mallocgcSmallNoScanSC4(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 		addSecret(x, size)
-	}
-
-	if valgrindenabled {
-		valgrindMalloc(x, size)
 	}
 
 	if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2281,12 +2200,13 @@ func mallocgcSmallNoScanSC5(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	}
 
 	const sizeclass = 5
-
 	const elemsize = 48
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallNoScan(typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -2307,10 +2227,6 @@ func mallocgcSmallNoScanSC5(size uintptr, typ *_type, needzero bool) unsafe.Poin
 			if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 				addSecret(x, size)
-			}
-
-			if valgrindenabled {
-				valgrindMalloc(x, size)
 			}
 
 			if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2337,9 +2253,7 @@ func mallocgcSmallNoScanSC5(size uintptr, typ *_type, needzero bool) unsafe.Poin
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					48 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*48 + span.base())
 			}
 		}
 	}
@@ -2348,6 +2262,7 @@ func mallocgcSmallNoScanSC5(size uintptr, typ *_type, needzero bool) unsafe.Poin
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if needzero && span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -2378,10 +2293,6 @@ func mallocgcSmallNoScanSC5(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 		addSecret(x, size)
-	}
-
-	if valgrindenabled {
-		valgrindMalloc(x, size)
 	}
 
 	if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2417,12 +2328,13 @@ func mallocgcSmallNoScanSC6(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	}
 
 	const sizeclass = 6
-
 	const elemsize = 64
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallNoScan(typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -2443,10 +2355,6 @@ func mallocgcSmallNoScanSC6(size uintptr, typ *_type, needzero bool) unsafe.Poin
 			if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 				addSecret(x, size)
-			}
-
-			if valgrindenabled {
-				valgrindMalloc(x, size)
 			}
 
 			if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2473,9 +2381,7 @@ func mallocgcSmallNoScanSC6(size uintptr, typ *_type, needzero bool) unsafe.Poin
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					64 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*64 + span.base())
 			}
 		}
 	}
@@ -2484,6 +2390,7 @@ func mallocgcSmallNoScanSC6(size uintptr, typ *_type, needzero bool) unsafe.Poin
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if needzero && span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -2514,10 +2421,6 @@ func mallocgcSmallNoScanSC6(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 		addSecret(x, size)
-	}
-
-	if valgrindenabled {
-		valgrindMalloc(x, size)
 	}
 
 	if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2553,12 +2456,13 @@ func mallocgcSmallNoScanSC7(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	}
 
 	const sizeclass = 7
-
 	const elemsize = 80
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallNoScan(typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -2579,10 +2483,6 @@ func mallocgcSmallNoScanSC7(size uintptr, typ *_type, needzero bool) unsafe.Poin
 			if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 				addSecret(x, size)
-			}
-
-			if valgrindenabled {
-				valgrindMalloc(x, size)
 			}
 
 			if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2609,9 +2509,7 @@ func mallocgcSmallNoScanSC7(size uintptr, typ *_type, needzero bool) unsafe.Poin
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					80 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*80 + span.base())
 			}
 		}
 	}
@@ -2620,6 +2518,7 @@ func mallocgcSmallNoScanSC7(size uintptr, typ *_type, needzero bool) unsafe.Poin
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if needzero && span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -2650,10 +2549,6 @@ func mallocgcSmallNoScanSC7(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 		addSecret(x, size)
-	}
-
-	if valgrindenabled {
-		valgrindMalloc(x, size)
 	}
 
 	if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2689,12 +2584,13 @@ func mallocgcSmallNoScanSC8(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	}
 
 	const sizeclass = 8
-
 	const elemsize = 96
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallNoScan(typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -2715,10 +2611,6 @@ func mallocgcSmallNoScanSC8(size uintptr, typ *_type, needzero bool) unsafe.Poin
 			if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 				addSecret(x, size)
-			}
-
-			if valgrindenabled {
-				valgrindMalloc(x, size)
 			}
 
 			if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2745,9 +2637,7 @@ func mallocgcSmallNoScanSC8(size uintptr, typ *_type, needzero bool) unsafe.Poin
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					96 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*96 + span.base())
 			}
 		}
 	}
@@ -2756,6 +2646,7 @@ func mallocgcSmallNoScanSC8(size uintptr, typ *_type, needzero bool) unsafe.Poin
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if needzero && span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -2786,10 +2677,6 @@ func mallocgcSmallNoScanSC8(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 		addSecret(x, size)
-	}
-
-	if valgrindenabled {
-		valgrindMalloc(x, size)
 	}
 
 	if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2825,12 +2712,13 @@ func mallocgcSmallNoScanSC9(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	}
 
 	const sizeclass = 9
-
 	const elemsize = 112
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallNoScan(typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -2851,10 +2739,6 @@ func mallocgcSmallNoScanSC9(size uintptr, typ *_type, needzero bool) unsafe.Poin
 			if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 				addSecret(x, size)
-			}
-
-			if valgrindenabled {
-				valgrindMalloc(x, size)
 			}
 
 			if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2881,9 +2765,7 @@ func mallocgcSmallNoScanSC9(size uintptr, typ *_type, needzero bool) unsafe.Poin
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					112 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*112 + span.base())
 			}
 		}
 	}
@@ -2892,6 +2774,7 @@ func mallocgcSmallNoScanSC9(size uintptr, typ *_type, needzero bool) unsafe.Poin
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if needzero && span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -2922,10 +2805,6 @@ func mallocgcSmallNoScanSC9(size uintptr, typ *_type, needzero bool) unsafe.Poin
 	if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 		addSecret(x, size)
-	}
-
-	if valgrindenabled {
-		valgrindMalloc(x, size)
 	}
 
 	if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -2961,12 +2840,13 @@ func mallocgcSmallNoScanSC10(size uintptr, typ *_type, needzero bool) unsafe.Poi
 	}
 
 	const sizeclass = 10
-
 	const elemsize = 128
 
 	mp := acquirem()
 	if doubleCheckMalloc {
+
 		doubleCheckSmallNoScan(typ, mp)
+
 	}
 	mp.mallocing = 1
 
@@ -2987,10 +2867,6 @@ func mallocgcSmallNoScanSC10(size uintptr, typ *_type, needzero bool) unsafe.Poi
 			if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 				addSecret(x, size)
-			}
-
-			if valgrindenabled {
-				valgrindMalloc(x, size)
 			}
 
 			if gcBlackenEnabled != 0 && elemsize != 0 {
@@ -3017,9 +2893,7 @@ func mallocgcSmallNoScanSC10(size uintptr, typ *_type, needzero bool) unsafe.Poi
 				span.allocCache >>= uint(theBit + 1)
 				span.freeindex = freeidx
 				span.allocCount++
-				nextFreeFastResult = gclinkptr(uintptr(result)*
-					128 +
-					span.base())
+				nextFreeFastResult = gclinkptr(uintptr(result)*128 + span.base())
 			}
 		}
 	}
@@ -3028,6 +2902,7 @@ func mallocgcSmallNoScanSC10(size uintptr, typ *_type, needzero bool) unsafe.Poi
 		v, span, checkGCTrigger = c.nextFree(spc)
 	}
 	x := unsafe.Pointer(v)
+
 	if needzero && span.needzero != 0 {
 		memclrNoHeapPointers(x, elemsize)
 	}
@@ -3058,10 +2933,6 @@ func mallocgcSmallNoScanSC10(size uintptr, typ *_type, needzero bool) unsafe.Poi
 	if goexperiment.RuntimeSecret && gp.secret > 0 {
 
 		addSecret(x, size)
-	}
-
-	if valgrindenabled {
-		valgrindMalloc(x, size)
 	}
 
 	if gcBlackenEnabled != 0 && elemsize != 0 {

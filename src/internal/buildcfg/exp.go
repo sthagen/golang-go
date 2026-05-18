@@ -84,6 +84,8 @@ func ParseGOEXPERIMENT(goos, goarch, goexp string) (*ExperimentFlags, error) {
 		Dwarf5:               dwarf5Supported,
 		RandomizedHeapBase64: true,
 		GreenTeaGC:           true,
+		JSONv2:               true,
+		GenericMethods:       true,
 	}
 	flags := &ExperimentFlags{
 		Flags:    baseline,

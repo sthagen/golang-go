@@ -166,7 +166,8 @@ func specializedMallocConfig(classes []class, sizeToSizeClass []uint8) generator
 				templateFunc: "mallocStub",
 				name:         name,
 				ops: []op{
-					{inlineFunc, "inlinedMalloc", "smallScanNoHeaderStub"},
+					{inlineFunc, "inlinedMalloc", "smallStub"},
+					{foldCondition, "isNoScan_", str(false)},
 					{inlineFunc, "heapSetTypeNoHeaderStub", "heapSetTypeNoHeaderStub"},
 					{inlineFunc, "nextFreeFastStub", "nextFreeFastStub"},
 					{inlineFunc, "writeHeapBitsSmallStub", "writeHeapBitsSmallStub"},
@@ -211,7 +212,8 @@ func specializedMallocConfig(classes []class, sizeToSizeClass []uint8) generator
 				templateFunc: "mallocStub",
 				name:         name,
 				ops: []op{
-					{inlineFunc, "inlinedMalloc", "smallNoScanStub"},
+					{inlineFunc, "inlinedMalloc", "smallStub"},
+					{foldCondition, "isNoScan_", str(true)},
 					{inlineFunc, "nextFreeFastStub", "nextFreeFastStub"},
 					{subBasicLit, "elemsize_", str(elemsize)},
 					{subBasicLit, "sizeclass_", str(sc)},
@@ -305,12 +307,15 @@ func substituteWithBasicLit(node ast.Node, from, to string) ast.Node {
 	if err != nil {
 		log.Fatalf("parsing expr %q: %v", to, err)
 	}
-	if _, ok := toExpr.(*ast.BasicLit); !ok {
+	toLit, ok := toExpr.(*ast.BasicLit)
+	if !ok {
 		log.Fatalf("op 'to' expr %q is not a basic literal", to)
 	}
 	return astutil.Apply(node, func(cursor *astutil.Cursor) bool {
-		if isIdentWithName(cursor.Node(), from) {
-			cursor.Replace(toExpr)
+		if ident, ok := cursor.Node().(*ast.Ident); ok && ident.Name == from {
+			replacement := *toLit
+			replacement.ValuePos = ident.NamePos
+			cursor.Replace(new(replacement))
 		}
 		return true
 	}, nil)
