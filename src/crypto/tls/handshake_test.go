@@ -394,14 +394,6 @@ Dialing:
 	panic("unreachable")
 }
 
-// zeroSource is an io.Reader that returns an unlimited number of zero bytes.
-type zeroSource struct{}
-
-func (zeroSource) Read(b []byte) (n int, err error) {
-	clear(b)
-	return len(b), nil
-}
-
 func TestMain(m *testing.M) {
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage of %s:\n", os.Args)
@@ -483,12 +475,21 @@ func testHandshake(t *testing.T, clientConfig, serverConfig *Config) (serverStat
 			c.Close()
 			return
 		}
-		defer func() { errChan <- nil }()
 		clientState = cli.ConnectionState()
 		buf, err := io.ReadAll(cli)
 		if err != nil {
-			t.Errorf("failed to call cli.Read: %v", err)
+			if serverConfig.ClientAuth != NoClientCert && clientState.Version == VersionTLS13 {
+				// In TLS 1.3, client certificates are sent after the server's
+				// handshake has completed, and the client only learns about it
+				// reading the alert after the handshake.
+				errChan <- fmt.Errorf("client (from Read): %v", err)
+				c.Close()
+				return
+			} else {
+				t.Errorf("failed to call cli.Read: %v", err)
+			}
 		}
+		defer func() { errChan <- nil }()
 		if got := string(buf); got != sentinel {
 			t.Errorf("read %q from TLS connection, but expected %q", got, sentinel)
 		}

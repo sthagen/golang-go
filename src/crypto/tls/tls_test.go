@@ -13,6 +13,8 @@ import (
 	"crypto/elliptic"
 	"crypto/fips140"
 	"crypto/internal/boring"
+	"crypto/internal/cryptotest"
+	"crypto/mldsa"
 	"crypto/rand"
 	"crypto/tls/internal/fips140tls"
 	"crypto/x509"
@@ -40,16 +42,18 @@ import (
 var testTime = func() time.Time { return time.Unix(1476984729, 0) }
 
 var testConfigServer = &Config{
-	Time:         testTime,
-	Certificates: []Certificate{testECDSAP256Cert, testRSA2048Cert, testEd25519Cert, testSNICert},
-	ClientCAs:    testClientRootCertPool,
+	Time: testTime,
+	Certificates: []Certificate{testECDSAP256Cert, testRSA2048Cert, testEd25519Cert, testSNICert,
+		testMLDSA44Cert, testMLDSA65Cert, testMLDSA87Cert},
+	ClientCAs: testClientRootCertPool,
 }
 
 var testConfigClient = &Config{
-	Time:         testTime,
-	Certificates: []Certificate{testClientECDSAP256Cert, testClientRSA2048Cert, testClientEd25519Cert},
-	RootCAs:      testRootCertPool,
-	ServerName:   "test.golang.example",
+	Time: testTime,
+	Certificates: []Certificate{testClientECDSAP256Cert, testClientRSA2048Cert, testClientEd25519Cert,
+		testClientMLDSA44Cert, testClientMLDSA65Cert, testClientMLDSA87Cert},
+	RootCAs:    testRootCertPool,
+	ServerName: "test.golang.example",
 }
 
 func TestX509KeyPair(t *testing.T) {
@@ -118,14 +122,23 @@ kohxS/xfFg/TEwRSSws+roJr4JFKpO2t3/be5OdqmQ==
 -----END EC TESTING KEY-----
 `)
 
-	var keyPairTests = []struct {
+	type test struct {
 		algo string
 		cert string
 		key  string
-	}{
+	}
+	var keyPairTests = []test{
 		{"ECDSA", ecdsaCertPEM, ecdsaKeyPEM},
 		{"RSA", rsaCertPEM, rsaKeyPEM},
 		{"RSA-untyped", rsaCertPEM, keyPEM}, // golang.org/issue/4477
+	}
+
+	if fips140.Version() != "v1.0.0" {
+		keyPairTests = append(keyPairTests,
+			test{"ML-DSA-44", testMLDSA44CertPEM, testingKey(testMLDSA44KeyPEM)},
+			test{"ML-DSA-65", testMLDSA65CertPEM, testingKey(testMLDSA65KeyPEM)},
+			test{"ML-DSA-87", testMLDSA87CertPEM, testingKey(testMLDSA87KeyPEM)},
+		)
 	}
 
 	t.Parallel()
@@ -1571,6 +1584,25 @@ func TestClientHelloInfo_SupportsCertificate(t *testing.T) {
 				CipherSuites: []uint16{TLS_RSA_WITH_AES_128_GCM_SHA256},
 			},
 		}, ""}, // static RSA fallback
+
+		{testMLDSA44Cert, &ClientHelloInfo{
+			SignatureSchemes:  []SignatureScheme{MLDSA44},
+			SupportedVersions: []uint16{VersionTLS13},
+		}, ""},
+		{testMLDSA65Cert, &ClientHelloInfo{
+			SignatureSchemes:  []SignatureScheme{MLDSA65},
+			SupportedVersions: []uint16{VersionTLS13},
+		}, ""},
+		{testMLDSA87Cert, &ClientHelloInfo{
+			SignatureSchemes:  []SignatureScheme{MLDSA87},
+			SupportedVersions: []uint16{VersionTLS13},
+		}, ""},
+		{testMLDSA44Cert, &ClientHelloInfo{
+			CipherSuites:      []uint16{TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256},
+			SupportedCurves:   []CurveID{CurveP256},
+			SupportedPoints:   []uint8{pointFormatUncompressed},
+			SupportedVersions: []uint16{VersionTLS12},
+		}, "doesn't support ML-DSA"},
 	}
 	for i, tt := range tests {
 		err := tt.chi.SupportsCertificate(&tt.c)
@@ -1683,16 +1715,14 @@ func TestCipherSuites(t *testing.T) {
 	}
 
 	// Check that disabled suites are marked insecure.
-	for _, badSuites := range []map[uint16]bool{disabledCipherSuites, rsaKexCiphers} {
-		for id := range badSuites {
-			c := CipherSuiteByID(id)
-			if c == nil {
-				t.Errorf("%#04x: no CipherSuite entry", id)
-				continue
-			}
-			if !c.Insecure {
-				t.Errorf("%#04x: disabled by default but not marked insecure", id)
-			}
+	for id := range disabledCipherSuites {
+		c := CipherSuiteByID(id)
+		if c == nil {
+			t.Errorf("%#04x: no CipherSuite entry", id)
+			continue
+		}
+		if !c.Insecure {
+			t.Errorf("%#04x: disabled by default but not marked insecure", id)
 		}
 	}
 
@@ -2077,6 +2107,18 @@ func TestHandshakeMLKEM(t *testing.T) {
 			expectSelected: CurveP256,
 		},
 		{
+			name: "CurveP384HRR",
+			clientConfig: func(config *Config) {
+				config.CurvePreferences = []CurveID{SecP256r1MLKEM768, CurveP384}
+			},
+			serverConfig: func(config *Config) {
+				config.CurvePreferences = []CurveID{CurveP384}
+			},
+			expectClient:   []CurveID{SecP256r1MLKEM768, CurveP384},
+			expectSelected: CurveP384,
+			expectHRR:      true,
+		},
+		{
 			name: "ClientMLKEMOnly",
 			clientConfig: func(config *Config) {
 				config.CurvePreferences = []CurveID{X25519MLKEM768}
@@ -2123,6 +2165,67 @@ func TestHandshakeMLKEM(t *testing.T) {
 			},
 			expectClient:   []CurveID{X25519MLKEM768, X25519, CurveP256, CurveP384, CurveP521},
 			expectSelected: X25519MLKEM768,
+		},
+		{
+			name: "CurvePreferences override GODEBUG",
+			preparation: func(t *testing.T) {
+				testenv.SetGODEBUG(t, "tlsmlkem=0")
+				testenv.SetGODEBUG(t, "tlssecpmlkem=0")
+			},
+			clientConfig: func(config *Config) {
+				config.CurvePreferences = []CurveID{CurveP256, SecP256r1MLKEM768, MLKEM1024}
+			},
+			serverConfig: func(config *Config) {
+				config.CurvePreferences = []CurveID{CurveP256, SecP256r1MLKEM768, MLKEM1024}
+			},
+			expectClient:   []CurveID{SecP256r1MLKEM768, MLKEM1024, CurveP256},
+			expectSelected: SecP256r1MLKEM768,
+		},
+		{
+			name: "ClientMLKEM1024Only",
+			clientConfig: func(config *Config) {
+				config.CurvePreferences = []CurveID{MLKEM1024}
+			},
+			serverConfig: func(config *Config) {
+				config.CurvePreferences = append(defaultWithPQ, MLKEM1024)
+			},
+			expectClient:   []CurveID{MLKEM1024},
+			expectSelected: MLKEM1024,
+		},
+		{
+			name: "ServerMLKEM1024Only",
+			clientConfig: func(config *Config) {
+				config.CurvePreferences = append(defaultWithPQ, MLKEM1024)
+			},
+			serverConfig: func(config *Config) {
+				config.CurvePreferences = []CurveID{MLKEM1024}
+			},
+			expectClient: []CurveID{X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024,
+				MLKEM1024, X25519, CurveP256, CurveP384, CurveP521},
+			expectSelected: MLKEM1024,
+			expectHRR:      true,
+		},
+		{
+			name: "MLKEM1024NotPreferredOverHybrid",
+			clientConfig: func(config *Config) {
+				config.CurvePreferences = []CurveID{MLKEM1024, X25519MLKEM768}
+			},
+			serverConfig: func(config *Config) {
+				config.CurvePreferences = []CurveID{MLKEM1024, X25519MLKEM768}
+			},
+			expectClient:   []CurveID{X25519MLKEM768, MLKEM1024},
+			expectSelected: X25519MLKEM768,
+		},
+		{
+			name: "MLKEM1024PreferredOverECC",
+			clientConfig: func(config *Config) {
+				config.CurvePreferences = []CurveID{X25519, MLKEM1024}
+			},
+			serverConfig: func(config *Config) {
+				config.CurvePreferences = []CurveID{X25519, MLKEM1024}
+			},
+			expectClient:   []CurveID{MLKEM1024, X25519},
+			expectSelected: MLKEM1024,
 		},
 	}
 
@@ -2185,6 +2288,239 @@ func TestHandshakeMLKEM(t *testing.T) {
 	}
 }
 
+// TestSupportedSignatureAlgorithmsMLDSAGating asserts the spec-mandated
+// version-level gating of ML-DSA. Outside the FIPS 140-3 v1.0.0 module:
+// ML-DSA MUST NOT appear in the TLS 1.2 advertised list, MUST appear in
+// the TLS 1.3 advertised list. Under FIPS 140-3 v1.0.0 (which doesn't include
+// ML-DSA), ML-DSA MUST NOT be advertised in either extension.
+func TestSupportedSignatureAlgorithmsMLDSAGating(t *testing.T) {
+	mldsaSchemes := []SignatureScheme{MLDSA44, MLDSA65, MLDSA87}
+
+	if fips140.Version() == "v1.0.0" {
+		fullRange := supportedSignatureAlgorithms(VersionTLS10, VersionTLS13)
+		certExt := supportedSignatureAlgorithmsCert(VersionTLS10, VersionTLS13)
+		for _, s := range mldsaSchemes {
+			if slices.Contains(fullRange, s) {
+				t.Errorf("supportedSignatureAlgorithms contains %v under FIPS 140-3 v1.0.0", s)
+			}
+			if slices.Contains(certExt, s) {
+				t.Errorf("supportedSignatureAlgorithmsCert contains %v under FIPS 140-3 v1.0.0", s)
+			}
+		}
+		return
+	}
+
+	tls12Only := supportedSignatureAlgorithms(VersionTLS12, VersionTLS12)
+	tls12OnlyCert := supportedSignatureAlgorithmsCert(VersionTLS12, VersionTLS12)
+	for _, s := range mldsaSchemes {
+		if slices.Contains(tls12Only, s) {
+			t.Errorf("supportedSignatureAlgorithms(TLS12, TLS12) contains %v; ML-DSA must not be advertised in TLS 1.2", s)
+		}
+		if slices.Contains(tls12OnlyCert, s) {
+			t.Errorf("supportedSignatureAlgorithmsCert(TLS12, TLS12) contains %v; ML-DSA must not be advertised in TLS 1.2", s)
+		}
+	}
+	tls13Only := supportedSignatureAlgorithms(VersionTLS13, VersionTLS13)
+	tls13OnlyCert := supportedSignatureAlgorithmsCert(VersionTLS13, VersionTLS13)
+	for _, s := range mldsaSchemes {
+		if !slices.Contains(tls13Only, s) {
+			t.Errorf("supportedSignatureAlgorithms(TLS13, TLS13) is missing %v", s)
+		}
+		if !slices.Contains(tls13OnlyCert, s) {
+			t.Errorf("supportedSignatureAlgorithmsCert(TLS13, TLS13) is missing %v", s)
+		}
+	}
+}
+
+func TestHandshakeMLDSA(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		cert   Certificate
+		client Certificate
+	}{
+		{"MLDSA44", testMLDSA44Cert, testClientMLDSA44Cert},
+		{"MLDSA65", testMLDSA65Cert, testClientMLDSA65Cert},
+		{"MLDSA87", testMLDSA87Cert, testClientMLDSA87Cert},
+	} {
+		t.Run(tt.name+"/ServerAuth", func(t *testing.T) {
+			t.Parallel()
+			serverConfig := testConfigServer.Clone()
+			serverConfig.Certificates = []Certificate{tt.cert}
+			clientConfig := testConfigClient.Clone()
+			_, cs, err := testHandshake(t, clientConfig, serverConfig)
+			if fips140.Version() == "v1.0.0" {
+				if err == nil {
+					t.Errorf("ML-DSA handshake unexpectedly succeeded with FIPS 140-3 module v1.0.0")
+				}
+				// Loaded certificate has cert bytes but no usable private key.
+				if len(tt.cert.Certificate) == 0 {
+					t.Errorf("certificate bytes missing")
+				}
+				if tt.cert.PrivateKey != nil {
+					t.Errorf("PrivateKey = %T, want nil under v1.0.0", tt.cert.PrivateKey)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("handshake: %v", err)
+			}
+			if _, ok := cs.PeerCertificates[0].PublicKey.(*mldsa.PublicKey); !ok {
+				t.Errorf("server peer cert public key = %T, want *mldsa.PublicKey",
+					cs.PeerCertificates[0].PublicKey)
+			}
+		})
+		t.Run(tt.name+"/ClientAuth", func(t *testing.T) {
+			t.Parallel()
+			serverConfig := testConfigServer.Clone()
+			serverConfig.Certificates = []Certificate{testECDSAP256Cert}
+			serverConfig.ClientAuth = RequireAndVerifyClientCert
+			clientConfig := testConfigClient.Clone()
+			clientConfig.Certificates = []Certificate{tt.client}
+			ss, _, err := testHandshake(t, clientConfig, serverConfig)
+			if fips140.Version() == "v1.0.0" {
+				if err == nil {
+					t.Errorf("ML-DSA handshake unexpectedly succeeded with FIPS 140-3 module v1.0.0")
+				}
+				// Loaded certificate has cert bytes but no usable private key.
+				if len(tt.client.Certificate) == 0 {
+					t.Errorf("certificate bytes missing")
+				}
+				if tt.client.PrivateKey != nil {
+					t.Errorf("PrivateKey = %T, want nil under v1.0.0", tt.client.PrivateKey)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("handshake: %v", err)
+			}
+			if _, ok := ss.PeerCertificates[0].PublicKey.(*mldsa.PublicKey); !ok {
+				t.Errorf("client peer cert public key = %T, want *mldsa.PublicKey",
+					ss.PeerCertificates[0].PublicKey)
+			}
+		})
+		t.Run(tt.name+"/MutualAuth", func(t *testing.T) {
+			t.Parallel()
+			serverConfig := testConfigServer.Clone()
+			serverConfig.Certificates = []Certificate{tt.cert}
+			serverConfig.ClientAuth = RequireAndVerifyClientCert
+			clientConfig := testConfigClient.Clone()
+			clientConfig.Certificates = []Certificate{tt.client}
+			ss, cs, err := testHandshake(t, clientConfig, serverConfig)
+			if fips140.Version() == "v1.0.0" {
+				if err == nil {
+					t.Errorf("ML-DSA handshake unexpectedly succeeded with FIPS 140-3 module v1.0.0")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("handshake: %v", err)
+			}
+			if _, ok := cs.PeerCertificates[0].PublicKey.(*mldsa.PublicKey); !ok {
+				t.Errorf("client-side peer cert public key = %T, want *mldsa.PublicKey",
+					cs.PeerCertificates[0].PublicKey)
+			}
+			if _, ok := ss.PeerCertificates[0].PublicKey.(*mldsa.PublicKey); !ok {
+				t.Errorf("server-side peer cert public key = %T, want *mldsa.PublicKey",
+					ss.PeerCertificates[0].PublicKey)
+			}
+		})
+		for _, v := range []uint16{VersionTLS10, VersionTLS12} {
+			name := tt.name + "/RejectedVersion/" + VersionName(v)
+			t.Run(name+"/Server", func(t *testing.T) {
+				if v == VersionTLS10 {
+					skipFIPS(t) // TLS 1.0 is not allowed in FIPS 140-3 mode.
+				}
+				cryptotest.MustMinimumFIPS140ModuleVersion(t, "v1.26.0")
+				t.Parallel()
+				serverConfig := testConfigServer.Clone()
+				serverConfig.MinVersion = VersionTLS10
+				serverConfig.Certificates = []Certificate{tt.cert}
+				serverConfig.MaxVersion = v
+				clientConfig := testConfigClient.Clone()
+				clientConfig.MinVersion = VersionTLS10
+				if _, _, err := testHandshake(t, clientConfig, serverConfig); err == nil {
+					t.Fatal("expected handshake failure when ML-DSA is the only server cert and the negotiation is not TLS 1.3")
+				} else if !strings.Contains(err.Error(), "ML-DSA") {
+					t.Errorf("error message should mention ML-DSA, got %q", err)
+				}
+
+				serverConfig.MaxVersion = 0
+				clientConfig.MaxVersion = v
+				if _, _, err := testHandshake(t, clientConfig, serverConfig); err == nil {
+					t.Fatal("expected handshake failure when ML-DSA is the only server cert and the negotiation is not TLS 1.3")
+				} else if !strings.Contains(err.Error(), "ML-DSA") {
+					t.Errorf("error message should mention ML-DSA, got %q", err)
+				}
+			})
+			t.Run(name+"/Client", func(t *testing.T) {
+				cryptotest.MustMinimumFIPS140ModuleVersion(t, "v1.26.0")
+				t.Parallel()
+				serverConfig := testConfigServer.Clone()
+				serverConfig.MinVersion = VersionTLS10
+				serverConfig.ClientAuth = RequireAndVerifyClientCert
+				clientConfig := testConfigClient.Clone()
+				clientConfig.MinVersion = VersionTLS10
+				clientConfig.Certificates = []Certificate{tt.client}
+				clientConfig.MaxVersion = v
+				if _, _, err := testHandshake(t, clientConfig, serverConfig); err == nil {
+					t.Fatal("expected handshake failure when ML-DSA is the only client cert and the negotiation is not TLS 1.3")
+				}
+				// The error message on the client can't be helpful because we
+				// don't know if the server requires a certificate until/unless
+				// the server aborts later in the handshake, by which time we
+				// lost track of which certificate we didn't offer and why.
+
+				clientConfig.MaxVersion = 0
+				serverConfig.MaxVersion = v
+				if _, _, err := testHandshake(t, clientConfig, serverConfig); err == nil {
+					t.Fatal("expected handshake failure when ML-DSA is the only client cert and the negotiation is not TLS 1.3")
+				}
+			})
+		}
+		t.Run(tt.name+"/CorruptedSignature/Server", func(t *testing.T) {
+			cryptotest.MustMinimumFIPS140ModuleVersion(t, "v1.26.0")
+			t.Parallel()
+			serverConfig := testConfigServer.Clone()
+			serverConfig.Certificates = []Certificate{{
+				Certificate: tt.cert.Certificate,
+				PrivateKey:  bitFlippingSigner{tt.cert.PrivateKey.(crypto.Signer)},
+			}}
+			clientConfig := testConfigClient.Clone()
+			_, _, err := testHandshake(t, clientConfig, serverConfig)
+			if err == nil {
+				t.Fatal("handshake unexpectedly succeeded with corrupted ML-DSA signature")
+			}
+			// The client returns the verification error; the server returns
+			// "remote error: tls: decrypt_error" reflecting the alert.
+			if !strings.Contains(err.Error(), "decrypt") &&
+				!strings.Contains(err.Error(), "ML-DSA verification failure") {
+				t.Errorf("error = %q; want one mentioning decrypt_error or ML-DSA verification", err)
+			}
+		})
+		t.Run(tt.name+"/CorruptedSignature/Client", func(t *testing.T) {
+			cryptotest.MustMinimumFIPS140ModuleVersion(t, "v1.26.0")
+			t.Parallel()
+			serverConfig := testConfigServer.Clone()
+			serverConfig.ClientAuth = RequireAndVerifyClientCert
+			clientConfig := testConfigClient.Clone()
+			clientConfig.Certificates = []Certificate{{
+				Certificate: tt.client.Certificate,
+				PrivateKey:  bitFlippingSigner{tt.client.PrivateKey.(crypto.Signer)},
+			}}
+			_, _, err := testHandshake(t, clientConfig, serverConfig)
+			if err == nil {
+				t.Fatal("handshake unexpectedly succeeded with corrupted ML-DSA signature")
+			}
+			// The server returns the verification error; the client returns
+			// "remote error: tls: decrypt_error" reflecting the alert.
+			if !strings.Contains(err.Error(), "decrypt") &&
+				!strings.Contains(err.Error(), "ML-DSA verification failure") {
+				t.Errorf("error = %q; want one mentioning decrypt_error or ML-DSA verification", err)
+			}
+		})
+	}
+}
+
 func TestX509KeyPairPopulateCertificate(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -2205,35 +2541,13 @@ func TestX509KeyPairPopulateCertificate(t *testing.T) {
 	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 
-	t.Run("x509keypairleaf=0", func(t *testing.T) {
-		testenv.SetGODEBUG(t, "x509keypairleaf=0")
-		cert, err := X509KeyPair(certPEM, keyPEM)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if cert.Leaf != nil {
-			t.Fatal("Leaf should not be populated")
-		}
-	})
-	t.Run("x509keypairleaf=1", func(t *testing.T) {
-		testenv.SetGODEBUG(t, "x509keypairleaf=1")
-		cert, err := X509KeyPair(certPEM, keyPEM)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if cert.Leaf == nil {
-			t.Fatal("Leaf should be populated")
-		}
-	})
-	t.Run("GODEBUG unset", func(t *testing.T) {
-		cert, err := X509KeyPair(certPEM, keyPEM)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if cert.Leaf == nil {
-			t.Fatal("Leaf should be populated")
-		}
-	})
+	cert, err := X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cert.Leaf == nil {
+		t.Fatal("Leaf should be populated")
+	}
 }
 
 func TestEarlyLargeCertMsg(t *testing.T) {
@@ -2504,4 +2818,117 @@ func (s messageOnlySigner) SignMessage(rand io.Reader, msg []byte, opts crypto.S
 	h.Write(msg)
 	digest := h.Sum(nil)
 	return s.Signer.Sign(rand, digest, opts)
+}
+
+// bitFlippingSigner wraps a crypto.Signer and flips a bit in the signature,
+// producing an invalid signature.
+type bitFlippingSigner struct{ crypto.Signer }
+
+func (s bitFlippingSigner) Public() crypto.PublicKey {
+	return s.Signer.Public()
+}
+
+func (s bitFlippingSigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	sig, err := s.Signer.Sign(rand, digest, opts)
+	if err != nil {
+		return nil, err
+	}
+	sig[0] ^= 1
+	return sig, nil
+}
+
+// TestInvalidHandshakeSignature tests that invalid handshake signatures are
+// rejected for all TLS versions, for both server and client certificates,
+// even when InsecureSkipVerify or RequireAnyClientCert are used (which disable
+// certificate chain verification, but not signature verification).
+func TestInvalidHandshakeSignature(t *testing.T) {
+	t.Run("TLSv10", func(t *testing.T) {
+		skipFIPS(t)
+		testInvalidHandshakeSignature(t, VersionTLS10)
+	})
+	t.Run("TLSv12", func(t *testing.T) { testInvalidHandshakeSignature(t, VersionTLS12) })
+	t.Run("TLSv13", func(t *testing.T) { testInvalidHandshakeSignature(t, VersionTLS13) })
+}
+
+func testInvalidHandshakeSignature(t *testing.T, version uint16) {
+	serverConfig := testConfigServer.Clone()
+	serverConfig.MaxVersion = version
+	serverConfig.MinVersion = version
+	serverConfig.SessionTicketsDisabled = true
+	clientConfig := testConfigClient.Clone()
+	clientConfig.MaxVersion = version
+	clientConfig.MinVersion = version
+
+	// Test that the server rejects invalid client certificate signatures,
+	// even when RequireAnyClientCert is used.
+	t.Run("ClientSignature", func(t *testing.T) {
+		serverConfig := serverConfig.Clone()
+		serverConfig.ClientAuth = RequireAnyClientCert
+		clientConfig := clientConfig.Clone()
+		clientConfig.Certificates = []Certificate{{
+			Certificate: testClientECDSAP256Cert.Certificate,
+			PrivateKey:  bitFlippingSigner{testClientECDSAP256Cert.PrivateKey.(crypto.Signer)},
+		}}
+
+		clientErr, serverErr := testInvalidSignatureHandshake(t, clientConfig, serverConfig)
+		if serverErr == nil {
+			t.Fatalf("expected server to reject invalid client signature; client err = %v", clientErr)
+		}
+		if !strings.Contains(serverErr.Error(), "invalid signature") {
+			t.Errorf("expected 'invalid signature' error, got: %v", serverErr)
+		}
+	})
+
+	// Test that the client rejects invalid server certificate signatures.
+	t.Run("ServerSignature", func(t *testing.T) {
+		serverConfig := serverConfig.Clone()
+		serverConfig.Certificates = []Certificate{{
+			Certificate: testRSA2048Cert.Certificate,
+			PrivateKey:  bitFlippingSigner{testRSA2048Cert.PrivateKey.(crypto.Signer)},
+		}}
+
+		clientErr, serverErr := testInvalidSignatureHandshake(t, clientConfig, serverConfig)
+		if clientErr == nil {
+			t.Fatalf("expected client to reject invalid server signature; server err = %v", serverErr)
+		}
+		if !strings.Contains(clientErr.Error(), "invalid signature") {
+			t.Errorf("expected 'invalid signature' error, got: %v", clientErr)
+		}
+	})
+
+	// Test that InsecureSkipVerify doesn't disable server signature verification.
+	t.Run("ServerSignature/InsecureSkipVerify", func(t *testing.T) {
+		clientConfig := clientConfig.Clone()
+		clientConfig.InsecureSkipVerify = true
+		serverConfig := serverConfig.Clone()
+		serverConfig.Certificates = []Certificate{{
+			Certificate: testRSA2048Cert.Certificate,
+			PrivateKey:  bitFlippingSigner{testRSA2048Cert.PrivateKey.(crypto.Signer)},
+		}}
+
+		clientErr, serverErr := testInvalidSignatureHandshake(t, clientConfig, serverConfig)
+		if clientErr == nil {
+			t.Fatalf("expected client to reject invalid server signature despite InsecureSkipVerify; server err = %v", serverErr)
+		}
+		if !strings.Contains(clientErr.Error(), "invalid signature") {
+			t.Errorf("expected 'invalid signature' error, got: %v", clientErr)
+		}
+	})
+}
+
+// testInvalidSignatureHandshake performs a TLS handshake and returns the
+// errors from both client and server. Unlike testHandshake, it doesn't try
+// to exchange data after the handshake.
+func testInvalidSignatureHandshake(t *testing.T, clientConfig, serverConfig *Config) (clientErr, serverErr error) {
+	c, s := localPipe(t)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		clientErr = Client(c, clientConfig).Handshake()
+		c.Close()
+	}()
+	serverErr = Server(s, serverConfig).Handshake()
+	s.Close()
+	<-done
+	return
 }
