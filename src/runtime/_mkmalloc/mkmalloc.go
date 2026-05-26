@@ -473,8 +473,7 @@ func foldIfCondition(node ast.Node, from, to string) ast.Node {
 					for _, stmt := range n.Body.List {
 						cursor.InsertBefore(stmt)
 					}
-				}
-				if n.Else != nil {
+				} else if n.Else != nil {
 					if block, ok := n.Else.(*ast.BlockStmt); ok {
 						for i := len(block.List) - 1; i >= 0; i-- {
 							cursor.InsertAfter(block.List[i])
@@ -888,16 +887,16 @@ package runtime
 
 import "unsafe"
 
-var mallocScanTable = [129]func(size uintptr, typ *_type, needzero bool) unsafe.Pointer{`)
+var mallocScanTable = [%d]func(size uintptr, typ *_type, needzero bool) unsafe.Pointer{`, specializedMallocMax+1)
 
 	for i := range uintptr(specializedMallocMax + 1) {
 		fmt.Fprintf(&b, "%s,\n", smallScanNoHeaderSCFuncName(sizeToSizeClass[i], scMax))
 	}
 
-	fmt.Fprintln(&b, `
+	fmt.Fprintf(&b, `
 }
 
-var mallocNoScanTable = [129]func(size uintptr, typ *_type, needzero bool) unsafe.Pointer{`)
+var mallocNoScanTable = [%d]func(size uintptr, typ *_type, needzero bool) unsafe.Pointer{`, specializedMallocMax+1)
 	for i := range uintptr(specializedMallocMax + 1) {
 		if i < 16 {
 			fmt.Fprintf(&b, "%s,\n", "mallocPanic")
