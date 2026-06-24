@@ -600,28 +600,7 @@ var binaryTemplateArm64 = shapedTemplateOf(arm64Shapes, "arm64_binary_helpers", 
 
 // ARM64 shift test helper templates
 
-var shiftConstTestTemplateArm64 = shapedTemplateOf(arm64IntegerShapes, "arm64_shift_const_helpers", `
-// test{{.VType}}ShiftConst tests a const-shift method (unary + immediate).
-func test{{.VType}}ShiftConst(t *testing.T, f func(_ archsimd.{{.VType}}, _ uint64) archsimd.{{.VType}}, want func(_ []{{.Etype}}, _ uint64) []{{.Etype}}) {
-	n := {{.Count}}
-	t.Helper()
-	forSlice(t, {{.Etype}}s, n, func(x []{{.Etype}}) bool {
-		t.Helper()
-		for _, amt := range []uint64{0, 1, 3, {{.EWidth}}-1} {
-			a := archsimd.Load{{.VType}}(x)
-			g := make([]{{.Etype}}, n)
-			f(a, amt).Store(g)
-			w := want(x, amt)
-			if !checkSlicesLogInput(t, g, w, 0.0, func() { t.Helper(); t.Logf("x=%v, amt=%d", x, amt) }) {
-				return false
-			}
-		}
-		return true
-	})
-}
-`)
-
-var shiftAllTestTemplateArm64 = shapedTemplateOf(arm64IntegerShapes, "arm64_shift_all_helpers", `
+var shiftAllTestTemplate = shapedTemplateOf(integerShapes, "shift_all_helpers", `
 // test{{.VType}}ShiftAll tests a shift-all method (unary + scalar uint64).
 func test{{.VType}}ShiftAll(t *testing.T, f func(_ archsimd.{{.VType}}, _ uint64) archsimd.{{.VType}}, want func(_ []{{.Etype}}, _ uint64) []{{.Etype}}) {
 	n := {{.Count}}
@@ -1448,15 +1427,14 @@ func main() {
 	th := flag.String("th", TD+"ternary_helpers_test.go", "file name for ternary test helpers")
 	ch := flag.String("ch", TD+"compare_helpers_%W_test.go", "file name for compare test helpers")
 	cmh := flag.String("cmh", TD+"comparemasked_helpers_test.go", "file name for compare-masked test helpers")
+	sh := flag.String("sh", TD+"shift_helpers_%W_test.go", "file name for shift test helpers")
 	// ARM64-specific
-	bhArm64 := flag.String("bhArm64", TD+"arm64_binary_helpers_test.go", "file name for ARM64 binary test helpers")
 	slArm64 := flag.String("slArm64", SIMD+"slice_gen_arm64.go", "file name for ARM64 slice operations")
 	opArm64 := flag.String("opArm64", SIMD+"other_gen_arm64.go", "file name for ARM64 other operations")
 	shArm64 := flag.String("shArm64", TD+"arm64_shift_helpers_test.go", "file name for ARM64 shift test helpers")
 	uhArm64 := flag.String("uhArm64", TD+"arm64_unary_helpers_test.go", "file name for ARM64 unary test helpers")
 	cmArm64 := flag.String("cmArm64", SIMD+"compare_gen_arm64.go", "file name for ARM64 comparison operations")
 	mmArm64 := flag.String("mmArm64", SIMD+"maskmerge_gen_arm64.go", "file name for ARM64 mask/merge operations")
-	chArm64 := flag.String("chArm64", TD+"arm64_compare_helpers_test.go", "file name for ARM64 compare test helpers")
 	thArm64 := flag.String("thArm64", TD+"ternary_arm64_helpers_test.go", "file name for ARM64 ternary test helpers")
 	rhArm64 := flag.String("rhArm64", TD+"reduce_arm64_helpers_test.go", "file name for ARM64 reduce test helpers")
 	flag.Parse()
@@ -1524,13 +1502,15 @@ func main() {
 	if *cmh != "" {
 		one(*cmh, curryTestPrologue("simd methods that compare two operands under a mask"), compareMaskedTemplate)
 	}
+	if *sh != "" {
+		one(*sh, curryTestPrologue("shift simd methods"),
+			shiftAllTestTemplate,
+		)
+	}
 
 	// ARM64-specific generation
 	if *slArm64 != "" {
 		one(*slArm64, prologue, sliceTemplateArm64)
-	}
-	if *bhArm64 != "" {
-		oneArch(*bhArm64, "arm64", curryTestPrologue("binary simd methods"), binaryTemplateArm64)
 	}
 	if *opArm64 != "" {
 		one(*opArm64, prologue,
@@ -1545,8 +1525,6 @@ func main() {
 	}
 	if *shArm64 != "" {
 		oneArch(*shArm64, "arm64", curryTestPrologue("shift simd methods"),
-			shiftConstTestTemplateArm64,
-			shiftAllTestTemplateArm64,
 			shiftMixedTestTemplateArm64,
 		)
 	}
@@ -1557,7 +1535,6 @@ func main() {
 			arm64ToInt32, arm64ToUint32,
 			arm64ToInt64, arm64ToUint64,
 			arm64ToFloat32, arm64ToFloat64,
-			unaryTemplateArm64,
 		)
 	}
 	if *cmArm64 != "" {
@@ -1572,9 +1549,6 @@ func main() {
 			arm64MaskedMergeTemplate,
 			arm64MaskToString,
 		)
-	}
-	if *chArm64 != "" {
-		oneArch(*chArm64, "arm64", curryTestPrologue("simd methods that compare two operands"), compareTemplateArm64)
 	}
 	if *thArm64 != "" {
 		oneArch(*thArm64, "arm64", curryTestPrologue("ternary simd methods"), ternaryTemplateArm64, ternaryFlakyTemplateArm64)
@@ -1750,7 +1724,7 @@ func one(filename string, prologue func(s, buildArch string, out io.Writer), sat
 	if strings.Contains(filename, "%W") {
 		smallFile := strings.ReplaceAll(filename, "%W", "128")
 		largeFile := strings.ReplaceAll(filename, "%W", "wider")
-		oneArch(smallFile, "(amd64 || wasm)", prologue, Map(smallSAT, sats)...)
+		oneArch(smallFile, "(amd64 || wasm || arm64)", prologue, Map(smallSAT, sats)...)
 		oneArch(largeFile, "amd64", prologue, Map(largeSAT, sats)...)
 		return
 	}
