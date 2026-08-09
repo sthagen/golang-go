@@ -340,6 +340,17 @@ func rewriteValueARM64latelower_OpARM64MOVBUreg(v *Value) bool {
 		v.copyOf(x)
 		return true
 	}
+	// match: (MOVBUreg x)
+	// cond: ZeroUpper56Bits(x)
+	// result: x
+	for {
+		x := v_0
+		if !(ZeroUpper56Bits(x)) {
+			break
+		}
+		v.copyOf(x)
+		return true
+	}
 	// match: (MOVBUreg x:(MOVBUload _ _))
 	// result: (MOVDreg x)
 	for {
@@ -457,6 +468,17 @@ func rewriteValueARM64latelower_OpARM64MOVDreg(v *Value) bool {
 }
 func rewriteValueARM64latelower_OpARM64MOVHUreg(v *Value) bool {
 	v_0 := v.Args[0]
+	// match: (MOVHUreg x)
+	// cond: ZeroUpper48Bits(x)
+	// result: x
+	for {
+		x := v_0
+		if !(ZeroUpper48Bits(x)) {
+			break
+		}
+		v.copyOf(x)
+		return true
+	}
 	// match: (MOVHUreg x:(MOVBUload _ _))
 	// result: (MOVDreg x)
 	for {
@@ -653,11 +675,11 @@ func rewriteValueARM64latelower_OpARM64MOVHreg(v *Value) bool {
 func rewriteValueARM64latelower_OpARM64MOVWUreg(v *Value) bool {
 	v_0 := v.Args[0]
 	// match: (MOVWUreg x)
-	// cond: ZeroUpper32Bits(x, 3)
+	// cond: ZeroUpper32Bits(x)
 	// result: x
 	for {
 		x := v_0
-		if !(ZeroUpper32Bits(x, 3)) {
+		if !(ZeroUpper32Bits(x)) {
 			break
 		}
 		v.copyOf(x)

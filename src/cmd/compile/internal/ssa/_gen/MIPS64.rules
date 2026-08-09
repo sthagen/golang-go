@@ -227,7 +227,8 @@
 (Leq64U x y) => (XOR (MOVVconst [1]) (SGTU x y))
 
 (OffPtr [off] ptr:(SP)) && is32Bit(off) => (MOVVaddr [int32(off)] ptr)
-(OffPtr [off] ptr) => (ADDVconst [off] ptr)
+(OffPtr [off] ptr) &&  is32Bit(off) => (ADDVconst [off] ptr)
+(OffPtr [off] ptr) && !is32Bit(off) => (ADDV ptr (MOVVconst <typ.UInt64> [off]))
 
 (Addr {sym} base) => (MOVVaddr {sym} base)
 (LocalAddr <t> {sym} base mem) && t.Elem().HasPointers() => (MOVVaddr {sym} (SPanchored base mem))
@@ -372,6 +373,10 @@
 (MOVDload  [off] {sym} ptr (MOVVstore [off] {sym} ptr val _)) => (MOVVgpfp val)
 (MOVWUload [off] {sym} ptr (MOVFstore [off] {sym} ptr val _)) => (ZeroExt32to64 (MOVWfpgp <typ.Float32> val))
 (MOVFload  [off] {sym} ptr (MOVWstore [off] {sym} ptr val _)) => (MOVWgpfp val)
+
+// If the memory load and store operations use the same ptr, they are combined into a direct move operation between registers.
+(MOV(V|W|H|B)load [off] {sym} ptr (MOV(V|W|H|B)store [off] {sym} ptr x _)) => (MOV(V|W|H|B)reg x)
+(MOV(W|H|B)Uload  [off] {sym} ptr (MOV(W|H|B)store   [off] {sym} ptr x _)) => (MOV(W|H|B)Ureg  x)
 
 // Similarly for stores, if we see a store after FPR <=> GPR move, then redirect store to use the other register set.
 (MOVVstore [off] {sym} ptr (MOVVfpgp val) mem) => (MOVDstore [off] {sym} ptr val mem)
