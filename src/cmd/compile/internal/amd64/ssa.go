@@ -19,6 +19,7 @@ import (
 	"cmd/internal/obj"
 	"cmd/internal/obj/x86"
 	"internal/abi"
+	"internal/buildcfg"
 )
 
 // ssaMarkMoves marks any MOVXconst ops that need to avoid clobbering flags.
@@ -278,6 +279,7 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		ssa.OpAMD64ADDSS, ssa.OpAMD64ADDSD, ssa.OpAMD64SUBSS, ssa.OpAMD64SUBSD,
 		ssa.OpAMD64MULSS, ssa.OpAMD64MULSD, ssa.OpAMD64DIVSS, ssa.OpAMD64DIVSD,
 		ssa.OpAMD64MINSS, ssa.OpAMD64MINSD,
+		ssa.OpAMD64MAXSS, ssa.OpAMD64MAXSD,
 		ssa.OpAMD64POR, ssa.OpAMD64PXOR,
 		ssa.OpAMD64BTSL, ssa.OpAMD64BTSQ,
 		ssa.OpAMD64BTCL, ssa.OpAMD64BTCQ,
@@ -944,10 +946,15 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		ssagen.AddAux2(&p.To, v, off)
 
 	case ssa.OpAMD64MOVQstoreconst, ssa.OpAMD64MOVLstoreconst, ssa.OpAMD64MOVWstoreconst, ssa.OpAMD64MOVBstoreconst:
-		p := s.Prog(v.Op.Asm())
-		p.From.Type = obj.TYPE_CONST
 		sc := v.AuxValAndOff()
-		p.From.Offset = sc.Val64()
+		p := s.Prog(v.Op.Asm())
+		if sc.Val() == 0 && s.ABI == obj.ABIInternal && buildcfg.GOOS != "plan9" && (v.Op == ssa.OpAMD64MOVQstoreconst || v.Op == ssa.OpAMD64MOVLstoreconst) {
+			p.From.Type = obj.TYPE_REG
+			p.From.Reg = x86.REG_X15
+		} else {
+			p.From.Type = obj.TYPE_CONST
+			p.From.Offset = sc.Val64()
+		}
 		p.To.Type = obj.TYPE_MEM
 		p.To.Reg = v.Args[0].Reg()
 		ssagen.AddAux2(&p.To, v, sc.Off64())
@@ -981,6 +988,14 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p.From.Type = obj.TYPE_CONST
 		sc := v.AuxValAndOff()
 		p.From.Offset = sc.Val64()
+		if sc.Val() == 0 && s.ABI == obj.ABIInternal && buildcfg.GOOS != "plan9" {
+			switch v.Op {
+			case ssa.OpAMD64MOVQstoreconstidx1, ssa.OpAMD64MOVQstoreconstidx8,
+				ssa.OpAMD64MOVLstoreconstidx1, ssa.OpAMD64MOVLstoreconstidx4:
+				p.From.Type = obj.TYPE_REG
+				p.From.Reg = x86.REG_X15
+			}
+		}
 		switch {
 		case p.As == x86.AADDQ && p.From.Offset == 1:
 			p.As = x86.AINCQ
@@ -1679,12 +1694,23 @@ func ssaGenValue(s *ssagen.State, v *ssa.Value) {
 		p = s.Prog(x86.ASETEQ)
 		p.To.Type = obj.TYPE_REG
 		p.To.Reg = v.Reg0()
-	case ssa.OpAMD64ANDBlock, ssa.OpAMD64ANDLlock, ssa.OpAMD64ANDQlock, ssa.OpAMD64ORBlock, ssa.OpAMD64ORLlock, ssa.OpAMD64ORQlock:
+	case ssa.OpAMD64ANDBlock, ssa.OpAMD64ANDLlock, ssa.OpAMD64ANDQlock,
+		ssa.OpAMD64ORBlock, ssa.OpAMD64ORLlock, ssa.OpAMD64ORQlock,
+		ssa.OpAMD64ADDLlock, ssa.OpAMD64ADDQlock,
+		ssa.OpAMD64SUBLlock, ssa.OpAMD64SUBQlock:
 		// Atomic memory operations that don't need to return the old value.
 		s.Prog(x86.ALOCK)
 		p := s.Prog(v.Op.Asm())
 		p.From.Type = obj.TYPE_REG
 		p.From.Reg = v.Args[1].Reg()
+		p.To.Type = obj.TYPE_MEM
+		p.To.Reg = v.Args[0].Reg()
+		ssagen.AddAux(&p.To, v)
+	case ssa.OpAMD64INCLlock, ssa.OpAMD64INCQlock,
+		ssa.OpAMD64DECLlock, ssa.OpAMD64DECQlock:
+		// Unary atomic memory operations that don't need to return the old value.
+		s.Prog(x86.ALOCK)
+		p := s.Prog(v.Op.Asm())
 		p.To.Type = obj.TYPE_MEM
 		p.To.Reg = v.Args[0].Reg()
 		ssagen.AddAux(&p.To, v)
