@@ -31,6 +31,11 @@ var (
 	sinkU64 archsimd.Uint64x2
 	sinkF32 archsimd.Float32x4
 	sinkF64 archsimd.Float64x2
+
+	sinkM8  archsimd.Mask8x16
+	sinkM16 archsimd.Mask16x8
+	sinkM32 archsimd.Mask32x4
+	sinkM64 archsimd.Mask64x2
 )
 
 func broadcastConstImmFold(k int) {
@@ -95,6 +100,19 @@ func getHiFloat64(x archsimd.Float64x2) {
 	sinkF64 = x.HiToLo()
 }
 
+// does x.And(y).Equal(zero) peephole to the expected cmtst?
+func cmtst(x8, y8 archsimd.Uint8x16, x16, y16 archsimd.Uint16x8,
+	x32, y32 archsimd.Uint32x4, x64, y64 archsimd.Uint64x2) {
+	var z8 archsimd.Uint8x16
+	var z16 archsimd.Uint16x8
+	var z32 archsimd.Uint32x4
+	var z64 archsimd.Uint64x2
+	sinkM8 = x8.And(y8).Equal(z8).Not()     // arm64: `VCMTST V[0-9]+.B16, V[0-9]+.B16, V[0-9]+.B16`
+	sinkM16 = x16.And(y16).Equal(z16).Not() // arm64: `VCMTST V[0-9]+.H8, V[0-9]+.H8, V[0-9]+.H8`
+	sinkM32 = x32.And(y32).Equal(z32).Not() // arm64: `VCMTST V[0-9]+.S4, V[0-9]+.S4, V[0-9]+.S4`
+	sinkM64 = x64.And(y64).Equal(z64).Not() // arm64: `VCMTST V[0-9]+.D2, V[0-9]+.D2, V[0-9]+.D2`
+}
+
 func foldGetHiSetHiMuls(a, b archsimd.Uint16x8) archsimd.Uint16x8 {
 	wLo := a.MulWidenLo(b)                     // arm64: `VUMULL V0.H4, V1.H4, V[0-9].S4`
 	wHi := a.HiToLo().MulWidenLo(b.HiToLo())   // arm64: `VUMULL2 V1.H8, V0.H8, V[0-9].S4` -`VDUP`
@@ -136,3 +154,60 @@ func loToHiUint32Vec(x, lo archsimd.Uint32x4) archsimd.Uint32x4 {
 func loToHiUint16Vec(x, lo archsimd.Uint16x8) archsimd.Uint16x8 {
 	return x.ReshapeToUint64s().BitsToFloat64().SetElem(1, lo.ReshapeToUint64s().BitsToFloat64().GetElem(0)).ToBits().ReshapeToUint16s()
 }
+
+// --- SVE predication peepholes ---
+//
+// IfElse over an unpredicated operation folds into that operation's
+// merging-predicated form. Merging keeps the destination, and an SVE predicated
+// instruction is destructive, so an "else" operand that is already one of the
+// sources folds into a bare predicated instruction; any other one first needs a
+// merging MOVPRFX to put it in the destination.
+
+func sveIfElseFoldsFirstOperand(x, y archsimd.Int8s, m archsimd.Mask8s) archsimd.Int8s {
+	// arm64:`ZADD.*P[0-9]+\.M` -`ZSEL` -`ZMOVPRFX`
+	return x.Add(y).IfElse(m, x)
+}
+
+func sveIfElseFoldsSecondOperand(x, y archsimd.Int8s, m archsimd.Mask8s) archsimd.Int8s {
+	// Commutative, so the mirrored form folds too.
+	// arm64:`ZADD.*P[0-9]+\.M` -`ZSEL` -`ZMOVPRFX`
+	return x.Add(y).IfElse(m, y)
+}
+
+func sveIfElseArbitraryElse(x, y, z archsimd.Int8s, m archsimd.Mask8s) archsimd.Int8s {
+	// The else operand is neither source, so a merging MOVPRFX puts it in the
+	// destination and the destructive add merges over it.
+	// arm64:`ZMOVPRFX.*P[0-9]+\.M` `ZADD.*P[0-9]+\.M` -`ZSEL`
+	return x.Add(y).IfElse(m, z)
+}
+
+func sveMaskedFoldsIntoMerging(x, y archsimd.Int8s, m archsimd.Mask8s) archsimd.Int8s {
+	// Masked is a select against zero. ADD has no zeroing-predicated form, so it
+	// folds into the merging one with the zero vector as the else operand.
+	// arm64:`ZMOVPRFX.*P[0-9]+\.M` `ZADD.*P[0-9]+\.M` -`ZSEL`
+	return x.Add(y).Masked(m)
+}
+
+//go:noinline
+func sinkInt8s(archsimd.Int8s) {}
+
+func sveIfElseMovprfx(x, y archsimd.Int8s, m archsimd.Mask8s) archsimd.Int8s {
+	// The else operand is a source, but x stays live so the destructive add
+	// cannot write it. The whole register is copied, not just the active lanes,
+	// so this prefix is the unpredicated MOVPRFX.
+	// arm64:`ZMOVPRFX` `ZADD.*P[0-9]+\.M` -`ZMOVPRFX.*P[0-9]+`
+	r := x.Add(y).IfElse(m, x)
+	sinkInt8s(x)
+	return r
+}
+
+func sveIfElseFloat(x, y archsimd.Float64s, m archsimd.Mask64s) archsimd.Float64s {
+	// arm64:`ZFADD.*P[0-9]+\.M` -`ZSEL`
+	return x.Add(y).IfElse(m, x)
+}
+
+// The zero value of a mask is an all-false predicate.
+func sveZeroMask() archsimd.Mask8s {
+	// arm64:`PPFALSE` -`ZDUP`
+	var m archsimd.Mask8s
+	return m}

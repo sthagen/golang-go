@@ -530,6 +530,13 @@ func readTransfer(msg any, r *bufio.Reader, maxTrailerHeaders int64) (err error)
 		t.ProtoMajor, t.ProtoMinor = 1, 1
 	}
 
+	if len(t.Header["Transfer-Encoding"]) > 0 && len(t.Header["Content-Length"]) > 0 {
+		// Transfer-Encoding supersedes Content-Length,
+		// but we should close the connection after processing the message.
+		// (RFC 9112 6.3.)
+		t.Close = true
+	}
+
 	// Transfer-Encoding: chunked, and overriding Content-Length.
 	if err := t.parseTransferEncoding(); err != nil {
 		return err
@@ -824,11 +831,10 @@ type body struct {
 	doEarlyClose      bool          // whether Close should stop early
 	maxTrailerHeaders int64         // how many trailer header values are allowed
 
-	mu         sync.Mutex // guards following, and calls to Read and Close
-	sawEOF     bool
-	closed     bool
-	earlyClose bool   // Close called and we didn't read to the end of src
-	onHitEOF   func() // if non-nil, func to call when EOF is Read
+	mu       sync.Mutex // guards following, and calls to Read and Close
+	sawEOF   bool
+	closed   bool
+	onHitEOF func() // if non-nil, func to call when EOF is Read
 }
 
 // ErrBodyReadAfterClose is returned when reading a [Request] or [Response]
@@ -903,19 +909,51 @@ var (
 	doubleCRLF = []byte("\r\n\r\n")
 )
 
-func seeUpcomingDoubleCRLF(r *bufio.Reader) bool {
+func seeUpcomingDoubleCRLF(r *bufio.Reader) error {
+	containsValidTrailers := func(buf []byte) (valid, complete bool) {
+		if !bytes.HasSuffix(buf, doubleCRLF) {
+			return
+		}
+		complete = true
+		cr := false
+		for _, c := range buf {
+			if cr {
+				switch c {
+				case '\n':
+					cr = false
+				default:
+					return
+				}
+			} else {
+				switch c {
+				case '\r':
+					cr = true
+				case '\n':
+					return
+				}
+			}
+		}
+		if !cr {
+			valid = true
+		}
+		return
+	}
 	for peekSize := 4; ; peekSize++ {
 		// This loop stops when Peek returns an error,
 		// which it does when r's buffer has been filled.
 		buf, err := r.Peek(peekSize)
-		if bytes.HasSuffix(buf, doubleCRLF) {
-			return true
+		valid, complete := containsValidTrailers(buf)
+		if complete {
+			if valid {
+				return nil
+			}
+			return errors.New("http: invalid trailer")
 		}
 		if err != nil {
 			break
 		}
 	}
-	return false
+	return errors.New("http: suspiciously long trailer after chunked body")
 }
 
 var errTrailerEOF = errors.New("http: unexpected EOF reading trailer")
@@ -942,8 +980,8 @@ func (b *body) readTrailer() error {
 	// this bufio.Reader. Instead, a hack: we iteratively Peek up
 	// to the bufio.Reader's max size, looking for a double CRLF.
 	// This limits the trailer to the underlying buffer size, typically 4kB.
-	if !seeUpcomingDoubleCRLF(b.r) {
-		return errors.New("http: suspiciously long trailer after chunked body")
+	if err := seeUpcomingDoubleCRLF(b.r); err != nil {
+		return err
 	}
 
 	hdr, err := readMIMEHeader(textproto.NewReader(b.r), math.MaxInt64, b.maxTrailerHeaders)
@@ -1002,16 +1040,16 @@ func (b *body) Close() error {
 		if lr, ok := b.src.(*io.LimitedReader); ok && lr.N > maxPostHandlerReadBytes {
 			// There was a declared Content-Length, and we have more bytes remaining
 			// than our maxPostHandlerReadBytes tolerance. So, give up.
-			b.earlyClose = true
 		} else {
 			var n int64
 			// Consume the body, or, which will also lead to us reading
 			// the trailer headers after the body, if present.
 			n, err = io.CopyN(io.Discard, bodyLocked{b}, maxPostHandlerReadBytes+1)
-			b.earlyClose = true
 			if err == io.EOF && n <= maxPostHandlerReadBytes {
-				b.earlyClose = false
 				b.sawEOF = true
+				// Reaching the end of the body is the expected
+				// outcome here, not an error to report to the caller.
+				err = nil
 			}
 		}
 	default:
@@ -1023,10 +1061,13 @@ func (b *body) Close() error {
 	return err
 }
 
-func (b *body) didEarlyClose() bool {
+func (b *body) consumedEntireBody() bool {
+	if b == nil {
+		return true
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.earlyClose
+	return b.sawEOF
 }
 
 // bodyRemains reports whether future Read calls might

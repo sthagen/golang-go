@@ -293,15 +293,15 @@ func init() {
 		// general unrolled zeroing
 		// arg0 = address of memory to zero
 		// arg1 = mem
-		// auxint = element size and type alignment
+		// auxint = size
+		// aux = alignment (as an int64)
 		// returns mem
 		//	mov	ZERO, (OFFSET)(Rarg0)
 		{
 			name:           "LoweredZero",
-			aux:            "SymValAndOff",
+			aux:            "SizeAndAlign",
 			typ:            "Mem",
 			argLength:      2,
-			symEffect:      "Write",
 			faultOnNilArg0: true,
 			addrSinkArg0:   true,
 			reg: regInfo{
@@ -310,15 +310,15 @@ func init() {
 		},
 		// general unaligned zeroing
 		// arg0 = address of memory to zero (clobber)
-		// arg2 = mem
-		// auxint = element size and type alignment
+		// arg1 = mem
+		// auxint = size
+		// aux = alignment (as an int64)
 		// returns mem
 		{
 			name:           "LoweredZeroLoop",
-			aux:            "SymValAndOff",
+			aux:            "SizeAndAlign",
 			typ:            "Mem",
 			argLength:      2,
-			symEffect:      "Write",
 			needIntTemp:    true,
 			faultOnNilArg0: true,
 			addrSinkArg0:   true,
@@ -332,14 +332,14 @@ func init() {
 		// arg0 = address of dst memory (clobber)
 		// arg1 = address of src memory (clobber)
 		// arg2 = mem
-		// auxint = size and type alignment
+		// auxint = size
+		// aux = alignment (as an int64)
 		// returns mem
 		//	mov	(offset)(Rarg1), TMP
 		//	mov	TMP, (offset)(Rarg0)
 		{
 			name:      "LoweredMove",
-			aux:       "SymValAndOff",
-			symEffect: "Write",
+			aux:       "SizeAndAlign",
 			argLength: 3,
 			reg: regInfo{
 				inputs:   []regMask{gpMask.minus(regNamed["X5"]), gpMask.minus(regNamed["X5"])},
@@ -354,8 +354,9 @@ func init() {
 		// general unaligned move
 		// arg0 = address of dst memory (clobber)
 		// arg1 = address of src memory (clobber)
-		// arg3 = mem
-		// auxint = alignment
+		// arg2 = mem
+		// auxint = size
+		// aux = alignment (as an int64)
 		// returns mem
 		//	ADD	$sz, X6
 		//loop:
@@ -367,9 +368,8 @@ func init() {
 		//	BNE	X6, Rarg1, loop
 		{
 			name:      "LoweredMoveLoop",
-			aux:       "SymValAndOff",
+			aux:       "SizeAndAlign",
 			argLength: 3,
-			symEffect: "Write",
 			reg: regInfo{
 				inputs:       []regMask{gpMask.minus(r5toR6), gpMask.minus(r5toR6)},
 				clobbers:     r5toR6,
@@ -426,6 +426,12 @@ func init() {
 		// *arg0 &= (|=) arg1. arg2=mem. returns nil.
 		{name: "LoweredAtomicAnd32", argLength: 3, reg: gpatomic, asm: "AMOANDW", faultOnNilArg0: true, hasSideEffects: true},
 		{name: "LoweredAtomicOr32", argLength: 3, reg: gpatomic, asm: "AMOORW", faultOnNilArg0: true, hasSideEffects: true},
+
+		// Atomic 32/64 bit AND/OR that return the old value.
+		{name: "LoweredAtomicAnd32value", argLength: 3, reg: gpxchg, resultNotInArgs: true, asm: "AMOANDW", faultOnNilArg0: true, hasSideEffects: true},
+		{name: "LoweredAtomicAnd64value", argLength: 3, reg: gpxchg, resultNotInArgs: true, asm: "AMOANDD", faultOnNilArg0: true, hasSideEffects: true},
+		{name: "LoweredAtomicOr32value", argLength: 3, reg: gpxchg, resultNotInArgs: true, asm: "AMOORW", faultOnNilArg0: true, hasSideEffects: true},
+		{name: "LoweredAtomicOr64value", argLength: 3, reg: gpxchg, resultNotInArgs: true, asm: "AMOORD", faultOnNilArg0: true, hasSideEffects: true},
 
 		// Lowering pass-throughs
 		{name: "LoweredNilCheck", argLength: 2, faultOnNilArg0: true, nilCheck: true, reg: regInfo{inputs: []regMask{gpspMask}}}, // arg0=ptr,arg1=mem, returns void.  Faults if ptr is nil.
@@ -557,6 +563,11 @@ func init() {
 		{name: "BGEZ", controls: 1},
 		{name: "BLTZ", controls: 1},
 		{name: "BGTZ", controls: 1},
+		// JUMPTABLE implements jump tables.
+		// Aux is the symbol (an *obj.LSym) for the jump table.
+		// control[0] is the index into the jump table.
+		// control[1] is the address of the jump table (the address of the symbol stored in Aux).
+		{name: "JUMPTABLE", controls: 2, aux: "Sym"},
 	}
 
 	archs = append(archs, arch{

@@ -103,9 +103,6 @@ type Transport struct {
 	idleConnWait map[connectMethodKey]wantConnQueue  // waiting getConns
 	idleLRU      connLRU
 
-	reqMu       sync.Mutex
-	reqCanceler map[*Request]context.CancelCauseFunc
-
 	altMu    sync.Mutex   // guards changing altProto only
 	altProto atomic.Value // of nil or map[string]RoundTripper, key is URI scheme
 
@@ -681,12 +678,6 @@ func (t *Transport) roundTrip(req *Request) (_ *Response, err error) {
 		go awaitLegacyCancel(ctx, cancel, origReq)
 	}
 
-	// Convert Transport.CancelRequest into context cancellation.
-	//
-	// This is lamentably expensive. CancelRequest has been deprecated for a long time
-	// and doesn't work on HTTP/2 requests. Perhaps we should drop support for it entirely.
-	cancel = t.prepareTransportCancel(origReq, cancel)
-
 	defer func() {
 		if err != nil {
 			cancel(err)
@@ -728,8 +719,7 @@ func (t *Transport) roundTrip(req *Request) (_ *Response, err error) {
 		}
 		if err == nil {
 			if pconn.alt != nil {
-				// HTTP/2 requests are not cancelable with CancelRequest,
-				// so we have no further need for the request context.
+				// We have no further need for the request context.
 				//
 				// On the HTTP/1 path, roundTrip takes responsibility for
 				// canceling the context after the response body is read.
@@ -999,42 +989,11 @@ func (t *Transport) CloseIdleConnections() {
 	}
 }
 
-// prepareTransportCancel sets up state to convert Transport.CancelRequest into context cancellation.
-func (t *Transport) prepareTransportCancel(req *Request, origCancel context.CancelCauseFunc) context.CancelCauseFunc {
-	// Historically, RoundTrip has not modified the Request in any way.
-	// We could avoid the need to keep a map of all in-flight requests by adding
-	// a field to the Request containing its cancel func, and setting that field
-	// while the request is in-flight. Callers aren't supposed to reuse a Request
-	// until after the response body is closed, so this wouldn't violate any
-	// concurrency guarantees.
-	cancel := func(err error) {
-		origCancel(err)
-		t.reqMu.Lock()
-		delete(t.reqCanceler, req)
-		t.reqMu.Unlock()
-	}
-	t.reqMu.Lock()
-	if t.reqCanceler == nil {
-		t.reqCanceler = make(map[*Request]context.CancelCauseFunc)
-	}
-	t.reqCanceler[req] = cancel
-	t.reqMu.Unlock()
-	return cancel
-}
-
-// CancelRequest cancels an in-flight request by closing its connection.
-// CancelRequest should only be called after [Transport.RoundTrip] has returned.
+// CancelRequest is obsolete and does nothing.
 //
-// Deprecated: Use [Request.WithContext] to create a request with a
-// cancelable context instead. CancelRequest cannot cancel HTTP/2
-// requests. This may become a no-op in a future release of Go.
+// Deprecated: Use [NewRequestWithContext] to create a request with a
+// cancelable context instead.
 func (t *Transport) CancelRequest(req *Request) {
-	t.reqMu.Lock()
-	cancel := t.reqCanceler[req]
-	t.reqMu.Unlock()
-	if cancel != nil {
-		cancel(errRequestCanceled)
-	}
 }
 
 //
@@ -1726,10 +1685,14 @@ func (t *Transport) dialConnFor(w *wantConn) {
 
 	const isClientConn = false
 	pc, err := t.dialConn(ctx, w.cm, isClientConn, nil)
+	if err == nil && pc.alt != nil {
+		// HTTP/2 and HTTP/3 connections can be shared.
+		// Add to the idle connection pool before trying to deliver to w.
+		t.putOrCloseIdleConn(pc)
+	}
 	delivered := w.tryDeliver(pc, err, time.Time{})
-	if err == nil && (!delivered || pc.alt != nil) {
-		// pconn was not passed to w,
-		// or it is HTTP/2 and can be shared.
+	if err == nil && !delivered && pc.alt == nil {
+		// HTTP/1 pconn was not passed to w.
 		// Add to the idle connection pool.
 		t.putOrCloseIdleConn(pc)
 	}
@@ -2332,8 +2295,7 @@ func (pc *persistConn) isBroken() bool {
 	return b
 }
 
-// canceled returns non-nil if the connection was closed due to
-// CancelRequest or due to context cancellation.
+// canceled returns non-nil if the connection was closed due to context cancellation.
 func (pc *persistConn) canceled() error {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
@@ -3205,7 +3167,7 @@ func schemePort(scheme string) string {
 
 func idnaASCIIFromURL(url *url.URL) string {
 	addr := url.Hostname()
-	if v, err := idnaASCII(addr); err == nil {
+	if v, err := idnaASCII(addr); err == nil && v != "" {
 		addr = v
 	}
 	return addr

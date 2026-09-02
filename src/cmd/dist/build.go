@@ -488,6 +488,9 @@ func isGitRepo() bool {
 	// suffice here, but that requires deviating from the infrastructure
 	// provided by `run`.
 	gitDir := chomp(run(goroot, 0, "git", "rev-parse", "--git-dir"))
+	if gitDir == "" {
+		return false
+	}
 	if !filepath.IsAbs(gitDir) {
 		gitDir = filepath.Join(goroot, gitDir)
 	}
@@ -498,6 +501,9 @@ func isGitRepo() bool {
 func isJJRepo() bool {
 	// Don't check the error from jj, similarly to what we do in isGitRepo.
 	jjDir := chomp(run(goroot, 0, "jj", "--no-pager", "--color=never", "root"))
+	if jjDir == "" {
+		return false
+	}
 	if !filepath.IsAbs(jjDir) {
 		jjDir = filepath.Join(goroot, jjDir)
 	}
@@ -1409,7 +1415,7 @@ var (
 	binExesIncludedInDistpack = []string{"cmd/go", "cmd/gofmt"}
 
 	// Keep in sync with the filter in cmd/distpack/pack.go.
-	toolsIncludedInDistpack = []string{"cmd/asm", "cmd/cgo", "cmd/compile", "cmd/cover", "cmd/fix", "cmd/link", "cmd/preprofile", "cmd/vet"}
+	toolsIncludedInDistpack = []string{"cmd/asm", "cmd/cgo", "cmd/compile", "cmd/cover", "cmd/export", "cmd/fix", "cmd/link", "cmd/preprofile", "cmd/vet"}
 
 	// We could install all tools in "cmd", but is unnecessary because we will
 	// remove them in distpack, so instead install the tools that will actually

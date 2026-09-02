@@ -25,6 +25,7 @@ import (
 	"net"
 	"net/http/httptrace"
 	"net/http/internal"
+	"net/http/internal/ascii"
 	"net/http/internal/httpcommon"
 	"net/textproto"
 	"slices"
@@ -419,8 +420,11 @@ func authorityAddr(scheme string, authority string) (addr string) {
 			port = "80"
 		}
 	}
-	if a, err := idna.ToASCII(host); err == nil {
-		host = a
+	// Same as net/http.
+	if !ascii.Is(host) {
+		if a, err := idna.Lookup.ToASCII(host); err == nil && a != "" {
+			host = a
+		}
 	}
 	// IPv6 address literal, without a port:
 	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
@@ -2035,9 +2039,20 @@ func (cc *ClientConn) readLoop() {
 	defer rl.cleanup()
 	cc.readerErr = rl.run()
 	if ce, ok := cc.readerErr.(ConnectionError); ok {
-		cc.wmu.Lock()
-		cc.fr.WriteGoAway(0, ErrCode(ce), nil)
-		cc.wmu.Unlock()
+		// Try to send a GOAWAY frame, but if this blocks for too long
+		// give up and close the connection.
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			cc.wmu.Lock()
+			cc.fr.WriteGoAway(0, ErrCode(ce), nil)
+			cc.bw.Flush()
+			cc.wmu.Unlock()
+		}()
+		select {
+		case <-done:
+		case <-time.After(250 * time.Millisecond):
+		}
 	}
 }
 

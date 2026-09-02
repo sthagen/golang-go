@@ -30,6 +30,7 @@ import (
 	"cmd/go/internal/lockedfile"
 	"cmd/go/internal/modfetch"
 	"cmd/go/internal/search"
+	"cmd/internal/par"
 
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
@@ -324,6 +325,28 @@ func ModFile(ld *Loader) *modfile.File {
 	return modFile
 }
 
+// MainModuleHasGoDirective reports whether the main module's go.mod file
+// declared a go directive as originally loaded from disk. It reads the parsed
+// module index, which preserves that original state, rather than the in-memory
+// go.mod, into which the go command synthesizes a version for a module that
+// omits one. It must therefore be called after the main module is loaded and
+// before WriteGoMod rewrites (and re-indexes) the file; afterward the index
+// reflects the rewritten go.mod instead.
+//
+// In workspace mode, or when there is not exactly one main module, it
+// conservatively reports true.
+func MainModuleHasGoDirective(ld *Loader) bool {
+	Init(ld)
+	if ld.inWorkspaceMode() || ld.MainModules.Len() != 1 {
+		return true
+	}
+	idx := ld.MainModules.GetSingleIndexOrNil(ld)
+	if idx == nil {
+		return true
+	}
+	return idx.goVersion != ""
+}
+
 func BinDir(ld *Loader) string {
 	Init(ld)
 	if cfg.GOBIN != "" {
@@ -384,16 +407,17 @@ func (ld *Loader) Reset() {
 
 func (ld *Loader) setState(new *Loader) (old *Loader) {
 	old = &Loader{
-		initialized:     ld.initialized,
-		ForceUseModules: ld.ForceUseModules,
-		RootMode:        ld.RootMode,
-		modRoots:        ld.modRoots,
-		modulesEnabled:  cfg.ModulesEnabled,
-		MainModules:     ld.MainModules,
-		requirements:    ld.requirements,
-		workFilePath:    ld.workFilePath,
-		fetcher:         ld.fetcher,
-		packageCache:    ld.packageCache,
+		initialized:          ld.initialized,
+		ForceUseModules:      ld.ForceUseModules,
+		RootMode:             ld.RootMode,
+		modRoots:             ld.modRoots,
+		modulesEnabled:       cfg.ModulesEnabled,
+		MainModules:          ld.MainModules,
+		requirements:         ld.requirements,
+		workFilePath:         ld.workFilePath,
+		fetcher:              ld.fetcher,
+		rawGoModSummaryCache: ld.rawGoModSummaryCache,
+		packageCache:         ld.packageCache,
 	}
 	ld.initialized = new.initialized
 	ld.ForceUseModules = new.ForceUseModules
@@ -407,6 +431,7 @@ func (ld *Loader) setState(new *Loader) (old *Loader) {
 	// the go.sum file, so save and restore it along with the
 	// modload state.
 	old.fetcher = ld.fetcher.SetState(new.fetcher)
+	ld.rawGoModSummaryCache = new.rawGoModSummaryCache
 	ld.packageCache = new.packageCache
 
 	return old
@@ -457,6 +482,12 @@ type Loader struct {
 	workFilePath string
 	fetcher      *modfetch.Fetcher
 
+	// rawGoModSummaryCache is per-loader because reading a go.mod verifies it
+	// against this loader's go.sum files, recording the checksum as one to keep.
+	// A shared cache would let one loader's verification stand in for another's,
+	// leaving the second loader's go.sum missing the entry.
+	rawGoModSummaryCache *par.ErrCache[module.Version, *modFileSummary]
+
 	// PackageCache is a lookup cache for LoadImport,
 	// so that if we look up a package multiple times
 	// we return the same pointer each time.
@@ -466,13 +497,18 @@ type Loader struct {
 func NewLoader() *Loader {
 	s := new(Loader)
 	s.fetcher = modfetch.NewFetcher()
+	s.rawGoModSummaryCache = new(par.ErrCache[module.Version, *modFileSummary])
 	s.packageCache = make(map[string]any)
 	return s
 }
 
 func NewDisabledState() *Loader {
 	fips140.Init()
-	return &Loader{initialized: true, modulesEnabled: false, packageCache: make(map[string]any)}
+	ld := NewLoader()
+	ld.initialized = true
+	// Modules are disabled, so nothing may be fetched.
+	ld.fetcher = nil
+	return ld
 }
 
 func (ld *Loader) Fetcher() *modfetch.Fetcher {
@@ -1884,6 +1920,14 @@ type WriteOpts struct {
 func WriteGoMod(ld *Loader, ctx context.Context, opts WriteOpts) error {
 	ld.requirements = LoadModFile(ld, ctx)
 	return commitRequirements(ld, ctx, opts)
+}
+
+// WriteTidyGoSum writes the checksums needed to reproduce the current module
+// graph and removes unneeded checksums.
+func WriteTidyGoSum(ld *Loader, ctx context.Context) error {
+	keep := keepSums(ld, ctx, ld.pkgLoader, ld.requirements, addBuildListZipSums)
+	ld.Fetcher().TrimGoSum(keep)
+	return ld.Fetcher().WriteGoSum(ctx, keep, mustHaveCompleteRequirements(ld))
 }
 
 var errNoChange = errors.New("no update needed")

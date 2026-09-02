@@ -33,6 +33,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"internal/synctest"
 	"io"
 	"log"
 	"math"
@@ -103,10 +104,6 @@ var (
 type Server struct {
 	mu          sync.Mutex
 	activeConns map[*serverConn]struct{}
-
-	// Pool of error channels. This is per-Server rather than global
-	// because channels can't be reused across synctest bubbles.
-	errChanPool sync.Pool
 }
 
 func (s *Server) registerConn(sc *serverConn) {
@@ -138,30 +135,33 @@ func (s *Server) startGracefulShutdown() {
 	s.mu.Unlock()
 }
 
-// Global error channel pool used for uninitialized Servers.
-// We use a per-Server pool when possible to avoid using channels across synctest bubbles.
+// errChanPool is a pool of reusable channels for reporting the result
+// of a blocking frame write.
+//
+// The pool is not used inside synctest bubbles, since a channel created
+// in one bubble can't be used from another bubble or from outside a
+// bubble, and sync.Pool is not bubble-aware.
 var errChanPool = sync.Pool{
 	New: func() any { return make(chan error, 1) },
 }
 
-func (s *Server) getErrChan() chan error {
-	if s == nil {
-		return errChanPool.Get().(chan error) // Server used without calling ConfigureServer
+func getErrChan() chan error {
+	if synctest.IsInBubble() {
+		// Channels can't be shared across synctest bubbles.
+		// Skip the pool; allocation cost is irrelevant in tests.
+		return make(chan error, 1)
 	}
-	return s.errChanPool.Get().(chan error)
+	return errChanPool.Get().(chan error)
 }
 
-func (s *Server) putErrChan(ch chan error) {
-	if s == nil {
-		errChanPool.Put(ch) // Server used without calling ConfigureServer
-		return
+func putErrChan(ch chan error) {
+	if !synctest.IsInBubble() {
+		errChanPool.Put(ch)
 	}
-	s.errChanPool.Put(ch)
 }
 
 func (s *Server) Configure(conf ServerConfig, tcfg *tls.Config) error {
 	s.activeConns = make(map[*serverConn]struct{})
-	s.errChanPool = sync.Pool{New: func() any { return make(chan error, 1) }}
 
 	if tcfg.CipherSuites != nil && tcfg.MinVersion < tls.VersionTLS13 {
 		// If they already provided a TLS 1.0–1.2 CipherSuite list, return an
@@ -301,15 +301,6 @@ func (s *Server) serveConn(c net.Conn, opts *ServeConnOpts, newf func(*serverCon
 
 	s.registerConn(sc)
 	defer s.unregisterConn(sc)
-
-	// The net/http package sets the write deadline from the
-	// http.Server.WriteTimeout during the TLS handshake, but then
-	// passes the connection off to us with the deadline already set.
-	// Write deadlines are set per stream in serverConn.newStream.
-	// Disarm the net.Conn write deadline here.
-	if sc.hs.WriteTimeout() > 0 {
-		sc.conn.SetWriteDeadline(time.Time{})
-	}
 
 	switch {
 	case sc.hs.DisableClientPriority():
@@ -1018,7 +1009,7 @@ var writeDataPool = sync.Pool{
 // writeDataFromHandler writes DATA response frames from a handler on
 // the given stream.
 func (sc *serverConn) writeDataFromHandler(stream *stream, data []byte, endStream bool) error {
-	ch := sc.srv.getErrChan()
+	ch := getErrChan()
 	writeArg := writeDataPool.Get().(*writeData)
 	*writeArg = writeData{stream.id, data, endStream}
 	err := sc.writeFrameFromHandler(FrameWriteRequest{
@@ -1050,7 +1041,7 @@ func (sc *serverConn) writeDataFromHandler(stream *stream, data []byte, endStrea
 			return errStreamClosed
 		}
 	}
-	sc.srv.putErrChan(ch)
+	putErrChan(ch)
 	if frameWriteDone {
 		writeDataPool.Put(writeArg)
 	}
@@ -1987,15 +1978,7 @@ func (sc *serverConn) processHeaders(f *MetaHeadersFrame) error {
 		handler = serve400Handler{err}.ServeHTTP
 	}
 
-	// The net/http package sets the read deadline from the
-	// http.Server.ReadTimeout during the TLS handshake, but then
-	// passes the connection off to us with the deadline already
-	// set. Disarm it here after the request headers are read,
-	// similar to how the http1 server works. Here it's
-	// technically more like the http1 Server's ReadHeaderTimeout
-	// (in Go 1.8), though. That's a more sane option anyway.
 	if sc.hs.ReadTimeout() > 0 {
-		sc.conn.SetReadDeadline(time.Time{})
 		st.readDeadline = time.AfterFunc(sc.hs.ReadTimeout(), st.onReadTimeout)
 	}
 
@@ -2014,12 +1997,6 @@ func (sc *serverConn) upgradeRequest(req *ServerRequest) {
 	rw := sc.newResponseWriter(st)
 	rw.rws.req = *req
 	req = &rw.rws.req
-
-	// Disable any read deadline set by the net/http package
-	// prior to the upgrade.
-	if sc.hs.ReadTimeout() > 0 {
-		sc.conn.SetReadDeadline(time.Time{})
-	}
 
 	// This is the first request on the connection,
 	// so start the handler directly rather than going
@@ -2140,12 +2117,25 @@ func (sc *serverConn) newStream(id, pusherID uint32, state streamState, priority
 func (sc *serverConn) newWriterAndRequest(st *stream, f *MetaHeadersFrame) (*responseWriter, *ServerRequest, error) {
 	sc.serveG.check()
 
-	rp := httpcommon.ServerRequestParam{
-		Method:    f.PseudoValue("method"),
-		Scheme:    f.PseudoValue("scheme"),
-		Authority: f.PseudoValue("authority"),
-		Path:      f.PseudoValue("path"),
-		Protocol:  f.PseudoValue("protocol"),
+	rp := httpcommon.ServerRequestParam{}
+	for _, hf := range f.Fields {
+		// No pseudo-headers may have a zero-length value.
+		// Rejecting them here means we can assume "" means "no header" below.
+		if hf.Name == "" || (hf.Name[0] == ':' && len(hf.Value) == 0) {
+			return nil, nil, sc.countError("invalid_pseudo_header", streamError(f.StreamID, ErrCodeProtocol))
+		}
+		switch hf.Name {
+		case ":method":
+			rp.Method = hf.Value
+		case ":scheme":
+			rp.Scheme = hf.Value
+		case ":authority":
+			rp.Authority = hf.Value
+		case ":path":
+			rp.Path = hf.Value
+		case ":protocol":
+			rp.Protocol = hf.Value
+		}
 	}
 
 	// extended connect is disabled, so we should not see :protocol
@@ -2363,7 +2353,7 @@ func (sc *serverConn) writeHeaders(st *stream, headerData *writeResHeaders) erro
 		// waiting for this frame to be written, so an http.Flush mid-handler
 		// writes out the correct value of keys, before a handler later potentially
 		// mutates it.
-		errc = sc.srv.getErrChan()
+		errc = getErrChan()
 	}
 	if err := sc.writeFrameFromHandler(FrameWriteRequest{
 		write:  headerData,
@@ -2375,7 +2365,7 @@ func (sc *serverConn) writeHeaders(st *stream, headerData *writeResHeaders) erro
 	if errc != nil {
 		select {
 		case err := <-errc:
-			sc.srv.putErrChan(errc)
+			putErrChan(errc)
 			return err
 		case <-sc.doneServing:
 			return errClientDisconnected
@@ -3073,7 +3063,7 @@ func (w *responseWriter) Push(target, method string, header Header) error {
 		method: method,
 		url:    u,
 		header: cloneHeader(header),
-		done:   sc.srv.getErrChan(),
+		done:   getErrChan(),
 	}
 
 	select {
@@ -3090,7 +3080,7 @@ func (w *responseWriter) Push(target, method string, header Header) error {
 	case <-st.cw:
 		return errStreamClosed
 	case err := <-msg.done:
-		sc.srv.putErrChan(msg.done)
+		putErrChan(msg.done)
 		return err
 	}
 }

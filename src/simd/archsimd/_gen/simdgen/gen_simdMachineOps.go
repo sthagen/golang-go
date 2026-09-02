@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"log"
+	"simd/archsimd/_gen/simdgen/types"
 	"sort"
 	"strings"
 )
@@ -15,7 +16,7 @@ import (
 const simdMachineOpsTmpl = `
 package main
 
-func simd{{.ArchUpper}}Ops({{.RegInfoParams}}) []opData {
+func simd{{.SIMDTag}}Ops({{.RegInfoParams}}) []opData {
 	return []opData{
 {{- range .OpsData }}
 		{name: "{{.OpName}}", argLength: {{.OpInLen}}, reg: {{.RegInfo}}, asm: "{{.Asm}}",{{if .Comm}} commutative: true,{{end}} typ: "{{.Type}}"{{if .ResultInArg0}}, resultInArg0: true{{end}}},
@@ -41,9 +42,8 @@ func simd{{.ArchUpper}}Ops({{.RegInfoParams}}) []opData {
 
 // writeSIMDMachineOps generates the machine ops and writes it to simdAMD64ops.go
 // within the specified directory.
-func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
+func writeSIMDMachineOps(buffer *bytes.Buffer, ops []Operation) {
 	t := templateOf(simdMachineOpsTmpl, "simdAMD64Ops")
-	buffer := new(bytes.Buffer)
 	buffer.WriteString(generatedHeader())
 
 	type opData struct {
@@ -56,7 +56,7 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 		ResultInArg0 bool
 	}
 	type machineOpsData struct {
-		ArchUpper         string
+		SIMDTag           string
 		RegInfoParams     string
 		OpsData           []opData
 		OpsDataImm        []opData
@@ -79,7 +79,7 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 	// Determine the "best" version of an instruction to use
 	best := make(map[string]Operation)
 	var mOpOrder []string
-	countOverrides := func(s []Operand) int {
+	countOverrides := func(s []types.Operand) int {
 		a := 0
 		for _, o := range s {
 			if o.OverwriteBase != nil {
@@ -147,7 +147,11 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 		var outType string
 		if shapeOut == OneVregOut || shapeOut == OneVregOutAtIn || shapeOut == OneVregOutScalar || gOp.Out[0].OverwriteClass != nil {
 			// If class overwrite is happening, that's not really a mask but a vreg.
-			outType = fmt.Sprintf("Vec%d", *gOp.Out[0].Bits)
+			if gOp.Out[0].Bits.Scalable {
+				outType = fmt.Sprintf("Vec%d", types.MaxVectorBits)
+			} else {
+				outType = fmt.Sprintf("Vec%d", gOp.Out[0].Bits.N())
+			}
 		} else if shapeOut == OneGregOut {
 			outType = gOp.GoType() // this is a straight Go type, not a VecNNN type
 		} else if shapeOut == OneKmaskOut {
@@ -158,6 +162,24 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 		resultInArg0 := false
 		if shapeOut == OneVregOutAtIn {
 			resultInArg0 = true
+		}
+		if CurrentArch().isSVE() {
+			switch idx := gOp.sveInPlaceInput(); {
+			case idx < 0:
+				// Constructive: the destination is independent of the sources.
+			case idx == 0:
+				// The instruction overwrites its first source. A commutative one is
+				// left unconstrained — the ssa-to-prog helper puts the destination in
+				// place by swapping the operands or by prefixing a MOVPRFX. A
+				// non-commutative one cannot be fixed by swapping, so pin the
+				// destination to the first source instead.
+				if !gOp.Commutative {
+					resultInArg0 = true
+				}
+			default:
+				panic(fmt.Errorf("simdgen: %s overwrites input %d; only the first input is supported: %s",
+					gOp.Asm, idx, gOp))
+			}
 		}
 		var memOpData *opData
 		regInfoMerging := regInfo
@@ -182,7 +204,7 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 		if hasMerging && !resultInArg0 {
 			// We have to copy the slice here because the sort will be visible from other
 			// aliases when no reslicing is happening.
-			newIn := make([]Operand, len(op.In), len(op.In)+1)
+			newIn := make([]types.Operand, len(op.In), len(op.In)+1)
 			copy(newIn, op.In)
 			op.In = newIn
 			op.In = append(op.In, op.Out[0])
@@ -210,6 +232,44 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 			}
 		} else {
 			opsData = append(opsData, opData{asm, gOp.Asm, len(gOp.In), regInfo, gOp.Commutative, outType, resultInArg0})
+			// The inVariant implies machine ops only: one predicated instruction
+			// per governing-predicate qualifier the encoding supports, reached by
+			// peephole rather than by any API of its own.
+			for _, pred := range gOp.svePredicatedOps() {
+				predRegInfo, err := makeRegInfo(pred, NoMem)
+				if err != nil {
+					panic(err)
+				}
+				predResultInArg0 := false
+				switch idx := pred.sveInPlaceInput(); {
+				case idx < 0:
+				case idx == 0:
+					// Where the first input is the merge source it is the whole
+					// reason the destination is pinned, so commutativity — which
+					// is about the two sources — does not enter into it.
+					predResultInArg0 = pred.sveMergeSourceIn0 || !pred.Commutative
+				default:
+					panic(fmt.Errorf("simdgen: %s overwrites input %d; only the first input is supported: %s",
+						pred.Asm, idx, pred))
+				}
+				opsData = append(opsData, opData{machineOpName(OneMask, pred), pred.Asm, len(pred.In),
+					predRegInfo, pred.Commutative, outType, predResultInArg0})
+				// There is no zeroing machine op here for Masked to fold into:
+				// every ARM64 instruction that has both an unpredicated and a
+				// predicated encoding is /M-only. The /Z forms belong to
+				// predicated-only instructions (ABS, NEG, NOT, ...), where
+				// sveImplicitPredPeepholes folds Masked into them.
+				if prefixed := pred.sveMergingPrefixedOp(); prefixed != nil {
+					prefixedRegInfo, err := makeRegInfo(*prefixed, NoMem)
+					if err != nil {
+						panic(err)
+					}
+					// The extra input is the value the destination starts out
+					// holding, so the destination must share its register.
+					opsData = append(opsData, opData{machineOpName(OneMask, *prefixed), prefixed.Asm, len(prefixed.In),
+						prefixedRegInfo, false, outType, true})
+				}
+			}
 			if memOpData != nil {
 				if *op.MemFeatures != "vbcst" {
 					panic("simdgen only knows vbcst for mem ops for now")
@@ -274,7 +334,7 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 	})
 
 	err := t.Execute(buffer, machineOpsData{
-		ArchUpper:         archInfo.ArchUpper,
+		SIMDTag:           archInfo.SIMDTag,
 		RegInfoParams:     archInfo.RegInfoParams,
 		OpsData:           opsData,
 		OpsDataImm:        opsDataImm,
@@ -286,6 +346,4 @@ func writeSIMDMachineOps(ops []Operation) *bytes.Buffer {
 	if err != nil {
 		panic(fmt.Errorf("failed to execute template: %w", err))
 	}
-
-	return buffer
 }
